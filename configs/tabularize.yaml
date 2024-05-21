@@ -1,0 +1,41 @@
+# Raw data
+MEDS_cohort_dir: ???
+tabularized_data_dir: ???
+
+# Pre-processing
+min_code_inclusion_frequency: ???
+window_sizes: ???
+codes: null
+aggs:
+  - "code/count"
+  - "code/time_since_last"
+  - "code/time_since_first"
+  - "value/count"
+  - "value/sum"
+  - "value/sum_sqd"
+  - "value/min"
+  - "value/time_since_min"
+  - "value/max"
+  - "value/time_since_max"
+  - "value/last"
+  - "value/slope"
+  - "value/intercept"
+  - "value/residual/sum"
+  - "value/residual/sum_sqd"
+
+
+# Sharding
+n_patients_per_sub_shard: null
+
+# Misc
+do_overwrite: False
+seed: 1
+
+# Hydra
+hydra:
+  job:
+    name: tabularize_step_${now:%Y-%m-%d_%H-%M-%S}
+  run:
+    dir: ${tabularized_data_dir}/.logs/etl/${hydra.job.name}
+  sweep:
+    dir: ${tabularized_data_dir}/.logs/etl/${hydra.job.name}

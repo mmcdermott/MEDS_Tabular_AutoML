@@ -2,7 +2,19 @@
 This repository provides utilities and scripts to run limited automatic tabular ML pipelines for generic MEDS
 datasets.
 
-Why not other systems?
+#### Q1: What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
+This is a common misconception. _Tabular_ data refers to data that can be organized in a consistent, logical
+set of rows/columns such that the entirety of a "sample" or "instance" for modeling or analysis is contained
+in a single row, and the set of columns possibly observed (there can be missingness) is consistent across all
+rows. Structured EHR data does not satisfy this definition, as we will have different numbers of observations
+of medical codes and values at different timestamps for different patients, so it cannot simultanesouly
+satisfy the (1) "single row single instance", (2) "consistent set of columns", and (3) "logical" requirements.
+Thus, in this pipeline, when we say we will produce a "tabular" view of MEDS data, we mean a dataset that can
+realize these constraints, which will explicitly involve summarizing the patient data over various historical
+or future windows in time to produce a single row per patient with a consistent, logical set of columns
+(though there may still be missingness).
+
+#### Q2: Why not other systems?
   - [TemporAI](https://github.com/vanderschaarlab/temporai) is the most natural competitor, and already
     supports AutoML capabilities. However, TemporAI (as of now) does not support generic MEDS datasets, and it
     is not clear if their AutoML systems will scale to the size of datasets we need to support. But, further
@@ -25,6 +37,10 @@ This repository consists of two key pieces:
      candidate AutoML models, enabling a far more extensive search over different featurization strategies.
 
 ## Feature Construction, Storage, and Loading
+Tabularization of a (raw) MEDS dataset is done by running the `scripts/data/tabularize.py` script. This script
+must inherently do a base level of preprocessing over the MEDS data, then will construct a sharded tabular
+representation that respects the overall sharding of the raw data. This script uses [Hydra](https://hydra.cc/)
+to manage configuration, and the configuration file is located at `configs/tabularize.yaml`.
 
 ## AutoML Pipelines
 
