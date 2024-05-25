@@ -23,12 +23,12 @@ aggs:
   - "value/residual/sum"
   - "value/residual/sum_sqd"
 
-
 # Sharding
 n_patients_per_sub_shard: null
 
 # Misc
 do_overwrite: False
+do_update: True
 seed: 1
 
 # Hydra
