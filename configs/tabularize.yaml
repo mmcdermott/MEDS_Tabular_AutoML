@@ -22,6 +22,9 @@ aggs:
   - "value/intercept"
   - "value/residual/sum"
   - "value/residual/sum_sqd"
+numeric_value_impute_strategy: "drop"
+dynamic_threshold: 0.01
+numerical_value_threshold: 0.1
 
 # Sharding
 n_patients_per_sub_shard: null

@@ -8,8 +8,8 @@ from io import StringIO
 from pathlib import Path
 
 import polars as pl
+from hydra import compose, initialize
 from loguru import logger
-from omegaconf import OmegaConf
 
 from MEDS_tabular_automl.tabularize import cache_flat_representation
 
@@ -130,7 +130,9 @@ def test_tabularize():
             "seed": 1,
             "hydra.verbose": True,
         }
-        cfg = OmegaConf.create(tabularize_config_kwargs)
 
-        logger.info("caching flat representation of MEDS data")
-        cache_flat_representation(cfg)
+        with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in tabularize_config_kwargs.items()]
+            cfg = compose(config_name="tabularize", overrides=overrides)  # config.yaml
+            logger.info("caching flat representation of MEDS data")
+            cache_flat_representation(cfg)

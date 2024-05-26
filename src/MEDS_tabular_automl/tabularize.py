@@ -6,8 +6,9 @@ Attributes:
     DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
 
-import copy
+import enum
 import json
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
@@ -17,7 +18,18 @@ import polars.selectors as cs
 from omegaconf import DictConfig
 from tqdm.auto import tqdm
 
+
+class CodeType(enum.Enum):
+    """Enum for the type of code."""
+
+    STATIC_CATEGORICAL = "STATIC_CATEGORICAL"
+    DYNAMIC_CATEGORICAL = "DYNAMIC_CATEGORICAL"
+    STATIC_CONTINUOUS = "STATIC_CONTINUOUS"
+    DYNAMIC_CONTINUOUS = "DYNAMIC_CONTINUOUS"
+
+
 DF_T = pl.DataFrame
+WRITE_USE_PYARROW = True
 
 
 def load_meds_data(MEDS_cohort_dir: str) -> Mapping[str, pl.DataFrame]:
@@ -123,7 +135,7 @@ def store_params_json(params_fp: Path, cfg: DictConfig, sp_subjects: Mapping[str
     return params
 
 
-def _write_df(cls, df: DF_T, fp: Path, **kwargs):
+def _write_df(df: DF_T, fp: Path, **kwargs):
     """Write shard to disk."""
     do_overwrite = kwargs.get("do_overwrite", False)
 
@@ -133,76 +145,79 @@ def _write_df(cls, df: DF_T, fp: Path, **kwargs):
     fp.parent.mkdir(exist_ok=True, parents=True)
 
     if isinstance(df, pl.LazyFrame):
-        df.collect().write_parquet(fp, use_pyarrow=cls.WRITE_USE_PYARROW)
+        df.collect().write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
     else:
-        df.write_parquet(fp, use_pyarrow=cls.WRITE_USE_PYARROW)
+        df.write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
 
 
-def _get_flat_col_dtype(self, col: str) -> pl.DataType:
+def get_smallest_valid_uint_type(num: int | float | pl.Expr) -> pl.DataType:
+    """Returns the smallest valid unsigned integral type for an ID variable with `num` unique options.
+
+    Args:
+        num: The number of IDs that must be uniquely expressed.
+
+    Raises:
+        ValueError: If there is no unsigned int type big enough to express the passed number of ID
+            variables.
+
+    Examples:
+        >>> import polars as pl
+        >>> Dataset.get_smallest_valid_uint_type(num=1)
+        UInt8
+        >>> Dataset.get_smallest_valid_uint_type(num=2**8-1)
+        UInt16
+        >>> Dataset.get_smallest_valid_uint_type(num=2**16-1)
+        UInt32
+        >>> Dataset.get_smallest_valid_uint_type(num=2**32-1)
+        UInt64
+        >>> Dataset.get_smallest_valid_uint_type(num=2**64-1)
+        Traceback (most recent call last):
+            ...
+        ValueError: Value is too large to be expressed as an int!
+    """
+    if num >= (2**64) - 1:
+        raise ValueError("Value is too large to be expressed as an int!")
+    if num >= (2**32) - 1:
+        return pl.UInt64
+    elif num >= (2**16) - 1:
+        return pl.UInt32
+    elif num >= (2**8) - 1:
+        return pl.UInt16
+    else:
+        return pl.UInt8
+
+
+def _get_flat_col_dtype(col: str) -> pl.DataType:
     """Gets the appropriate minimal dtype for the given flat representation column string."""
 
-    parts = col.split("/")
-    if len(parts) < 4:
-        raise ValueError(f"Malformed column {col}. Should be temporal/measurement/feature/agg")
-
-    temp, meas = parts[0], parts[1]
-    agg = parts[-1]
-    feature = "/".join(parts[2:-1])
-
-    cfg = self.measurement_configs[meas]
+    code_type, code, agg = _parse_flat_feature_column(col)
 
     match agg:
-        case "sum" | "sum_sqd" | "min" | "max" | "value":
+        case "sum" | "sum_sqd" | "min" | "max" | "value" | "first":
             return pl.Float32
         case "present":
             return pl.Boolean
         case "count" | "has_values_count":
-            # config.observation_rate_over_cases = total_observed / total_possible
-            # config.observation_rate_per_case = raw_total_observed / total_observed
-
-            match temp:
-                case "static":
-                    n_possible = len(self.subject_ids)
-                case str() | "dynamic":
-                    n_possible = sum(self.n_events_per_subject.values())
-                case _:
-                    raise ValueError(
-                        f"Column name {col} malformed: Temporality {temp} not in `static` or `dynamic"
-                    )
-
-            if cfg.vocabulary is None:
-                observation_frequency = cfg.observation_rate_per_case * cfg.observation_rate_over_cases
-            else:
-                if feature not in cfg.vocabulary.idxmap:
-                    raise ValueError(f"Column name {col} malformed: Feature {feature} not in {meas}!")
-                else:
-                    observation_frequency = cfg.vocabulary.obs_frequencies[cfg.vocabulary[feature]]
-
-            total_observations = int(np.ceil(observation_frequency * n_possible))
-
-            return self.get_smallest_valid_uint_type(total_observations)
+            return pl.UInt32
+            # TODO: reduce the dtype to the smallest possible unsigned int type
+            # return get_smallest_valid_uint_type(total_observations)
         case _:
             raise ValueError(f"Column name {col} malformed!")
 
 
 def _normalize_flat_rep_df_cols(
-    flat_df: DF_T, feature_columns: list[str] | None = None, set_count_0_to_null: bool = False
+    flat_df: DF_T, feature_columns: list[str], set_count_0_to_null: bool = False
 ) -> DF_T:
-    if feature_columns is None:
-        feature_columns = [x for x in flat_df.columns if x not in ("subject_id", "timestamp")]
-        cols_to_add = set()
-        cols_to_retype = set(feature_columns)
-    else:
-        cols_to_add = set(feature_columns) - set(flat_df.columns)
-        cols_to_retype = set(feature_columns).intersection(set(flat_df.columns))
+    cols_to_add = set(feature_columns) - set(flat_df.columns)
+    cols_to_retype = set(feature_columns).intersection(set(flat_df.columns))
 
     cols_to_add = [(c, _get_flat_col_dtype(c)) for c in cols_to_add]
     cols_to_retype = [(c, _get_flat_col_dtype(c)) for c in cols_to_retype]
 
     if "timestamp" in flat_df.columns:
-        key_cols = ["subject_id", "timestamp"]
+        key_cols = ["patient_id", "timestamp"]
     else:
-        key_cols = ["subject_id"]
+        key_cols = ["patient_id"]
 
     flat_df = flat_df.with_columns(
         *[pl.lit(None, dtype=dt).alias(c) for c, dt in cols_to_add],
@@ -236,7 +251,7 @@ def _summarize_dynamic_measurements(
 
     valid_measures = {}
     for feat_col in feature_columns:
-        temp, meas, feat, _ = self._parse_flat_feature_column(feat_col)
+        temp, meas, feat = self._parse_flat_feature_column(feat_col)
 
         if temp != "dynamic":
             continue
@@ -419,117 +434,182 @@ def _summarize_over_window(df: DF_T, window_size: str) -> pl.LazyFrame:
 
 
 def _get_flat_ts_rep(
-    self,
     feature_columns: list[str],
     **kwargs,
 ) -> pl.LazyFrame:
     """Produce raw representation for dynamic data."""
+
     return _normalize_flat_rep_df_cols(
         _summarize_dynamic_measurements(feature_columns, **kwargs)
-        .drop("event_id")
         .sort(by=["subject_id", "timestamp"])
         .collect()
         .lazy(),
-        [c for c in feature_columns if not c.startswith("static/")],
+        [c for c in feature_columns if c.startswith("dynamic")],
     )
     # The above .collect().lazy() shouldn't be necessary but it appears to be for some reason...
 
 
-def _get_flat_static_rep(
-    self,
+def _parse_flat_feature_column(c: str) -> tuple[str, str, str, str]:
+    parts = c.split("/")
+    if len(parts) < 3:
+        raise ValueError(f"Column {c} is not a valid flat feature column!")
+    return (parts[0], "/".join(parts[1:-1]), parts[-1])
+
+
+def _summarize_static_measurements(
     feature_columns: list[str],
-    **kwargs,
+    df: DF_T,
+) -> pl.LazyFrame:
+    static_present = [c for c in feature_columns if c.startswith("STATIC_") and c.endswith("present")]
+    static_first = [c for c in feature_columns if c.startswith("STATIC_") and c.endswith("first")]
+
+    static_first_codes = [_parse_flat_feature_column(c)[1] for c in static_first]
+    code_subset = df.filter(pl.col("code").is_in(static_first_codes))
+    first_code_subset = code_subset.groupby(pl.col("patient_id")).first().collect()
+    static_value_pivot_df = first_code_subset.pivot(
+        index=["patient_id"], columns=["code"], values=["numerical_value"], aggregate_function=None
+    )
+    # rename code to feature name
+    remap_cols = {
+        input_name: output_name
+        for input_name, output_name in zip(static_first_codes, static_first)
+        if input_name in static_value_pivot_df.columns
+    }
+    static_value_pivot_df = static_value_pivot_df.select(
+        *["patient_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
+    )
+    # pivot can be faster: https://stackoverflow.com/questions/73522017/replacing-a-pivot-with-a-lazy-groupby-operation # noqa: E501
+    # maybe cast with .cast(pl.Float32))
+
+    static_present_codes = [_parse_flat_feature_column(c)[1] for c in static_present]
+    static_present_pivot_df = (
+        df.select(*["patient_id", "code"])
+        .filter(pl.col("code").is_in(static_present_codes))
+        .with_columns(pl.lit(True).alias("__indicator"))
+        .collect()
+        .pivot(
+            index=["patient_id"],
+            columns=["code"],
+            values="__indicator",
+            aggregate_function=None,
+        )
+    )
+    remap_cols = {
+        input_name: output_name
+        for input_name, output_name in zip(static_present_codes, static_present)
+        if input_name in static_present_pivot_df.columns
+    }
+    # rename columns to final feature names
+    static_present_pivot_df = static_present_pivot_df.select(
+        *["patient_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
+    )
+    return pl.concat([static_value_pivot_df, static_present_pivot_df], how="align")
+
+
+def _get_flat_static_rep(
+    feature_columns: list[str],
+    shard_df: DF_T,
 ) -> pl.LazyFrame:
     """Produce raw representation for static data."""
-    static_features = [c for c in feature_columns if c.startswith("static/")]
-    return self._normalize_flat_rep_df_cols(
-        self._summarize_static_measurements(static_features, **kwargs).collect().lazy(),
+    static_features = [c for c in feature_columns if c.startswith("STATIC_")]
+    static_measurements = _summarize_static_measurements(static_features, df=shard_df)
+    # fill up missing feature columns with nulls
+    normalized_measurements = _normalize_flat_rep_df_cols(
+        static_measurements,
         static_features,
         set_count_0_to_null=False,
     )
+    return normalized_measurements
 
 
-def _get_flat_rep_feature_cols(
-    self,
-    feature_inclusion_frequency: float | dict[str, float] | None = None,
-    window_sizes: list[str] | None = None,
-    include_only_measurements: set[str] | None = None,
-) -> list[str]:
+def evaluate_code_properties(df, cfg):
+    """Evaluates and categorizes each code in a dataframe based on its timestamp presence and numerical
+    values.
+
+    This function categorizes codes as 'dynamic' or 'static' based on the presence
+    of timestamps, and as 'continuous' or 'categorical' based on the presence of
+    numerical values. A code is considered:
+    - Dynamic if the ratio of present timestamps to its total occurrences exceeds
+    the configured dynamic threshold.
+    - Continuous if the ratio of non-null numerical values to total occurrences
+    exceeds the numerical value threshold
+      and there is more than one unique numerical value.
+
+    Parameters:
+    - df (DataFrame): The dataframe containing the codes and their attributes.
+    - cfg (dict): Configuration dictionary with keys 'dynamic_threshold', 'numerical_value_threshold',
+      and 'min_code_inclusion_frequency' to determine the thresholds for categorizing codes.
+
+    Returns:
+    - dict: A dictionary with code as keys and their properties (e.g., 'dynamic_continuous') as values.
+        Codes with total occurrences less than 'min_code_inclusion_frequency' are excluded.
+
+    Examples:
+    >>> import polars as pl
+    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+    ...         'timestamp': [None, '2021-01-01', None, '2021-01-02', '2021-01-03', '2021-01-04', None],
+    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
+    >>> df = pl.DataFrame(data)
+    >>> cfg = {'dynamic_threshold': 0.5, 'numerical_value_threshold': 0.5, 'min_code_inclusion_frequency': 1}
+    >>> evaluate_code_properties(df, cfg)
+    {'A': 'static_categorical', 'B': 'dynamic_continuous', 'C': 'dynamic_categorical'}
     """
-    process aggregations and select which columns get which aggregations
-        1. static
-                1. code & no numerical_values
-                2. numerical_values
-        2. dynamic
-                1. codes -> aggs applied to all codes
-                2. numerical_values -> continuous aggs
-    """
-    feature_inclusion_frequency, include_only_measurements = self._resolve_flat_rep_cache_params(
-        feature_inclusion_frequency, include_only_measurements
-    )
-    feature_columns = []
-    for m, cfg in self.measurement_configs.items():
-        if m not in include_only_measurements:
+    code_properties = OrderedDict()
+    for code in df.select(pl.col("code").unique()).collect().to_series():
+        # Determine total count, timestamp count, and numerical count
+        code_data = df.filter(pl.col("code") == code)
+        total_count = code_data.select(pl.count("code")).collect().item()
+        if total_count < cfg["min_code_inclusion_frequency"]:
             continue
 
-        features = None
-        if cfg.vocabulary is not None:
-            vocab = copy.deepcopy(cfg.vocabulary)
-            if feature_inclusion_frequency is not None:
-                m_freq = feature_inclusion_frequency[m]
-                vocab.filter(total_observations=None, min_valid_element_freq=m_freq)
-            features = vocab.vocabulary
-        # elif cfg.modality == DataModality.UNIVARIATE_REGRESSION:
-        #     features = [m]
-        else:
-            raise ValueError(f"Config with modality {cfg.modality} should have a Vocabulary!")
-        temps = []
-        aggs = []
+        timestamp_count = code_data.select(pl.col("timestamp").count()).collect().item()
+        numerical_count = code_data.select(pl.col("numerical_value").count()).collect().item()
 
-        # match cfg.temporality:
-        #     case TemporalityType.STATIC:
-        #         temps = [str(cfg.temporality)]
-        #         match cfg.modality:
-        #             case DataModality.UNIVARIATE_REGRESSION:
-        #                 aggs = ["value"]
-        #             case DataModality.SINGLE_LABEL_CLASSIFICATION:
-        #                 aggs = ["present"]
-        #             case _:
-        #                 raise ValueError(f"{cfg.modality} invalid with {cfg.temporality}")
-        #     case TemporalityType.FUNCTIONAL_TIME_DEPENDENT if window_sizes is None:
-        #         temps = [str(cfg.temporality)]
-        #         match cfg.modality:
-        #             case DataModality.UNIVARIATE_REGRESSION:
-        #                 aggs = ["value"]
-        #             case DataModality.SINGLE_LABEL_CLASSIFICATION:
-        #                 aggs = ["present"]
-        #             case _:
-        #                 raise ValueError(f"{cfg.modality} invalid with {cfg.temporality}")
-        #     case TemporalityType.FUNCTIONAL_TIME_DEPENDENT if window_sizes is not None:
-        #         temps = window_sizes
-        #         match cfg.modality:
-        #             case DataModality.UNIVARIATE_REGRESSION:
-        #                 aggs = ["count", "has_values_count", "sum", "sum_sqd", "min", "max"]
-        #             case DataModality.SINGLE_LABEL_CLASSIFICATION:
-        #                 aggs = ["count"]
-        #             case _:
-        #                 raise ValueError(f"{cfg.modality} invalid with {cfg.temporality}")
-        #     case TemporalityType.DYNAMIC:
-        #         temps = [str(cfg.temporality)] if window_sizes is None else window_sizes
-        #         match cfg.modality:
-        #             case DataModality.UNIVARIATE_REGRESSION | DataModality.MULTIVARIATE_REGRESSION:
-        #                 aggs = ["count", "has_values_count", "sum", "sum_sqd", "min", "max"]
-        #             case DataModality.MULTI_LABEL_CLASSIFICATION:
-        #                 aggs = ["count"]
-        #             case _:
-        #                 raise ValueError(f"{cfg.modality} invalid with {cfg.temporality}")
+        # Determine dynamic vs static
+        is_dynamic = (timestamp_count / total_count) > cfg["dynamic_threshold"]
 
-        for temp in temps:
-            for feature in features:
-                for agg in aggs:
-                    feature_columns.append(f"{temp}/{m}/{feature}/{agg}")
+        # Determine categorical vs continuous
+        is_continuous = (numerical_count / total_count) > cfg[
+            "numerical_value_threshold"
+        ] and code_data.select(pl.col("numerical_value").n_unique()).collect().item() > 1
 
-    return sorted(feature_columns)
+        match (is_dynamic, is_continuous):
+            case (False, False):
+                code_properties[code] = CodeType.STATIC_CATEGORICAL
+            case (False, True):
+                code_properties[code] = CodeType.STATIC_CONTINUOUS
+            case (True, False):
+                code_properties[code] = CodeType.DYNAMIC_CATEGORICAL
+            case (True, True):
+                code_properties[code] = CodeType.DYNAMIC_CONTINUOUS
+
+    return code_properties
+
+
+def get_code_column(code: str, code_type: CodeType, aggs: Sequence[str]):
+    """Get the column name for a given code and aggregation type."""
+    prefix = f"{code_type.value}/{code}"
+    if code_type == CodeType.STATIC_CATEGORICAL:
+        return [f"{prefix}/present"]
+    elif code_type == CodeType.DYNAMIC_CATEGORICAL:
+        valid_aggs = [agg[4:] for agg in aggs if agg.startswith("code")]
+        return [f"{prefix}/{agg}" for agg in valid_aggs]
+    elif code_type == CodeType.STATIC_CONTINUOUS:
+        return [f"{prefix}/present", f"{prefix}/first"]
+    elif code_type == CodeType.DYNAMIC_CONTINUOUS:
+        valid_aggs = [agg[5:] for agg in aggs if agg.startswith("value")]
+        return [f"{prefix}/{agg}" for agg in valid_aggs]
+    else:
+        raise ValueError(f"Invalid code type: {code_type}")
+
+
+def _get_flat_rep_feature_cols(cfg, split_to_shard_df) -> list[str]:
+    feature_columns = []
+    all_train_data = pl.concat(split_to_shard_df["train"])
+    code_properties = evaluate_code_properties(all_train_data, cfg)
+    for code, code_type in code_properties.items():
+        feature_columns.extend(get_code_column(code, code_type, cfg.aggs))
+    return feature_columns, code_properties
 
 
 def cache_flat_representation(
@@ -586,6 +666,7 @@ def cache_flat_representation(
 
     # for every dataset split, create shards to output flat representations to
     sp_subjects = {}
+    sp_dfs = {}
     for split_name, split_df in split_to_df.items():
         split_patient_ids = (
             split_df.select(pl.col("patient_id").cast(pl.Int32).unique()).collect().to_series().to_list()
@@ -593,33 +674,34 @@ def cache_flat_representation(
         print(len(split_patient_ids))
         if cfg.n_patients_per_sub_shard is None:
             sp_subjects[split_name] = split_patient_ids
+            sp_dfs[split_name] = [split_df]
         else:
             shuffled_patient_ids = rng.permutation(split_patient_ids)
             num_shards = max(len(split_patient_ids) // cfg.n_patients_per_sub_shard, 1)  # must be 1 or larger
             sharded_patient_ids = np.array_split(shuffled_patient_ids, num_shards)
             sp_subjects[split_name] = [shard.tolist() for shard in sharded_patient_ids]
+            sp_dfs[split_name] = [
+                split_df.filter(pl.col("patient_id").is_in(set(shard))) for shard in sharded_patient_ids
+            ]
 
     # store params in json file
     params_fp = flat_dir / "params.json"
-    params = store_params_json(params_fp, cfg, sp_subjects)
+    store_params_json(params_fp, cfg, sp_subjects)
 
     # 0. Identify Output Columns
     # We set window_sizes to None here because we want to get the feature column names for the raw flat
     # representation, not the summarized one.
-    feature_columns = _get_flat_rep_feature_cols(
-        min_code_inclusion_frequency=cfg.min_code_inclusion_frequency,
-        window_sizes=None,
-    )
+    feature_columns, code_properties = _get_flat_rep_feature_cols(cfg, sp_dfs)
 
     # 1. Produce static representation
     static_subdir = flat_dir / "static"
 
     static_dfs = {}
-    for sp, subjects in tqdm(list(params["patient_shard_by_split"].items()), desc="Flattening Splits"):
+    for sp, subjects_dfs in tqdm(list(sp_dfs.items()), desc="Flattening Splits"):
         static_dfs[sp] = []
         sp_dir = static_subdir / sp
 
-        for i, subjects_list in enumerate(tqdm(subjects, desc="Subject chunks", leave=False)):
+        for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
             fp = sp_dir / f"{i}.parquet"
             static_dfs[sp].append(fp)
             if fp.exists():
@@ -630,7 +712,7 @@ def cache_flat_representation(
 
             df = _get_flat_static_rep(
                 feature_columns=feature_columns,
-                include_only_subjects=subjects_list,
+                shard_df=shard_df,
             )
 
             _write_df(df, fp, do_overwrite=cfg.do_overwrite)
@@ -639,11 +721,11 @@ def cache_flat_representation(
     ts_subdir = flat_dir / "at_ts"
 
     ts_dfs = {}
-    for sp, subjects in tqdm(list(params["patient_shard_by_split"].items()), desc="Flattening Splits"):
+    for sp, subjects_dfs in tqdm(list(sp_dfs.items()), desc="Flattening Splits"):
         ts_dfs[sp] = []
         sp_dir = ts_subdir / sp
 
-        for i, subjects_list in enumerate(tqdm(subjects, desc="Subject chunks", leave=False)):
+        for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
             fp = sp_dir / f"{i}.parquet"
             ts_dfs[sp].append(fp)
             if fp.exists():
@@ -654,7 +736,7 @@ def cache_flat_representation(
 
             df = _get_flat_ts_rep(
                 feature_columns=feature_columns,
-                include_only_subjects=subjects_list,
+                shard_df=shard_df,
             )
 
             _write_df(df, fp, do_overwrite=cfg.do_overwrite)
