@@ -13,7 +13,6 @@ VALID_AGGREGATIONS = [
     "value/sum_sqd",
     "value/min",
     "value/max",
-    "value/first",
 ]
 
 
@@ -232,6 +231,11 @@ def generate_summary(
             )
             for df in dfs:
                 if agg.split("/")[0] in [c.split("/")[0] for c in df.columns]:
+                    timestamp_dtype = df.dtypes[df.columns.index("timestamp")]
+                    assert timestamp_dtype in [
+                        pl.Datetime,
+                        pl.Date,
+                    ], f"timestamp must be of type Date, but is {timestamp_dtype}"
                     out_df = _generate_summary(df, window_size, agg)
                     out_dfs.append(out_df)
 

@@ -85,11 +85,18 @@ def summarize_ts_data_over_windows(
 
         split_to_pair_fps[split] = code_value_pairs
 
-    # Example use of split_to_pair_fps
+    # Summarize data and store
+    summary_dir = flat_dir / "summary"
     for split, pairs in split_to_pair_fps.items():
         logger.info(f"Processing {split}:")
         for code_file, value_file in pairs:
             logger.info(f" - Code file: {code_file}, Value file: {value_file}")
-            summary_df = generate_summary(pl.scan_parquet(code_file), pl.scan_parquet(value_file))
+            summary_df = generate_summary(
+                feature_columns,
+                [pl.scan_parquet(code_file), pl.scan_parquet(value_file)],
+                cfg.window_sizes,
+                cfg.aggs,
+            )
+
             shard_number = code_file.stem.rsplit("_", 1)[0]
-            write_df(summary_df, flat_dir / split / f"{shard_number}.parquet")
+            write_df(summary_df, summary_dir / split / f"{shard_number}.parquet")

@@ -54,7 +54,7 @@ def summarize_dynamic_measurements(
         df.select("patient_id", "timestamp", "code", "numerical_value")
         .collect()
         .pivot(
-            index=["patient_id", "timestamp"],
+            index=["patient_id", "timestamp"],  # add row index and set agg to None
             columns=["code"],
             values=["numerical_value"],
             aggregate_function="mean",  # TODO round up counts so they are binary

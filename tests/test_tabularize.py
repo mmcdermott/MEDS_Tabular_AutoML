@@ -113,7 +113,10 @@ def test_tabularize():
         for split, data in MEDS_OUTPUTS.items():
             file_path = MEDS_cohort_dir / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
-            pl.read_csv(StringIO(data)).write_parquet(file_path)
+            df = pl.read_csv(StringIO(data))
+            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S.%f")).write_parquet(
+                file_path
+            )
 
         split_json = json.load(StringIO(SPLITS_JSON))
         splits_fp = MEDS_cohort_dir / "splits.json"
@@ -123,9 +126,8 @@ def test_tabularize():
             "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
             "tabularized_data_dir": str(tabularized_data_dir.resolve()),
             "min_code_inclusion_frequency": 1,
-            "window_sizes": [30, 365, None],
+            "window_sizes": ["30d", "365d", "full"],
             "codes": None,
-            # "aggs": None,
             "n_patients_per_sub_shard": 2,
             "do_overwrite": False,
             "do_update": True,
@@ -160,3 +162,18 @@ def test_tabularize():
         assert set(actual_files) == set(expected_files)
 
         summarize_ts_data_over_windows(cfg)
+        # confirm summary files exist:
+        actual_files = [
+            (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("summary/*/*.parquet"))
+        ]
+        expected_files = [
+            ("train", "1"),
+            ("train", "0"),
+            ("held_out", "0"),
+            ("tuning", "0"),
+        ]
+        assert set(actual_files) == set(expected_files)
+        for f in list(tabularized_data_dir.glob("summary/*/*.parquet")):
+            df = pl.read_parquet(f)
+            assert df.shape[0] > 0
+            assert df.columns == ["hi"]
