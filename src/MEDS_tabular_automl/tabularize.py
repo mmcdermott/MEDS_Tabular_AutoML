@@ -39,7 +39,7 @@ def load_meds_data(MEDS_cohort_dir: str) -> Mapping[str, pl.DataFrame]:
     >>> assert "train" in split_to_df
     >>> assert len(split_to_df) == 3
     >>> assert len(split_to_df["train"]) == 1
-    >>> assert isinstance(split_to_df["train"][0], pl.DataFrame)
+    >>> assert isinstance(split_to_df["train"][0], pl.LazyFrame)
     """
     MEDS_cohort_dir = Path(MEDS_cohort_dir)
     meds_fps = list(MEDS_cohort_dir.glob("*/*.parquet"))
