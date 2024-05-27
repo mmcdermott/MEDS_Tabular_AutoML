@@ -98,7 +98,7 @@ def store_columns(
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
     # create output dir
-    flat_dir = Path(cfg.tabularized_data_dir) / "flat_reps"
+    flat_dir = Path(cfg.tabularized_data_dir)
     flat_dir.mkdir(exist_ok=True, parents=True)
 
     # load MEDS data

@@ -225,7 +225,7 @@ def load_meds_data(MEDS_cohort_dir: str) -> Mapping[str, pl.DataFrame]:
 
 def setup_environment(cfg: DictConfig):
     # check output dir
-    flat_dir = Path(cfg.tabularized_data_dir) / "flat_reps"
+    flat_dir = Path(cfg.tabularized_data_dir)
     assert flat_dir.exists()
 
     # load MEDS data

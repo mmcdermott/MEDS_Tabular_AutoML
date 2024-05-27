@@ -104,11 +104,10 @@ MEDS_OUTPUTS = {
 def test_tabularize():
     with tempfile.TemporaryDirectory() as d:
         MEDS_cohort_dir = Path(d) / "MEDS_cohort"
-        tabularized_data_dir = Path(d) / "cached_reps"
+        tabularized_data_dir = Path(d) / "flat_reps"
 
         # Create the directories
         MEDS_cohort_dir.mkdir()
-        tabularized_data_dir.mkdir()
 
         # Store MEDS outputs
         for split, data in MEDS_OUTPUTS.items():
@@ -140,5 +139,24 @@ def test_tabularize():
         logger.info("caching flat representation of MEDS data")
         store_columns(cfg)
         tabularize_static_data(cfg)
+        actual_files = [
+            (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("static/*/*.parquet"))
+        ]
+        expected_files = [("train", "1"), ("train", "0"), ("held_out", "0"), ("tuning", "0")]
+        assert set(actual_files) == set(expected_files)
         tabularize_ts_data(cfg)
+        # confirm the time series files exist:
+        actual_files = [(f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("ts/*/*.parquet"))]
+        expected_files = [
+            ("train", "1_value"),
+            ("train", "0_code"),
+            ("train", "0_value"),
+            ("train", "1_code"),
+            ("held_out", "0_code"),
+            ("held_out", "0_value"),
+            ("tuning", "0_code"),
+            ("tuning", "0_value"),
+        ]
+        assert set(actual_files) == set(expected_files)
+
         summarize_ts_data_over_windows(cfg)
