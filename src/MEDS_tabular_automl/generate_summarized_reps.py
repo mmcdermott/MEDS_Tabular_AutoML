@@ -145,10 +145,10 @@ def _generate_summary(df: DF_T, window_size: str, agg: str) -> pl.LazyFrame:
         │ 2          ┆ 2021-01-04 ┆ 0                ┆ 1                │
         └────────────┴────────────┴──────────────────┴──────────────────┘
     """
-    assert agg in VALID_AGGREGATIONS, f"Invalid aggregation: {agg}"
-    assert agg.split("/")[0] in [
-        c.split("/")[0] for c in df.columns
-    ], f"df is invalid, no column with prefix: `{agg.split('/')[0]}`"
+    if agg not in VALID_AGGREGATIONS:
+        raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
+    if agg.split("/")[0] not in [c.split("/")[0] for c in df.columns]:
+        raise ValueError(f"DataFrame is invalid, no column with prefix: `{agg.split('/')[0]}`")
 
     if window_size == "full":
         out_df = df.groupby("patient_id").agg(
