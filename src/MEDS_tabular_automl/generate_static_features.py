@@ -10,11 +10,7 @@ Functions:
 
 import polars as pl
 
-from MEDS_tabular_automl.utils import (
-    DF_T,
-    _normalize_flat_rep_df_cols,
-    _parse_flat_feature_column,
-)
+from MEDS_tabular_automl.utils import DF_T, add_missing_cols, parse_flat_feature_column
 
 
 def _summarize_static_measurements(
@@ -40,7 +36,7 @@ def _summarize_static_measurements(
     static_first = [c for c in feature_columns if c.startswith("STATIC_") and c.endswith("first")]
 
     # Handling 'first' static values
-    static_first_codes = [_parse_flat_feature_column(c)[1] for c in static_first]
+    static_first_codes = [parse_flat_feature_column(c)[1] for c in static_first]
     code_subset = df.filter(pl.col("code").is_in(static_first_codes))
     first_code_subset = code_subset.groupby(pl.col("patient_id")).first().collect()
     static_value_pivot_df = first_code_subset.pivot(
@@ -59,7 +55,7 @@ def _summarize_static_measurements(
     # TODO: consider casting with .cast(pl.Float32))
 
     # Handling 'present' static indicators
-    static_present_codes = [_parse_flat_feature_column(c)[1] for c in static_present]
+    static_present_codes = [parse_flat_feature_column(c)[1] for c in static_present]
     static_present_pivot_df = (
         df.select(*["patient_id", "code"])
         .filter(pl.col("code").is_in(static_present_codes))
@@ -104,7 +100,7 @@ def get_flat_static_rep(
     static_features = [c for c in feature_columns if c.startswith("STATIC_")]
     static_measurements = _summarize_static_measurements(static_features, df=shard_df)
     # fill up missing feature columns with nulls
-    normalized_measurements = _normalize_flat_rep_df_cols(
+    normalized_measurements = add_missing_cols(
         static_measurements,
         static_features,
         set_count_0_to_null=False,

@@ -11,7 +11,10 @@ import polars as pl
 from hydra import compose, initialize
 from loguru import logger
 
-from MEDS_tabular_automl.tabularize import cache_flat_representation
+from scripts.identify_columns import store_columns
+from scripts.summarize_over_windows import summarize_ts_data_over_windows
+from scripts.tabularize_static import tabularize_static_data
+from scripts.tabularize_ts import tabularize_ts_data
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -134,5 +137,8 @@ def test_tabularize():
         with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
             overrides = [f"{k}={v}" for k, v in tabularize_config_kwargs.items()]
             cfg = compose(config_name="tabularize", overrides=overrides)  # config.yaml
-            logger.info("caching flat representation of MEDS data")
-            cache_flat_representation(cfg)
+        logger.info("caching flat representation of MEDS data")
+        store_columns(cfg)
+        tabularize_static_data(cfg)
+        tabularize_ts_data(cfg)
+        summarize_ts_data_over_windows(cfg)

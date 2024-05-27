@@ -9,11 +9,7 @@ import numpy as np
 import polars as pl
 import polars.selectors as cs
 
-from MEDS_tabular_automl.utils import (
-    DF_T,
-    _normalize_flat_rep_df_cols,
-    _parse_flat_feature_column,
-)
+from MEDS_tabular_automl.utils import DF_T, add_missing_cols, parse_flat_feature_column
 
 
 def _summarize_dynamic_measurements(
@@ -32,7 +28,7 @@ def _summarize_dynamic_measurements(
 
     valid_measures = {}
     for feat_col in feature_columns:
-        temp, meas, feat = _parse_flat_feature_column(feat_col)
+        temp, meas, feat = parse_flat_feature_column(feat_col)
 
         if temp != "dynamic":
             continue
@@ -211,7 +207,7 @@ def _summarize_over_window(df: DF_T, window_size: str) -> pl.LazyFrame:
             cols_to_max.max().map_alias(time_aggd_col_alias_fntr()),
         )
 
-    return _normalize_flat_rep_df_cols(df, set_count_0_to_null=True)
+    return add_missing_cols(df, set_count_0_to_null=True)
 
 
 def get_flat_ts_rep(
@@ -220,7 +216,7 @@ def get_flat_ts_rep(
 ) -> pl.LazyFrame:
     """Produce raw representation for dynamic data."""
 
-    return _normalize_flat_rep_df_cols(
+    return add_missing_cols(
         _summarize_dynamic_measurements(feature_columns, **kwargs)
         .sort(by=["subject_id", "timestamp"])
         .collect()

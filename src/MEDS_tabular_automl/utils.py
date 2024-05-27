@@ -5,30 +5,20 @@ Attributes:
         dataframes, etc.
     DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
-
-import enum
-from collections import OrderedDict
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import polars as pl
 import polars.selectors as cs
+import yaml
+from omegaconf import DictConfig, OmegaConf
 
-
-class CodeType(enum.Enum):
-    """Enum for the type of code."""
-
-    STATIC_CATEGORICAL = "STATIC_CATEGORICAL"
-    DYNAMIC_CATEGORICAL = "DYNAMIC_CATEGORICAL"
-    STATIC_CONTINUOUS = "STATIC_CONTINUOUS"
-    DYNAMIC_CONTINUOUS = "DYNAMIC_CONTINUOUS"
-
-
-DF_T = pl.DataFrame
+DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 
 
-def _parse_flat_feature_column(c: str) -> tuple[str, str, str, str]:
+def parse_flat_feature_column(c: str) -> tuple[str, str, str, str]:
     parts = c.split("/")
     if len(parts) < 3:
         raise ValueError(f"Column {c} is not a valid flat feature column!")
@@ -50,47 +40,10 @@ def write_df(df: DF_T, fp: Path, **kwargs):
         df.write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
 
 
-def get_smallest_valid_uint_type(num: int | float | pl.Expr) -> pl.DataType:
-    """Returns the smallest valid unsigned integral type for an ID variable with `num` unique options.
-
-    Args:
-        num: The number of IDs that must be uniquely expressed.
-
-    Raises:
-        ValueError: If there is no unsigned int type big enough to express the passed number of ID
-            variables.
-
-    Examples:
-        >>> import polars as pl
-        >>> Dataset.get_smallest_valid_uint_type(num=1)
-        UInt8
-        >>> Dataset.get_smallest_valid_uint_type(num=2**8-1)
-        UInt16
-        >>> Dataset.get_smallest_valid_uint_type(num=2**16-1)
-        UInt32
-        >>> Dataset.get_smallest_valid_uint_type(num=2**32-1)
-        UInt64
-        >>> Dataset.get_smallest_valid_uint_type(num=2**64-1)
-        Traceback (most recent call last):
-            ...
-        ValueError: Value is too large to be expressed as an int!
-    """
-    if num >= (2**64) - 1:
-        raise ValueError("Value is too large to be expressed as an int!")
-    if num >= (2**32) - 1:
-        return pl.UInt64
-    elif num >= (2**16) - 1:
-        return pl.UInt32
-    elif num >= (2**8) - 1:
-        return pl.UInt16
-    else:
-        return pl.UInt8
-
-
 def get_flat_col_dtype(col: str) -> pl.DataType:
     """Gets the appropriate minimal dtype for the given flat representation column string."""
 
-    code_type, code, agg = _parse_flat_feature_column(col)
+    code_type, code, agg = parse_flat_feature_column(col)
 
     match agg:
         case "sum" | "sum_sqd" | "min" | "max" | "value" | "first":
@@ -99,15 +52,11 @@ def get_flat_col_dtype(col: str) -> pl.DataType:
             return pl.Boolean
         case "count" | "has_values_count":
             return pl.UInt32
-            # TODO: reduce the dtype to the smallest possible unsigned int type
-            # return get_smallest_valid_uint_type(total_observations)
         case _:
             raise ValueError(f"Column name {col} malformed!")
 
 
-def _normalize_flat_rep_df_cols(
-    flat_df: DF_T, feature_columns: list[str], set_count_0_to_null: bool = False
-) -> DF_T:
+def add_missing_cols(flat_df: DF_T, feature_columns: list[str], set_count_0_to_null: bool = False) -> DF_T:
     """Normalizes columns in a DataFrame so all expected columns are present and appropriately typed.
 
     Parameters:
@@ -149,104 +98,7 @@ def _normalize_flat_rep_df_cols(
     return flat_df
 
 
-def evaluate_code_properties(df, cfg):
-    """Evaluates and categorizes each code in a dataframe based on its timestamp presence and numerical
-    values.
-
-    This function categorizes codes as 'dynamic' or 'static' based on the presence
-    of timestamps, and as 'continuous' or 'categorical' based on the presence of
-    numerical values. A code is considered:
-    - Dynamic if the ratio of present timestamps to its total occurrences exceeds
-    the configured dynamic threshold.
-    - Continuous if the ratio of non-null numerical values to total occurrences
-    exceeds the numerical value threshold
-      and there is more than one unique numerical value.
-
-    Parameters:
-    - df (DataFrame): The dataframe containing the codes and their attributes.
-    - cfg (dict): Configuration dictionary with keys 'dynamic_threshold', 'numerical_value_threshold',
-      and 'min_code_inclusion_frequency' to determine the thresholds for categorizing codes.
-
-    Returns:
-    - dict: A dictionary with code as keys and their properties (e.g., 'dynamic_continuous') as values.
-        Codes with total occurrences less than 'min_code_inclusion_frequency' are excluded.
-
-    Examples:
-    >>> import polars as pl
-    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    ...         'timestamp': [None, '2021-01-01', None, '2021-01-02', '2021-01-03', '2021-01-04', None],
-    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-    >>> df = pl.DataFrame(data)
-    >>> cfg = {'dynamic_threshold': 0.5, 'numerical_value_threshold': 0.5, 'min_code_inclusion_frequency': 1}
-    >>> evaluate_code_properties(df, cfg)
-    {'A': 'static_categorical', 'B': 'dynamic_continuous', 'C': 'dynamic_categorical'}
-    """
-    code_properties = OrderedDict()
-    for code in df.select(pl.col("code").unique()).collect().to_series():
-        # Determine total count, timestamp count, and numerical count
-        code_data = df.filter(pl.col("code") == code)
-        total_count = code_data.select(pl.count("code")).collect().item()
-        if total_count < cfg["min_code_inclusion_frequency"]:
-            continue
-
-        timestamp_count = code_data.select(pl.col("timestamp").count()).collect().item()
-        numerical_count = code_data.select(pl.col("numerical_value").count()).collect().item()
-
-        # Determine dynamic vs static
-        is_dynamic = (timestamp_count / total_count) > cfg["dynamic_threshold"]
-
-        # Determine categorical vs continuous
-        is_continuous = (numerical_count / total_count) > cfg[
-            "numerical_value_threshold"
-        ] and code_data.select(pl.col("numerical_value").n_unique()).collect().item() > 1
-
-        match (is_dynamic, is_continuous):
-            case (False, False):
-                code_properties[code] = CodeType.STATIC_CATEGORICAL
-            case (False, True):
-                code_properties[code] = CodeType.STATIC_CONTINUOUS
-            case (True, False):
-                code_properties[code] = CodeType.DYNAMIC_CATEGORICAL
-            case (True, True):
-                code_properties[code] = CodeType.DYNAMIC_CONTINUOUS
-
-    return code_properties
-
-
-def get_code_column(code: str, code_type: CodeType, aggs: Sequence[str]):
-    """Constructs feature column names based on a given code, its type, and specified aggregations.
-
-    Parameters:
-    - code (str): The specific code identifier for which the feature columns are being generated.
-    - code_type (CodeType): The type of the code (e.g., STATIC_CATEGORICAL, DYNAMIC_CONTINUOUS)
-        that determines how the code is processed.
-    - aggs (Sequence[str]): A list of aggregation operations to apply to the code, e.g.,
-        "count", "sum".
-
-    Returns:
-    - list[str]: A list of fully qualified feature column names constructed based on the
-        code type and applicable aggregations.
-
-    This function builds a list of feature column names using the code and its type to apply
-    the correct prefix and filters applicable aggregations based on whether they are relevant
-    to the code type.
-    """
-    prefix = f"{code_type.value}/{code}"
-    if code_type == CodeType.STATIC_CATEGORICAL:
-        return [f"{prefix}/present"]
-    elif code_type == CodeType.DYNAMIC_CATEGORICAL:
-        valid_aggs = [agg[4:] for agg in aggs if agg.startswith("code")]
-        return [f"{prefix}/{agg}" for agg in valid_aggs]
-    elif code_type == CodeType.STATIC_CONTINUOUS:
-        return [f"{prefix}/present", f"{prefix}/first"]
-    elif code_type == CodeType.DYNAMIC_CONTINUOUS:
-        valid_aggs = [agg[5:] for agg in aggs if agg.startswith("value")]
-        return [f"{prefix}/{agg}" for agg in valid_aggs]
-    else:
-        raise ValueError(f"Invalid code type: {code_type}")
-
-
-def get_flat_rep_feature_cols(cfg, split_to_shard_df) -> list[str]:
+def get_static_feature_cols(shard_df) -> list[str]:
     """Generates a list of feature column names from the data within each shard based on specified
     configurations.
 
@@ -260,10 +112,129 @@ def get_flat_rep_feature_cols(cfg, split_to_shard_df) -> list[str]:
 
     This function evaluates the properties of codes within training data and applies configured
     aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    Examples:
+    >>> import polars as pl
+    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+    ...         'timestamp': [None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None], # noqa: E501
+    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
+    >>> df = pl.DataFrame(data).lazy()
+    >>> get_static_feature_cols(df)
+    ['static/A/first', 'static/A/present', 'static/C/first', 'static/C/present']
     """
     feature_columns = []
-    all_train_data = pl.concat(split_to_shard_df["train"])
-    code_properties = evaluate_code_properties(all_train_data, cfg)
-    for code, code_type in code_properties.items():
-        feature_columns.extend(get_code_column(code, code_type, cfg.aggs))
-    return feature_columns, code_properties
+    static_df = shard_df.filter(pl.col("timestamp").is_null())
+    for code in static_df.select(pl.col("code").unique()).collect().to_series():
+        static_aggregations = [f"static/{code}/present", f"static/{code}/first"]
+        feature_columns.extend(static_aggregations)
+    return sorted(feature_columns)
+
+
+def get_ts_feature_cols(aggregations: list[str], shard_df: DF_T) -> list[str]:
+    """Generates a list of feature column names from the data within each shard based on specified
+    configurations.
+
+    Parameters:
+    - cfg (dict): Configuration dictionary specifying how features should be evaluated and aggregated.
+    - split_to_shard_df (dict): A dictionary of DataFrames, divided by data split (e.g., 'train', 'test').
+
+    Returns:
+    - tuple[list[str], dict]: A tuple containing a list of feature columns and a dictionary of code properties
+        identified during the evaluation.
+
+    This function evaluates the properties of codes within training data and applies configured
+    aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    Examples:
+    >>> import polars as pl
+    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+    ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
+    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
+    >>> df = pl.DataFrame(data).lazy()
+    >>> aggs = ['sum', 'count']
+    >>> get_ts_feature_cols(aggs, df)
+    ['A/count', 'A/sum', 'C/count', 'C/sum']
+    """
+    feature_columns = []
+    ts_df = shard_df.filter(pl.col("timestamp").is_not_null())
+    for code in ts_df.select(pl.col("code").unique()).collect().to_series():
+        ts_aggregations = [f"{code}/{agg}" for agg in aggregations]
+        feature_columns.extend(ts_aggregations)
+    return sorted(feature_columns)
+
+
+def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: DF_T) -> list[str]:
+    """Generates a list of feature column names from the data within each shard based on specified
+    configurations.
+
+    Parameters:
+    - cfg (dict): Configuration dictionary specifying how features should be evaluated and aggregated.
+    - shard_df (DF_T): MEDS format dataframe shard.
+
+    Returns:
+    - list[str]: list of all feature columns.
+
+    This function evaluates the properties of codes within training data and applies configured
+    aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    Example:
+    >>> data = {'code': ['A', 'A', 'B', 'B'],
+    ...         'timestamp': [None, '2021-01-01', None, None],
+    ...         'numerical_value': [1, None, 2, 2]}
+    >>> df = pl.DataFrame(data).lazy()
+    >>> aggs = ['sum', 'count']
+    >>> cfg = DictConfig({'aggs': aggs})
+    >>> get_flat_rep_feature_cols(cfg, df)
+    ['static/A/first', 'static/A/present', 'static/B/first', 'static/B/present', 'A/count', 'A/sum']
+    """
+    static_feature_columns = get_static_feature_cols(shard_df)
+    ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)
+    return static_feature_columns + ts_feature_columns
+
+
+def load_meds_data(MEDS_cohort_dir: str) -> Mapping[str, pl.DataFrame]:
+    """Loads the MEDS dataset from disk.
+
+    Args:
+        MEDS_cohort_dir: The directory containing the MEDS datasets split by subfolders.
+            We expect `train` to be a split so `MEDS_cohort_dir/train` should exist.
+
+    Returns:
+        Mapping[str, pl.DataFrame]: Mapping from split name to a polars DataFrame containing the MEDS dataset.
+
+    Example:
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> MEDS_cohort_dir = Path(tempfile.mkdtemp())
+    >>> for split in ["train", "val", "test"]:
+    ...     split_dir = MEDS_cohort_dir / split
+    ...     split_dir.mkdir()
+    ...     pl.DataFrame({"patient_id": [1, 2, 3]}).write_parquet(split_dir / "data.parquet")
+    >>> split_to_df = load_meds_data(MEDS_cohort_dir)
+    >>> assert "train" in split_to_df
+    >>> assert len(split_to_df) == 3
+    >>> assert len(split_to_df["train"]) == 1
+    >>> assert isinstance(split_to_df["train"][0], pl.DataFrame)
+    """
+    MEDS_cohort_dir = Path(MEDS_cohort_dir)
+    meds_fps = list(MEDS_cohort_dir.glob("*/*.parquet"))
+    splits = {fp.parent.stem for fp in meds_fps}
+    split_to_fps = {split: [fp for fp in meds_fps if fp.parent.stem == split] for split in splits}
+    split_to_df = {
+        split: [pl.scan_parquet(fp) for fp in split_fps] for split, split_fps in split_to_fps.items()
+    }
+    return split_to_df
+
+
+def setup_environment(cfg: DictConfig):
+    # check output dir
+    flat_dir = Path(cfg.tabularized_data_dir) / "flat_reps"
+    assert flat_dir.exists()
+
+    # load MEDS data
+    split_to_df = load_meds_data(cfg.MEDS_cohort_dir)
+    feature_columns = json.load(open(flat_dir / "feature_columns.json"))
+
+    # Check that the stored config matches the current config
+    with open(flat_dir / "config.yaml") as file:
+        yaml_config = yaml.safe_load(file)
+        stored_config = OmegaConf.create(yaml_config)
+    assert stored_config == cfg, "Stored config does not match current config."
+    return flat_dir, split_to_df, feature_columns
