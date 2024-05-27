@@ -17,7 +17,8 @@ VALID_AGGREGATIONS = [
 
 
 def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]:
-    assert agg is not None, "agg must be provided"
+    if agg is None:
+        raise ValueError("Aggregation type 'agg' must be provided")
 
     def f(c: str) -> str:
         return "/".join([window_size] + c.split("/") + [agg])
@@ -53,7 +54,7 @@ def get_agg_pl_expr(window_size: str, agg: str):
             case "value/max":
                 value_cols.cummax().map_alias(time_aggd_col_alias_fntr(window_size, "max"))
             case _:
-                raise ValueError(f"Invalid aggregation `{agg}` for window_size `{window_size}`")
+                raise ValueError(f"Invalid aggregation '{agg}' provided for window_size '{window_size}'. Please choose from the valid options: {VALID_AGGREGATIONS}")
     else:
         match agg:
             case "code/count":
@@ -143,10 +144,10 @@ def _generate_summary(df: DF_T, window_size: str, agg: str) -> pl.LazyFrame:
         │ 2          ┆ 2021-01-04 ┆ 0                ┆ 1                │
         └────────────┴────────────┴──────────────────┴──────────────────┘
     """
-    assert agg in VALID_AGGREGATIONS, f"Invalid aggregation: {agg}"
-    assert agg.split("/")[0] in [
-        c.split("/")[0] for c in df.columns
-    ], f"df is invalid, no column with prefix: `{agg.split('/')[0]}`"
+    if agg not in VALID_AGGREGATIONS:
+        raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
+    if agg.split("/")[0] not in [c.split("/")[0] for c in df.columns]:
+        raise ValueError(f"DataFrame is invalid, no column with prefix: `{agg.split('/')[0]}`")
 
     if window_size == "full":
         out_df = df.groupby("patient_id").agg(
