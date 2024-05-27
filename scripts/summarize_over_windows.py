@@ -1,10 +1,15 @@
 """WIP."""
 
 
+from pathlib import Path
+
 import hydra
+import polars as pl
+from loguru import logger
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.utils import setup_environment
+from MEDS_tabular_automl.generate_summarized_reps import generate_summary
+from MEDS_tabular_automl.utils import setup_environment, write_df
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
@@ -50,4 +55,41 @@ def summarize_ts_data_over_windows(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
-    setup_environment(cfg)
+    flat_dir, _, feature_columns = setup_environment(cfg)
+
+    # Assuming MEDS_cohort_dir is correctly defined somewhere above this snippet
+    ts_dir = Path(cfg.tabularized_data_dir) / "ts"
+    ts_fps = list(ts_dir.glob("*/*.parquet"))
+    splits = {fp.parent.stem for fp in ts_fps}
+
+    split_to_pair_fps = {}
+    for split in splits:
+        # Categorize files by identifier (base name without '_code' or '_value') using a list comprehension
+        categorized_files = {
+            file.stem.rsplit("_", 1)[0]: {"code": None, "value": None}
+            for file in ts_fps
+            if file.parent.stem == split
+        }
+        for file in ts_fps:
+            if file.parent.stem == split:
+                identifier = file.stem.rsplit("_", 1)[0]
+                suffix = file.stem.split("_")[-1]  # 'code' or 'value'
+                categorized_files[identifier][suffix] = file
+
+        # Process categorized files into pairs ensuring code is first and value is second
+        code_value_pairs = [
+            (info["code"], info["value"])
+            for info in categorized_files.values()
+            if info["code"] is not None and info["value"] is not None
+        ]
+
+        split_to_pair_fps[split] = code_value_pairs
+
+    # Example use of split_to_pair_fps
+    for split, pairs in split_to_pair_fps.items():
+        logger.info(f"Processing {split}:")
+        for code_file, value_file in pairs:
+            logger.info(f" - Code file: {code_file}, Value file: {value_file}")
+            summary_df = generate_summary(pl.scan_parquet(code_file), pl.scan_parquet(value_file))
+            shard_number = code_file.stem.rsplit("_", 1)[0]
+            write_df(summary_df, flat_dir / split / f"{shard_number}.parquet")

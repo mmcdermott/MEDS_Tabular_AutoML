@@ -13,7 +13,7 @@ import polars as pl
 from MEDS_tabular_automl.utils import DF_T, add_missing_cols, parse_flat_feature_column
 
 
-def _summarize_static_measurements(
+def summarize_static_measurements(
     feature_columns: list[str],
     df: DF_T,
 ) -> pl.LazyFrame:
@@ -98,7 +98,7 @@ def get_flat_static_rep(
     suitable for further analysis or machine learning tasks.
     """
     static_features = [c for c in feature_columns if c.startswith("STATIC_")]
-    static_measurements = _summarize_static_measurements(static_features, df=shard_df)
+    static_measurements = summarize_static_measurements(static_features, df=shard_df)
     # fill up missing feature columns with nulls
     normalized_measurements = add_missing_cols(
         static_measurements,

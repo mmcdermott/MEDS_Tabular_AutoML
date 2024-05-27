@@ -8,18 +8,14 @@ window_sizes: ???
 codes: null
 aggs:
   - "code/count"
-  - "code/time_since_last"
-  - "code/time_since_first"
+  - "code/present"
   - "value/count"
+  - "value/present"
   - "value/sum"
   - "value/sum_sqd"
   - "value/min"
-  - "value/time_since_min"
   - "value/max"
-  - "value/time_since_max"
-  - "value/last"
-  - "value/slope"
-  - "value/intercept"
+  - "value/first"
 dynamic_threshold: 0.01
 numerical_value_threshold: 0.1
 

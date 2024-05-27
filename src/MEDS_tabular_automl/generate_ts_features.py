@@ -2,18 +2,6 @@ import polars as pl
 
 from MEDS_tabular_automl.utils import DF_T
 
-VALID_AGGREGATIONS = [
-    "sum",
-    "sum_sqd",
-    "min",
-    "max",
-    "value",
-    "first",
-    "present",
-    "count",
-    "has_values_count",
-]
-
 
 def summarize_dynamic_measurements(
     ts_columns: list[str],
