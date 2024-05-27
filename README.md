@@ -42,6 +42,11 @@ must inherently do a base level of preprocessing over the MEDS data, then will c
 representation that respects the overall sharding of the raw data. This script uses [Hydra](https://hydra.cc/)
 to manage configuration, and the configuration file is located at `configs/tabularize.yaml`.
 
+Tabularization will take as input a MEDS dataset in a directory we'll denote `$MEDS_cohort_dir` and will write out a collection of tabularization files to disk in subdirectories of this cohort directory. In particular for a given shard prefix in the raw MEDS cohort (e.g., `train/0`, `held_out/1`, etc.)
+  1. In `$MEDS_cohort_dir/tabularized/static/$SHARD_PREFIX.parquet` will be tabularized, wide-format representations of code / value occurrences with null timestamps. In the case that sub-sharding is needed, sub-shards will instead be written as sub-directories of this base directory: `$MEDS_cohort_dir/tabularized/static/$SHARD_PREFIX/$SUB_SHARD.parquet`. This sub-sharding pattern will hold for all files and not be subsequently measured.
+  2. In `$MEDS_cohort_dir/tabularized/at_observation/$SHARD_PREFIX.parquet` will be tabularized, wide-format representations of code / value observations for all observations of patient data with a non-null timestamp.
+  3. In `$MEDS_cohort_dir/tabularized/over_window/$WINDOW_SIZE/$SHARD_PREFIX.parquet` will be tabularized, wide-format summarization of the code / value occurrences over a window of size `$WINDOW_SIZE` as of the index date at the row's timestamp.
+
 ## AutoML Pipelines
 
 # TODOs
