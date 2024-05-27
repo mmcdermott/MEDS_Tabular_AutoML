@@ -55,7 +55,7 @@ def get_agg_pl_expr(window_size: str, agg: str):
             case "value/max":
                 value_cols.cummax().map_alias(time_aggd_col_alias_fntr(window_size, "max"))
             case _:
-                raise ValueError(f"Invalid aggregation `{agg}` for window_size `{window_size}`")
+                raise ValueError(f"Invalid aggregation '{agg}' provided for window_size '{window_size}'. Please choose from the valid options: {VALID_AGGREGATIONS}")
     else:
         match agg:
             case "code/count":
