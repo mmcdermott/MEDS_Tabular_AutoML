@@ -18,7 +18,8 @@ VALID_AGGREGATIONS = [
 
 
 def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]:
-    assert agg is not None, "agg must be provided"
+    if agg is None:
+        raise ValueError("Aggregation type 'agg' must be provided")
 
     def f(c: str) -> str:
         return "/".join([window_size] + c.split("/") + [agg])
