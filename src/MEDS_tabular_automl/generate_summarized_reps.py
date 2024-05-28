@@ -134,13 +134,13 @@ def _generate_summary(df: DF_T, window_size: str, agg: str) -> pl.LazyFrame:
         raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
     id_cols = [ROW_IDX_NAME, "patient_id"]
     if window_size == "full":
-        out_df = df.groupby(id_cols).agg(
+        out_df = df.group_by(id_cols).agg(
             "timestamp",
             get_agg_pl_expr(window_size, agg),
         )
         out_df = out_df.explode(*[c for c in out_df.columns if c not in id_cols])
     else:
-        out_df = df.groupby_rolling(
+        out_df = df.rolling(
             index_column="timestamp",
             by=id_cols,
             period=window_size,

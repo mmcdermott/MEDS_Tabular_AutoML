@@ -2,7 +2,6 @@
 """Tabularizes time-series data in MEDS format into tabular representations."""
 import hydra
 from omegaconf import DictConfig
-from tqdm import tqdm
 
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.utils import setup_environment, write_df
@@ -26,10 +25,10 @@ def tabularize_ts_data(
     # Produce ts representation
     ts_subdir = flat_dir / "ts"
 
-    for sp, subjects_dfs in tqdm(list(split_to_df.items()), desc="Flattening Splits"):
+    for sp, subjects_dfs in split_to_df.items():
         sp_dir = ts_subdir / sp
 
-        for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
+        for i, shard_df in enumerate(subjects_dfs):
             pivot_fp = sp_dir / f"{i}.parquet"
             if pivot_fp.exists() and not cfg.do_overwrite:
                 raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {pivot_fp.exists()} exists!")

@@ -38,7 +38,7 @@ def summarize_static_measurements(
     # Handling 'first' static values
     static_first_codes = [parse_flat_feature_column(c)[1] for c in static_first]
     code_subset = df.filter(pl.col("code").is_in(static_first_codes))
-    first_code_subset = code_subset.groupby(pl.col("patient_id")).first().collect()
+    first_code_subset = code_subset.group_by(pl.col("patient_id")).first().collect()
     static_value_pivot_df = first_code_subset.pivot(
         index=["patient_id"], columns=["code"], values=["numerical_value"], aggregate_function=None
     )

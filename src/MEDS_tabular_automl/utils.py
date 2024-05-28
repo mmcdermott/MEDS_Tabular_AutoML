@@ -116,7 +116,9 @@ def get_static_feature_cols(shard_df) -> list[str]:
     Examples:
     >>> import polars as pl
     >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    ...         'timestamp': [None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None], # noqa: E501
+    ...         'timestamp': [
+    ...             None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None
+    ...         ],
     ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
     >>> df = pl.DataFrame(data).lazy()
     >>> get_static_feature_cols(df)
@@ -182,8 +184,9 @@ def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: DF_T) -> list[str]:
     >>> df = pl.DataFrame(data).lazy()
     >>> aggs = ['value/sum', 'code/count']
     >>> cfg = DictConfig({'aggs': aggs})
-    >>> get_flat_rep_feature_cols(cfg, df)
-    ['A/static/first', 'A/static/present', 'B/static/first', 'B/static/present', 'A/code/count', 'A/value/sum'] # noqa: 501
+    >>> get_flat_rep_feature_cols(cfg, df) # doctest: +NORMALIZE_WHITESPACE
+    ['A/static/first', 'A/static/present', 'B/static/first', 'B/static/present', 'A/code/count',
+     'A/value/sum']
     """
     static_feature_columns = get_static_feature_cols(shard_df)
     ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from tqdm.auto import tqdm
 
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.utils import setup_environment, write_df
@@ -99,11 +98,11 @@ def tabularize_static_data(
     static_subdir = flat_dir / "static"
 
     static_dfs = {}
-    for sp, subjects_dfs in tqdm(list(split_to_df.items()), desc="Flattening Splits"):
+    for sp, subjects_dfs in split_to_df.items():
         static_dfs[sp] = []
         sp_dir = static_subdir / sp
 
-        for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
+        for i, shard_df in enumerate(subjects_dfs):
             fp = sp_dir / f"{i}.parquet"
             static_dfs[sp].append(fp)
             if fp.exists() and not cfg.do_overwrite:
