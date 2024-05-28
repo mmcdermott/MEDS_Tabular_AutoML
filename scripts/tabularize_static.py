@@ -1,10 +1,5 @@
-"""The base class for core dataset processing logic.
-
-Attributes:
-    INPUT_DF_T: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
-        dataframes, etc.
-    DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
-"""
+#!/usr/bin/env python
+"""Tabularizes static data in MEDS format into tabular representations."""
 
 from pathlib import Path
 
@@ -111,11 +106,8 @@ def tabularize_static_data(
         for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
             fp = sp_dir / f"{i}.parquet"
             static_dfs[sp].append(fp)
-            if fp.exists():
-                if cfg.do_update:
-                    continue
-                elif not cfg.do_overwrite:
-                    raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {fp} exists!")
+            if fp.exists() and not cfg.do_overwrite:
+                raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {fp} exists!")
 
             df = get_flat_static_rep(
                 feature_columns=feature_columns,
@@ -123,3 +115,7 @@ def tabularize_static_data(
             )
 
             write_df(df, fp, do_overwrite=cfg.do_overwrite)
+
+
+if __name__ == "__main__":
+    tabularize_static_data()

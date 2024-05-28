@@ -1,4 +1,6 @@
-"""WIP."""
+#!/usr/bin/env python
+
+"""Aggregates time-series data for feature columns across different window sizes."""
 
 
 from pathlib import Path
@@ -16,49 +18,37 @@ from MEDS_tabular_automl.utils import setup_environment, write_df
 def summarize_ts_data_over_windows(
     cfg: DictConfig,
 ):
-    """Writes a flat (historically summarized) representation of the dataset to disk.
+    """Processes time-series data by summarizing it across different windows, creating a flat, summarized
+    representation of the data for analysis.
 
-    This file caches a set of files useful for building flat representations of the dataset to disk,
-    suitable for, e.g., sklearn style modeling for downstream tasks. It will produce a few sets of files:
-
-    * A new directory ``self.config.save_dir / "flat_reps"`` which contains the following:
-    * A subdirectory ``raw`` which contains: (1) a json file with the configuration arguments and (2) a
-        set of parquet files containing flat (e.g., wide) representations of summarized events per subject,
-        broken out by split and subject chunk.
-    * A set of subdirectories ``past/*`` which contains summarized views over the past ``*`` time period
-        per subject per event, for all time periods in ``window_sizes``, if any.
+    This function orchestrates the data processing pipeline for summarizing time-series data. It loads
+    data from the tabularize_ts stage, iterates through the pivoted wide dataframes for each split and
+    shards and then applies a range aggregations across different window sizes defined in the config
+    The summarized data is then written to disk in a structured directory format.
 
     Args:
-        cfg:
-            MEDS_cohort_dir: directory of MEDS format dataset that is ingested.
-            tabularized_data_dir: output directory of tabularized data.
-            min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
-                what features can be included in the flat representation. It can either be a float, in which
-                case it applies across all measurements, or `None`, in which case no filtering is applied, or
-                a dictionary from measurement type to a float dictating a per-measurement-type inclusion
-                cutoff.
-            window_sizes: Beyond writing out a raw, per-event flattened representation, the dataset also has
-                the capability to summarize these flattened representations over the historical windows
-                specified in this argument. These are strings specifying time deltas, using this syntax:
-                `link`_. Each window size will be summarized to a separate directory, and will share the same
-                subject file split as is used in the raw representation files.
-            codes: A list of codes to include in the flat representation. If `None`, all codes will be included
-                in the flat representation.
-            aggs: A list of aggregations to apply to the raw representation. Must have length greater than 0.
-            n_patients_per_sub_shard: The number of subjects that should be included in each output file.
-                Lowering this number increases the number of files written, making the process of creating and
-                leveraging these files slower but more memory efficient.
-            do_overwrite: If `True`, this function will overwrite the data already stored in the target save
-                directory.
-            do_update: bool = True
-            seed: The seed to use for random number generation.
+        cfg: A configuration dictionary derived from Hydra, containing parameters such as the input data
+             directory, output directory, and specifics regarding the summarization process (like window
+             sizes and aggregation functions).
 
-    .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
+    Workflow:
+        1. Set up the environment based on configuration settings.
+        2. Load and categorize time-series file paths by their data splits.
+        3. Pair code and value files for each split.
+        4. For each pair of files in each split:
+            - Load the dataframes in a lazy manner.
+            - Summarize the dataframes based on predefined window sizes and aggregation methods.
+            - Write the summarized dataframe to disk.
+
+    Raises:
+        FileNotFoundError: If specified directories or files in the configuration are not found.
+        ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
     flat_dir, _, feature_columns = setup_environment(cfg)
 
     # Assuming MEDS_cohort_dir is correctly defined somewhere above this snippet
     ts_dir = Path(cfg.tabularized_data_dir) / "ts"
+    # TODO: Use patient splits here instead
     ts_fps = list(ts_dir.glob("*/*.parquet"))
     splits = {fp.parent.stem for fp in ts_fps}
 
@@ -100,3 +90,7 @@ def summarize_ts_data_over_windows(
 
             shard_number = code_file.stem.rsplit("_", 1)[0]
             write_df(summary_df, summary_dir / split / f"{shard_number}.parquet")
+
+
+if __name__ == "__main__":
+    summarize_ts_data_over_windows()

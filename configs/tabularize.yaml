@@ -7,6 +7,8 @@ min_code_inclusion_frequency: ???
 window_sizes: ???
 codes: null
 aggs:
+  - "static/present"
+  - "static/first"
   - "code/count"
   - "value/count"
   - "value/sum"

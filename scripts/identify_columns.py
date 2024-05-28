@@ -82,3 +82,7 @@ def store_columns(
         feature_columns.update(get_flat_rep_feature_cols(cfg, shard_df))
     feature_columns = sorted(list(feature_columns))
     json.dump(feature_columns, open(flat_dir / "feature_columns.json", "w"))
+
+
+if __name__ == "__main__":
+    store_columns()

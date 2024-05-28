@@ -16,6 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 
 DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
+ROW_IDX_NAME = "__row_idx"
 
 
 def parse_flat_feature_column(c: str) -> tuple[str, str, str, str]:
@@ -119,12 +120,12 @@ def get_static_feature_cols(shard_df) -> list[str]:
     ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
     >>> df = pl.DataFrame(data).lazy()
     >>> get_static_feature_cols(df)
-    ['static/A/first', 'static/A/present', 'static/C/first', 'static/C/present']
+    ['A/static/first', 'A/static/present', 'C/static/first', 'C/static/present']
     """
     feature_columns = []
     static_df = shard_df.filter(pl.col("timestamp").is_null())
     for code in static_df.select(pl.col("code").unique()).collect().to_series():
-        static_aggregations = [f"static/{code}/present", f"static/{code}/first"]
+        static_aggregations = [f"{code}/static/present", f"{code}/static/first"]
         feature_columns.extend(static_aggregations)
     return sorted(feature_columns)
 
@@ -149,9 +150,9 @@ def get_ts_feature_cols(aggregations: list[str], shard_df: DF_T) -> list[str]:
     ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
     ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
     >>> df = pl.DataFrame(data).lazy()
-    >>> aggs = ['sum', 'count']
+    >>> aggs = ['value/sum', 'code/count']
     >>> get_ts_feature_cols(aggs, df)
-    ['A/count', 'A/sum', 'C/count', 'C/sum']
+    ['A/code/count', 'A/value/sum', 'C/code/count', 'C/value/sum']
     """
     feature_columns = []
     ts_df = shard_df.filter(pl.col("timestamp").is_not_null())
@@ -179,10 +180,10 @@ def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: DF_T) -> list[str]:
     ...         'timestamp': [None, '2021-01-01', None, None],
     ...         'numerical_value': [1, None, 2, 2]}
     >>> df = pl.DataFrame(data).lazy()
-    >>> aggs = ['sum', 'count']
+    >>> aggs = ['value/sum', 'code/count']
     >>> cfg = DictConfig({'aggs': aggs})
     >>> get_flat_rep_feature_cols(cfg, df)
-    ['static/A/first', 'static/A/present', 'static/B/first', 'static/B/present', 'A/count', 'A/sum']
+    ['A/static/first', 'A/static/present', 'B/static/first', 'B/static/present', 'A/code/count', 'A/value/sum'] # noqa: 501
     """
     static_feature_columns = get_static_feature_cols(shard_df)
     ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)

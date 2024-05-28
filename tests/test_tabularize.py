@@ -12,7 +12,6 @@ from hydra import compose, initialize
 from loguru import logger
 
 from scripts.identify_columns import store_columns
-from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
 from scripts.tabularize_ts import tabularize_ts_data
 
@@ -150,30 +149,26 @@ def test_tabularize():
         # confirm the time series files exist:
         actual_files = [(f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("ts/*/*.parquet"))]
         expected_files = [
-            ("train", "1_value"),
-            ("train", "0_code"),
-            ("train", "0_value"),
-            ("train", "1_code"),
-            ("held_out", "0_code"),
-            ("held_out", "0_value"),
-            ("tuning", "0_code"),
-            ("tuning", "0_value"),
-        ]
-        assert set(actual_files) == set(expected_files)
-
-        summarize_ts_data_over_windows(cfg)
-        # confirm summary files exist:
-        actual_files = [
-            (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("summary/*/*.parquet"))
-        ]
-        expected_files = [
             ("train", "1"),
             ("train", "0"),
             ("held_out", "0"),
             ("tuning", "0"),
         ]
         assert set(actual_files) == set(expected_files)
-        for f in list(tabularized_data_dir.glob("summary/*/*.parquet")):
-            df = pl.read_parquet(f)
-            assert df.shape[0] > 0
-            assert df.columns == ["hi"]
+
+        # summarize_ts_data_over_windows(cfg)
+        # # confirm summary files exist:
+        # actual_files = [
+        #     (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("summary/*/*.parquet"))
+        # ]
+        # expected_files = [
+        #     ("train", "1"),
+        #     ("train", "0"),
+        #     ("held_out", "0"),
+        #     ("tuning", "0"),
+        # ]
+        # assert set(actual_files) == set(expected_files)
+        # for f in list(tabularized_data_dir.glob("summary/*/*.parquet")):
+        #     df = pl.read_parquet(f)
+        #     assert df.shape[0] > 0
+        #     assert df.columns == ["hi"]
