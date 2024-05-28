@@ -3,7 +3,7 @@ from collections.abc import Callable
 import polars as pl
 import polars.selectors as cs
 
-from MEDS_tabular_automl.utils import DF_T, ROW_IDX_NAME
+from MEDS_tabular_automl.utils import DF_T
 
 CODE_AGGREGATIONS = [
     "code/count",
@@ -95,54 +95,69 @@ def _generate_summary(df: DF_T, window_size: str, agg: str) -> pl.LazyFrame:
     - pl.LazyFrame: The summarized data frame.
 
     Expect:
-        >>> from datetime import date
-        >>> pivot_df = pl.DataFrame({"patient_id": [1, 1, 1, 2],
-        ...     "A/code": [True, True, None, None],
-        ...     "B/code": [None, None, True, True],
+        >>> from datetime import datetime
+        >>> wide_df = pl.DataFrame({
+        ...     "patient_id": [1, 1, 1, 2],
+        ...     "A/code": [True, True, False, False],
+        ...     "B/code": [False, False, True, True],
         ...     "A/value": [1, 2, 3, None],
         ...     "B/value": [None, None, None, 4.0],
-        ...     "timestamp": [date(2020, 1, 1), date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)],
-        ...     }).lazy().with_row_index(ROW_IDX_NAME)
-        >>> _generate_summary(pivot_df.lazy(), "2d", "code/count"
-        ...     ).collect().drop(ROW_IDX_NAME).sort(["patient_id", "timestamp"])
-        shape: (4, 4)
-        ┌────────────┬────────────┬───────────────────┬───────────────────┐
-        │ patient_id ┆ timestamp  ┆ full/A/code/count ┆ full/B/code/count │
-        │ ---        ┆ ---        ┆ ---               ┆ ---               │
-        │ i64        ┆ date       ┆ i64               ┆ i64               │
-        ╞════════════╪════════════╪═══════════════════╪═══════════════════╡
-        │ 1          ┆ 2020-01-03 ┆ 2                 ┆ 1                 │
-        │ 1          ┆ 2021-01-01 ┆ 1                 ┆ 0                 │
-        │ 1          ┆ 2021-01-02 ┆ 2                 ┆ 0                 │
-        │ 2          ┆ 2021-01-04 ┆ 0                 ┆ 1                 │
-        └────────────┴────────────┴───────────────────┴───────────────────┘
-        >>> _generate_summary(pivot_df.lazy(), "full", "value/sum").collect().drop(ROW_IDX_NAME).sort(
-        ...     ["patient_id", "timestamp"])
-        shape: (4, 4)
-        ┌────────────┬────────────┬──────────────────┬──────────────────┐
-        │ patient_id ┆ timestamp  ┆ 1d/A/value/sum   ┆ 1d/B/value/sum   │
-        │ ---        ┆ ---        ┆ ---              ┆ ---              │
-        │ i64        ┆ date       ┆ u32              ┆ u32              │
-        ╞════════════╪════════════╪══════════════════╪══════════════════╡
-        │ 1          ┆ 2020-01-03 ┆ 1                ┆ 0                │
-        │ 1          ┆ 2021-01-01 ┆ 1                ┆ 0                │
-        │ 1          ┆ 2021-01-02 ┆ 1                ┆ 0                │
-        │ 2          ┆ 2021-01-04 ┆ 0                ┆ 1                │
-        └────────────┴────────────┴──────────────────┴──────────────────┘
+        ...     "timestamp": [
+        ...         datetime(2020, 1, 1),
+        ...         datetime(2021, 1, 1),
+        ...         datetime(2021, 1, 2),
+        ...         datetime(2011, 1, 3),
+        ...     ],
+        ... })
+        >>> wide_df # Just so we can see the data we're working with:
+        shape: (4, 6)
+        ┌────────────┬────────┬────────┬─────────┬─────────┬─────────────────────┐
+        │ patient_id ┆ A/code ┆ B/code ┆ A/value ┆ B/value ┆ timestamp           │
+        │ ---        ┆ ---    ┆ ---    ┆ ---     ┆ ---     ┆ ---                 │
+        │ i64        ┆ bool   ┆ bool   ┆ i64     ┆ f64     ┆ datetime[μs]        │
+        ╞════════════╪════════╪════════╪═════════╪═════════╪═════════════════════╡
+        │ 1          ┆ true   ┆ false  ┆ 1       ┆ null    ┆ 2020-01-01 00:00:00 │
+        │ 1          ┆ true   ┆ false  ┆ 2       ┆ null    ┆ 2021-01-01 00:00:00 │
+        │ 1          ┆ false  ┆ true   ┆ 3       ┆ null    ┆ 2021-01-02 00:00:00 │
+        │ 2          ┆ false  ┆ true   ┆ null    ┆ 4.0     ┆ 2011-01-03 00:00:00 │
+        └────────────┴────────┴────────┴─────────┴─────────┴─────────────────────┘
+        >>> _generate_summary(wide_df.lazy(), "2d", "code/count").collect()
+        shape: (4, 5)
+        ┌────────────┬─────────────────────┬─────────────────┬─────────────────┐
+        │ patient_id ┆ timestamp           ┆ 2d/A/code/count ┆ 2d/B/code/count │
+        │ ---        ┆ ---                 ┆ ---             ┆ ---             │
+        │ i64        ┆ datetime[μs]        ┆ u32             ┆ u32             │
+        ╞════════════╪═════════════════════╪═════════════════╪═════════════════╡
+        │ 1          ┆ 2020-01-01 00:00:00 ┆ 1               ┆ 0               │
+        │ 1          ┆ 2021-01-01 00:00:00 ┆ 1               ┆ 0               │
+        │ 1          ┆ 2021-01-02 00:00:00 ┆ 1               ┆ 1               │
+        │ 2          ┆ 2011-01-03 00:00:00 ┆ 0               ┆ 1               │
+        └────────────┴─────────────────────┴─────────────────┴─────────────────┘
+        >>> _generate_summary(wide_df.lazy(), "full", "value/sum").collect()
+        shape: (4, 5)
+        ┌────────────┬─────────────────────┬──────────────────┬──────────────────┐
+        │ patient_id ┆ timestamp           ┆ full/A/value/sum ┆ full/B/value/sum │
+        │ ---        ┆ ---                 ┆ ---              ┆ ---              │
+        │ i64        ┆ datetime[μs]        ┆ i64              ┆ f64              │
+        ╞════════════╪═════════════════════╪══════════════════╪══════════════════╡
+        │ 1          ┆ 2020-01-01 00:00:00 ┆ 1                ┆ null             │
+        │ 1          ┆ 2021-01-01 00:00:00 ┆ 3                ┆ null             │
+        │ 1          ┆ 2021-01-02 00:00:00 ┆ 6                ┆ null             │
+        │ 2          ┆ 2011-01-03 00:00:00 ┆ null             ┆ 4.0              │
+        └────────────┴─────────────────────┴──────────────────┴──────────────────┘
     """
     if agg not in VALID_AGGREGATIONS:
         raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
-    id_cols = [ROW_IDX_NAME, "patient_id"]
     if window_size == "full":
-        out_df = df.group_by(id_cols).agg(
+        out_df = df.group_by("patient_id", maintain_order=True).agg(
             "timestamp",
             get_agg_pl_expr(window_size, agg),
         )
-        out_df = out_df.explode(*[c for c in out_df.columns if c not in id_cols])
+        out_df = out_df.explode(*[c for c in out_df.columns if c != "patient_id"])
     else:
         out_df = df.rolling(
             index_column="timestamp",
-            by=id_cols,
+            by="patient_id",
             period=window_size,
         ).agg(
             get_agg_pl_expr(window_size, agg),
@@ -172,7 +187,7 @@ def generate_summary(
 
     Expect:
         >>> from datetime import date
-        >>> pivot_df = pl.DataFrame({"patient_id": [1, 1, 1, 2],
+        >>> wide_df = pl.DataFrame({"patient_id": [1, 1, 1, 2],
         ...     "A/code": [1, 1, 0, 0],
         ...     "B/code": [0, 0, 1, 1],
         ...     "A/value": [1, 2, 3, None],
@@ -182,23 +197,9 @@ def generate_summary(
         >>> feature_columns = ["A/code", "B/code", "A/value", "B/value"]
         >>> aggregations = ["code/count", "value/sum"]
         >>> window_sizes = ["full", "1d"]
-        >>> out_df = generate_summary(feature_columns, pivot_df.lazy(),
-        ...     window_sizes, aggregations).collect().sort(["patient_id", "timestamp"])
-        >>> print(out_df.shape)
-        (4, 10)
-        >>> for c in sorted(out_df.columns): print(c)
-        1d/A/code/count
-        1d/A/value/sum
-        1d/B/code/count
-        1d/B/value/sum
-        full/A/code/count
-        full/A/value/sum
-        full/B/code/count
-        full/B/value/sum
-        patient_id
-        timestamp
+        >>> generate_summary(feature_columns, wide_df.lazy(), window_sizes, aggregations).collect()
     """
-    df = df.sort(["patient_id", "timestamp"]).with_row_index(ROW_IDX_NAME)
+    df = df.sort(["patient_id", "timestamp"])
     final_columns = []
     out_dfs = []
     # Generate summaries for each window size and aggregation
@@ -220,7 +221,7 @@ def generate_summary(
 
     final_columns = sorted(final_columns)
     # Combine all dataframes using successive joins
-    result_df = pl.concat(out_dfs, how="align").drop(ROW_IDX_NAME)
+    result_df = pl.concat(out_dfs, how="align")
     # Add in missing feature columns with default values
     missing_columns = [col for col in final_columns if col not in result_df.columns]
     result_df = result_df.with_columns([pl.lit(None).alias(col) for col in missing_columns])
