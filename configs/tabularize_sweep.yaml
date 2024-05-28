@@ -1,0 +1,67 @@
+# Raw data
+MEDS_cohort_dir: 
+tabularized_data_dir: /storage/teya/meds_automl/test_data/test
+
+# Pre-processing
+min_code_inclusion_frequency: 1
+window_sizes: [1d, 7d, full]
+codes: null
+aggs:
+  - "code/count"
+  - "code/time_since_last"
+  - "code/time_since_first"
+  - "value/count"
+  - "value/sum"
+  - "value/sum_sqd"
+  - "count"
+  - "sum"
+  - "sum_sqd"
+
+
+# Sharding
+n_patients_per_sub_shard: null
+
+# Misc
+do_overwrite: False
+seed: 1
+
+
+model:
+  booster: gbtree
+  device: gpu
+  nthread: 4
+  max_depth: 6
+  eta: 0.3
+  gamma: 0
+  subsample: 1
+  lambda: 1
+  alpha: 0
+  tree_method: hist
+  objective: binary:logistic
+
+iterator:
+  keep_static_data_in_memory: True
+
+# Hydra settings for sweep
+defaults:
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+
+hydra:
+  sweep:
+    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+  run:
+    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+
+  # Optuna Sweeper
+  sweeper:
+    sampler:
+      seed: 1
+    storage: null
+    study_name: tabularize_study_${now:%Y-%m-%d_%H-%M-%S}
+    direction: minimize
+    n_trials: 10
+
+    # Define search space for Optuna
+    params:
+      window_sizes: choice([1d], [1d, 7d], [7d, full])
