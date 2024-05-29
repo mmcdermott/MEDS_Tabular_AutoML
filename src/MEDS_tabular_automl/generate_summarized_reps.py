@@ -6,6 +6,8 @@ import pandas as pd
 import polars as pl
 from scipy.sparse import coo_matrix
 
+from MEDS_tabular_automl.generate_ts_features import get_ts_columns
+
 CODE_AGGREGATIONS = [
     "code/count",
 ]
@@ -240,7 +242,7 @@ def generate_summary(
         >>> wide_df['timestamp'] = pd.to_datetime(wide_df['timestamp'])
         >>> for col in ["A/code", "B/code", "A/value", "B/value"]:
         ...     wide_df[col] = pd.arrays.SparseArray(wide_df[col])
-        >>> feature_columns = ["A/code", "B/code", "A/value", "B/value"]
+        >>> feature_columns = ["A/code/count", "B/code/count", "A/value/sum", "B/value/sum"]
         >>> aggregations = ["code/count", "value/sum"]
         >>> window_sizes = ["full", "1d"]
         >>> generate_summary(feature_columns, wide_df, window_sizes, aggregations)[
@@ -264,6 +266,9 @@ def generate_summary(
         0              NaN                NaN                 0
     """
     df = df.sort_values(["patient_id", "timestamp"])
+    assert len(feature_columns), "feature_columns must be a non-empty list"
+    ts_columns = get_ts_columns(feature_columns)
+    code_value_ts_columns = [f"{c}/code" for c in ts_columns] + [f"{c}/value" for c in ts_columns]
     final_columns = []
     out_dfs = []
     # Generate summaries for each window size and aggregation
@@ -271,7 +276,7 @@ def generate_summary(
         for agg in aggregations:
             code_type, agg_name = agg.split("/")
             final_columns.extend(
-                [f"{window_size}/{c}/{agg_name}" for c in feature_columns if c.endswith(code_type)]
+                [f"{window_size}/{c}/{agg_name}" for c in code_value_ts_columns if c.endswith(code_type)]
             )
             # only iterate through code_types that exist in the dataframe columns
             if any([c.endswith(code_type) for c in df.columns]):

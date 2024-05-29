@@ -71,6 +71,7 @@ def summarize_ts_data_over_windows(
                 cfg.window_sizes,
                 cfg.aggs,
             )
+            assert summary_df.shape[1] > 2, "No data found in the summarized dataframe"
 
             logger.info("Writing pivot file")
             write_df(summary_df, pivot_fp, do_overwrite=cfg.do_overwrite)
