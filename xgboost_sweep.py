@@ -9,6 +9,7 @@ from sklearn.metrics import mean_absolute_error
 import scipy.sparse as sp
 import os
 from typing import List, Callable
+import sys 
 
 
 class Iterator(xgb.DataIter):
@@ -127,7 +128,7 @@ class Iterator(xgb.DataIter):
         )
         X, y = None, None
         ### TODO: This could be optimized so that we are collecting the largest shards possible at once and then sparsifying them
-        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith("static/")]).collect().to_numpy()) ### check if this is true!, else just doesnt start with window
+        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if not col.startswith(tuple(self.cfg.window_sizes))]).collect().to_numpy()) ### check if this is true!, else just doesnt start with window
         for window in self.cfg.window_sizes:
             col_csc = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith(f"{window}/")]).collect().to_numpy())
             X = sp.hstack([X, col_csc])
