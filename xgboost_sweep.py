@@ -4,10 +4,9 @@ from pathlib import Path
 import xgboost as xgb
 import polars as pl
 import numpy as np
-import pyarrow as pa
 import polars.selectors as cs
 from sklearn.metrics import mean_absolute_error
-
+import scipy.sparse as sp
 import os
 from typing import List, Callable
 
@@ -91,7 +90,54 @@ class Iterator(xgb.DataIter):
             )
         return static_shards
 
-    def _load_shard(self, idx: int) -> tuple[np.ndarray, np.ndarray]:
+    def _sparsify_shard(self, df: pl.DataFrame) -> tuple[sp.csc_matrix, sp.csc_matrix]:
+        """
+        Make X and y as scipy sparse arrays for XGBoost.
+
+        Args:
+        - df (pl.DataFrame): Data frame to sparsify.
+
+        Returns:
+        - tuple[sp.csc_matrix, sp.csc_matrix]: Tuple of feature data and labels.
+
+        """
+        ### TODO: make sure we are handling nulls and 0s correctly 
+
+        # labels = df.select(
+        #     [
+        #         col
+        #         for col in df.schema.keys()
+        #         if col.endswith("/task")
+        #     ]
+        # )
+        labels = df.select(
+            [
+                col
+                for col in df.schema.keys()
+                if col in [ "patient_id"]
+            ]
+        )
+        data = df.select(
+            [
+                col
+                for col in df.schema.keys()
+                if col not in ["label", "patient_id", "timestamp"]
+                and not col.endswith("/task")
+            ]
+        )
+        X, y = None, None
+        ### TODO: This could be optimized so that we are collecting the largest shards possible at once and then sparsifying them
+        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith("static/")]).collect().to_numpy()) ### check if this is true!, else just doesnt start with window
+        for window in self.cfg.window_sizes:
+            col_csc = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith(f"{window}/")]).collect().to_numpy())
+            X = sp.hstack([X, col_csc])
+
+        y = sp.csc_matrix(labels.collect().to_numpy())
+            
+        ### TODO: fix the need to convert to array here!!!
+        return X.toarray(), y.toarray()
+
+    def _load_shard(self, idx: int) -> tuple[sp.csc_matrix, sp.csc_matrix]:
         """
         Load a specific shard of data from disk and concatenate with static data.
 
@@ -99,8 +145,8 @@ class Iterator(xgb.DataIter):
         - idx (int): Index of the shard to load.
 
         Returns:
-        - X (np.ndarray): Feature data frame.
-        - y (np.ndarray): Labels.
+        - X (scipy.sparse.csc_matrix): Feature data frame.
+        - y (scipy.sparse.csc_matrix): Labels.
 
         """
         # concatinate with static data
@@ -116,7 +162,7 @@ class Iterator(xgb.DataIter):
                 self.dynamic_data_path / window / f"{self._data_shards[idx]}.parquet"
             )
 
-            columns = dynamic_df.schema.names
+            columns = dynamic_df.schema.keys()
             selected_columns = [
                 col
                 for col in columns
@@ -128,15 +174,6 @@ class Iterator(xgb.DataIter):
             ]
             selected_columns.extend(["patient_id", "timestamp"])
             dynamic_df = dynamic_df.select(selected_columns)
-            # Task data
-            task_df = pl.scan_parquet(self.data_path / "tasks.parquet") # need to know if this should be done every time or if it is pulled once for all the data... also need to know if this is the right path
-            task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.names}) # TODO: filtering of the tasks??
-            df = task_df.join_asof(
-                            df,
-                            by="subject_id",
-                            on="timestamp",
-                            strategy="forward" if "-" in window else "backward",
-                        )
 
             df = pl.concat([df, dynamic_df], how="align")
 
@@ -144,28 +181,15 @@ class Iterator(xgb.DataIter):
 
         ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks
 
+        # task_df = pl.scan_parquet(self.data_path / "tasks.parquet") 
+        # task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys()}) # TODO: filtering of the tasks?? --> need to know more about tasks 
+        # ### TODO: Change to join_on with left merge orig df on left, labels on right join on subject_id and timestamp
+        # df = df.join(task_df, on=["subject_id", "timestamp"], how="left") 
 
-        y = df.select(
-            [
-                col
-                for col in df.schema.names
-                if col.endswith("/task")
-            ]
-        )
-        X = df.select(
-            [
-                col
-                for col in df.schema.names
-                if col not in ["label", "patient_id", "timestamp"]
-                and not col.endswith("/task")
-            ]
-        )
 
-        ### TODO: Figure out best way to export this to dmatrix --> can we use scipy sparse matrix/array? --> likely we will not be able to collect in memory
-        return (
-            X.collect().to_numpy(),
-            y.collect().to_numpy(),
-        )  # convert to sparse matrix instead
+        ### TODO: Figure out best way to export this to dmatrix 
+        # --> can we use scipy sparse matrix/array? --> likely we will not be able to collect in memory
+        return self._sparsify_shard(df)
 
     def next(self, input_data: Callable):
         """
@@ -227,7 +251,7 @@ class XGBoostModel:
 
         self.cfg = cfg
         self.keep_data_in_memory = getattr(
-            getattr(cfg, "model", {}), "keep_data_in_memory", True
+            getattr(cfg, "iterator", {}), "keep_data_in_memory", True
         )
 
         self.itrain = None
