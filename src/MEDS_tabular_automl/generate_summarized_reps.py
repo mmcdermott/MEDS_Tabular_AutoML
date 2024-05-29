@@ -1,10 +1,13 @@
 from collections.abc import Callable
 
 import pandas as pd
+from scipy.sparse import vstack
 
-# pd.set_option("compute.use_numba", True)
+pd.set_option("compute.use_numba", True)
 import polars as pl
-from scipy.sparse import coo_matrix
+from loguru import logger
+from scipy.sparse import coo_matrix, csr_matrix
+from tqdm import tqdm
 
 from MEDS_tabular_automl.generate_ts_features import get_ts_columns
 
@@ -80,15 +83,22 @@ def sparse_rolling(df, timedelta, agg):
     timestamp      datetime64[ns]
     dtype: object
     """
-    df = df.drop(columns="patient_id")
-    out_dfs = []
+    df = df.drop(columns="patient_id").reset_index(drop=True).reset_index()
     timestamps = []
-    for each in df.rolling(on="timestamp", window=timedelta):
-        timestamps.append(each.index[0])
-        out_dfs.append(each.agg(agg))
-    df = pd.concat(out_dfs, axis=1).T
-    df["timestamp"] = timestamps
-    return df
+    logger.info("rolling for patient_id")
+    sparse_matrix = csr_matrix(df[df.columns[2:]].sparse.to_coo())
+    out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
+    for each in tqdm(df[["index", "timestamp"]].rolling(on="timestamp", window=timedelta), total=len(df)):
+        subset_matrix = sparse_matrix[each["index"]]
+
+        # TODO this is where we would apply the aggregation
+        timestamps.append(each.index.max())
+        agg_subset_matrix = subset_matrix.sum(axis=0)
+        out_sparse_matrix = vstack([out_sparse_matrix, agg_subset_matrix])
+    out_df = pd.DataFrame({"timestamp": timestamps})
+    out_df = pd.concat([out_df, pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1)
+    out_df.columns = df.columns[1:]
+    return out_df
 
 
 def compute_agg(df, window_size: str, agg: str):
@@ -145,20 +155,35 @@ def compute_agg(df, window_size: str, agg: str):
         timedelta = df["timestamp"].max() - df["timestamp"].min() + pd.Timedelta(days=1)
     else:
         timedelta = pd.Timedelta(window_size)
-    group = df.groupby("patient_id")
+    logger.info("grouping by patient_id")
+    group = dict(list(df[["patient_id", "timestamp"]].groupby("patient_id")))
+    sparse_matrix = df[df.columns[2:]].sparse.to_coo()
+    sparse_matrix = csr_matrix(sparse_matrix)
+    logger.info("done grouping")
     match agg:
         case "code/count" | "value/sum":
             agg = "sum"
             out_dfs = []
-            for patient_id, subset_df in group:
-                df = sparse_rolling(subset_df, timedelta, agg)
-                df["patient_id"] = patient_id
-                out_dfs.append(df)
+            for patient_id, subset_df in group.items():
+                logger.info(f"rolling for patient_id {patient_id}")
+                subset_sparse_matrix = sparse_matrix[subset_df.index]
+                sparse_df = pd.DataFrame.sparse.from_spmatrix(subset_sparse_matrix)
+                sparse_df.index = subset_df.index
+                patient_df = pd.concat([subset_df[["patient_id", "timestamp"]], sparse_df], axis=1)
+                patient_df.columns = df.columns
+                assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
+                patient_df = sparse_rolling(patient_df, timedelta, agg)
+                patient_df["patient_id"] = patient_id
+                out_dfs.append(patient_df)
             out_df = pd.concat(out_dfs, axis=0)
-            return out_df.rename(columns=time_aggd_col_alias_fntr(window_size, "count"))
+            out_df.rename(columns=time_aggd_col_alias_fntr(window_size, "count"))
 
         case _:
             raise ValueError(f"Invalid aggregation `{agg}` for window_size `{window_size}`")
+
+    id_cols = ["patient_id", "timestamp"]
+    out_df = out_df.loc[:, id_cols + list(df.columns[2:])]
+    return out_df
 
 
 def _generate_summary(df: pd.DataFrame, window_size: str, agg: str) -> pl.LazyFrame:
@@ -265,7 +290,8 @@ def generate_summary(
         2              NaN                NaN                 0
         0              NaN                NaN                 0
     """
-    df = df.sort_values(["patient_id", "timestamp"])
+    logger.info("Sorting sparse dataframe by patient_id and timestamp")
+    df = df.sort_values(["patient_id", "timestamp"]).reset_index(drop=True)
     assert len(feature_columns), "feature_columns must be a non-empty list"
     ts_columns = get_ts_columns(feature_columns)
     code_value_ts_columns = [f"{c}/code" for c in ts_columns] + [f"{c}/value" for c in ts_columns]
@@ -280,6 +306,7 @@ def generate_summary(
             )
             # only iterate through code_types that exist in the dataframe columns
             if any([c.endswith(code_type) for c in df.columns]):
+                logger.info(f"Generating aggregation {agg} for window_size {window_size}")
                 # timestamp_dtype = df.dtypes[df.columns.index("timestamp")]
                 # assert timestamp_dtype in [
                 #     pl.Datetime,
