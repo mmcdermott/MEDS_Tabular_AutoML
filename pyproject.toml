@@ -16,7 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy"]
+dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas"]
 
 [project.optional-dependencies]
 dev = ["pre-commit"]

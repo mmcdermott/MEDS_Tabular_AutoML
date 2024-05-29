@@ -4,10 +4,13 @@
 from pathlib import Path
 
 import hydra
+import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.utils import setup_environment, write_df
+
+pl.enable_string_cache()
 
 
 def store_config_yaml(config_fp: Path, cfg: DictConfig):
@@ -113,7 +116,7 @@ def tabularize_static_data(
                 shard_df=shard_df,
             )
 
-            write_df(df, fp, do_overwrite=cfg.do_overwrite)
+            write_df(df, fp, do_overwrite=cfg.do_overwrite, pandas=True)
 
 
 if __name__ == "__main__":

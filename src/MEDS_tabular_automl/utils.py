@@ -9,6 +9,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 import polars.selectors as cs
 import yaml
@@ -37,8 +38,21 @@ def write_df(df: DF_T, fp: Path, **kwargs):
 
     if isinstance(df, pl.LazyFrame):
         df.collect().write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
-    else:
+    elif isinstance(df, pl.DataFrame):
         df.write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
+    elif isinstance(df, pd.DataFrame):
+        if not all(df.columns[:2] == ["patient_id", "timestamp"]):
+            raise ValueError(
+                f"Expected DataFrame to have columns ['patient_id', 'timestamp'], got {df.columns[:2]}"
+            )
+        coo_matrix = df[df.columns[2:]].sparse.to_coo()
+        rows = coo_matrix.row
+        cols = coo_matrix.col
+        data = coo_matrix.data
+        df = pd.DataFrame(dict(row=rows, col=cols, data=data))
+        df.to_parquet(fp, engine="pyarrow")
+    else:
+        raise ValueError(f"Unsupported type for df: {type(df)}")
 
 
 def get_flat_col_dtype(col: str) -> pl.DataType:
