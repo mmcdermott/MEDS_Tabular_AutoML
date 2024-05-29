@@ -61,7 +61,7 @@ class Iterator(xgb.DataIter):
             aggs_set = set(self.cfg.aggs)
         if self.cfg.min_code_inclusion_frequency is not None:
             dataset_freuqency = pl.scan_parquet(
-                self.data_path / "code_frequencies.parquet" # TODO: make sure this is the right path
+                self.data_path / "code_frequencies.json" # TODO: make sure this is the right path
             )
             min_frequency_set = set(
                 dataset_freuqency.filter(
@@ -90,7 +90,7 @@ class Iterator(xgb.DataIter):
             )
         return static_shards
 
-    def _sparsify_shard(self, df: pl.DataFrame) -> tuple[sp.csc_matrix, sp.csc_matrix]:
+    def _sparsify_shard(self, df: pl.DataFrame) -> tuple[sp.csc_matrix, np.ndarray]:
         """
         Make X and y as scipy sparse arrays for XGBoost.
 
@@ -98,7 +98,7 @@ class Iterator(xgb.DataIter):
         - df (pl.DataFrame): Data frame to sparsify.
 
         Returns:
-        - tuple[sp.csc_matrix, sp.csc_matrix]: Tuple of feature data and labels.
+        - tuple[scipy.sparse.csr_matrix, numpy.ndarray]: Tuple of feature data and labels.
 
         """
         labels = df.select(
@@ -123,12 +123,12 @@ class Iterator(xgb.DataIter):
             col_csc = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith(f"{window}/")]).collect().to_numpy())
             X = sp.hstack([X, col_csc])
 
-        y = sp.csc_matrix(labels.collect().to_numpy())
+        y = labels.collect().to_numpy()
             
         ### TODO: fix the need to convert to array here!!!
-        return X.toarray(), y.toarray()
+        return X.tocsr(), y
 
-    def _load_shard(self, idx: int) -> tuple[sp.csc_matrix, sp.csc_matrix]:
+    def _load_shard(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """
         Load a specific shard of data from disk and concatenate with static data.
 
@@ -136,8 +136,8 @@ class Iterator(xgb.DataIter):
         - idx (int): Index of the shard to load.
 
         Returns:
-        - X (scipy.sparse.csc_matrix): Feature data frame.
-        - y (scipy.sparse.csc_matrix): Labels.
+        - X (scipy.sparse.csr_matrix): Feature data frame.
+        - y (numpy.ndarray): Labels.
 
         """
 
@@ -173,9 +173,9 @@ class Iterator(xgb.DataIter):
         ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks
 
         task_df = pl.scan_parquet(self.data_path / "tasks.parquet") 
-        task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys()}) # TODO: filtering of the tasks?? --> need to know more about tasks 
+        task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys() if col not in ["patient_id", "timestamp"]}) # TODO: filtering of the tasks?? --> need to know more about tasks 
         ### TODO: Change to join_on with left merge orig df on left, labels on right join on subject_id and timestamp
-        df = df.join(task_df, on=["subject_id", "timestamp"], how="left") 
+        df = df.join(task_df, on=["patient_id", "timestamp"], how="left") 
 
 
         ### TODO: Figure out best way to export this to dmatrix 
@@ -212,7 +212,7 @@ class Iterator(xgb.DataIter):
         """
         self._it = 0
 
-    def collect_in_memory(self) -> tuple[np.ndarray, np.ndarray]:
+    def collect_in_memory(self) -> tuple[sp.csr_matrix, np.ndarray]:
         """
         Collect the data in memory.
 
@@ -226,7 +226,8 @@ class Iterator(xgb.DataIter):
             X_, y_ = self._load_shard(i)
             X.append(X_)
             y.append(y_)
-        X = np.concatenate(X, axis=0)
+
+        X = sp.vstack(X)
         y = np.concatenate(y, axis=0)
         return X, y
 
