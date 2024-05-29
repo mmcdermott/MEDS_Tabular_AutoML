@@ -35,7 +35,7 @@ class Iterator(xgb.DataIter):
         if cfg.iterator.keep_static_data_in_memory:
             self._static_shards = (
                 self._get_static_shards()
-            )  # do we want to cache this differently to share across workers or iterators?
+            )
 
         self.codes_set, self.aggs_set, self.min_frequency_set = self._get_inclusion_sets()
 
@@ -60,7 +60,6 @@ class Iterator(xgb.DataIter):
         if self.cfg.aggs is not None:
             aggs_set = set(self.cfg.aggs)
         if self.cfg.min_code_inclusion_frequency is not None:
-            # given parquet file with code frequencies for overall dataset, find which codes have high enough frequency to be included and make a set of them
             dataset_freuqency = pl.scan_parquet(
                 self.data_path / "code_frequencies.parquet" # TODO: make sure this is the right path
             )
@@ -102,20 +101,11 @@ class Iterator(xgb.DataIter):
         - tuple[sp.csc_matrix, sp.csc_matrix]: Tuple of feature data and labels.
 
         """
-        ### TODO: make sure we are handling nulls and 0s correctly 
-
-        # labels = df.select(
-        #     [
-        #         col
-        #         for col in df.schema.keys()
-        #         if col.endswith("/task")
-        #     ]
-        # )
         labels = df.select(
             [
                 col
                 for col in df.schema.keys()
-                if col in [ "patient_id"]
+                if col.endswith("/task")
             ]
         )
         data = df.select(
@@ -128,7 +118,7 @@ class Iterator(xgb.DataIter):
         )
         X, y = None, None
         ### TODO: This could be optimized so that we are collecting the largest shards possible at once and then sparsifying them
-        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if not col.startswith(tuple(self.cfg.window_sizes))]).collect().to_numpy()) ### check if this is true!, else just doesnt start with window
+        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if not col.startswith(tuple(self.cfg.window_sizes))]).collect().to_numpy())
         for window in self.cfg.window_sizes:
             col_csc = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith(f"{window}/")]).collect().to_numpy())
             X = sp.hstack([X, col_csc])
@@ -150,7 +140,7 @@ class Iterator(xgb.DataIter):
         - y (scipy.sparse.csc_matrix): Labels.
 
         """
-        # concatinate with static data
+
         if self.cfg.iterator.keep_static_data_in_memory:
             df = self._static_shards[self._data_shards[idx]]
         else:
@@ -182,10 +172,10 @@ class Iterator(xgb.DataIter):
 
         ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks
 
-        # task_df = pl.scan_parquet(self.data_path / "tasks.parquet") 
-        # task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys()}) # TODO: filtering of the tasks?? --> need to know more about tasks 
-        # ### TODO: Change to join_on with left merge orig df on left, labels on right join on subject_id and timestamp
-        # df = df.join(task_df, on=["subject_id", "timestamp"], how="left") 
+        task_df = pl.scan_parquet(self.data_path / "tasks.parquet") 
+        task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys()}) # TODO: filtering of the tasks?? --> need to know more about tasks 
+        ### TODO: Change to join_on with left merge orig df on left, labels on right join on subject_id and timestamp
+        df = df.join(task_df, on=["subject_id", "timestamp"], how="left") 
 
 
         ### TODO: Figure out best way to export this to dmatrix 
