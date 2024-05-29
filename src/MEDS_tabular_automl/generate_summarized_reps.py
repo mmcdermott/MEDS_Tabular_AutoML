@@ -66,7 +66,7 @@ def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]
 #     return out.groupby(groupby).sum()
 
 
-def sparse_rolling(df, timedelta, agg):
+def sparse_rolling(df, sparse_matrix, timedelta, agg):
     """Iterates through rolling windows while maintaining sparsity.
 
     Example:
@@ -83,22 +83,22 @@ def sparse_rolling(df, timedelta, agg):
     timestamp      datetime64[ns]
     dtype: object
     """
+    patient_id = df.iloc[0].patient_id
     df = df.drop(columns="patient_id").reset_index(drop=True).reset_index()
     timestamps = []
     logger.info("rolling for patient_id")
-    sparse_matrix = csr_matrix(df[df.columns[2:]].sparse.to_coo())
     out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
-    for each in tqdm(df[["index", "timestamp"]].rolling(on="timestamp", window=timedelta), total=len(df)):
+    for each in df[["index", "timestamp"]].rolling(on="timestamp", window=timedelta):
         subset_matrix = sparse_matrix[each["index"]]
 
         # TODO this is where we would apply the aggregation
         timestamps.append(each.index.max())
         agg_subset_matrix = subset_matrix.sum(axis=0)
         out_sparse_matrix = vstack([out_sparse_matrix, agg_subset_matrix])
-    out_df = pd.DataFrame({"timestamp": timestamps})
-    out_df = pd.concat([out_df, pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1)
-    out_df.columns = df.columns[1:]
-    return out_df
+    out_df = pd.DataFrame({"patient_id": [patient_id] * len(timestamps), "timestamp": timestamps})
+    # out_df = pd.concat([out_df, pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1)
+    # out_df.columns = df.columns[1:]
+    return out_df, out_sparse_matrix
 
 
 def compute_agg(df, window_size: str, agg: str):
@@ -160,22 +160,29 @@ def compute_agg(df, window_size: str, agg: str):
     sparse_matrix = df[df.columns[2:]].sparse.to_coo()
     sparse_matrix = csr_matrix(sparse_matrix)
     logger.info("done grouping")
+    out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
     match agg:
         case "code/count" | "value/sum":
             agg = "sum"
             out_dfs = []
-            for patient_id, subset_df in group.items():
-                logger.info(f"rolling for patient_id {patient_id}")
+            for patient_id, subset_df in tqdm(group.items(), total=len(group)):
+                logger.info("sparse rolling setup")
                 subset_sparse_matrix = sparse_matrix[subset_df.index]
-                sparse_df = pd.DataFrame.sparse.from_spmatrix(subset_sparse_matrix)
-                sparse_df.index = subset_df.index
-                patient_df = pd.concat([subset_df[["patient_id", "timestamp"]], sparse_df], axis=1)
-                patient_df.columns = df.columns
+                patient_df = subset_df[
+                    ["patient_id", "timestamp"]
+                ]  # pd.concat([subset_df[["patient_id", "timestamp"]], sparse_df], axis=1)
                 assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
-                patient_df = sparse_rolling(patient_df, timedelta, agg)
-                patient_df["patient_id"] = patient_id
+                logger.info("sparse rolling start")
+                patient_df, out_sparse = sparse_rolling(patient_df, subset_sparse_matrix, timedelta, agg)
+                logger.info("sparse rolling complete")
+                # patient_df["patient_id"] = patient_id
                 out_dfs.append(patient_df)
+                out_sparse_matrix = vstack([out_sparse_matrix, out_sparse])
             out_df = pd.concat(out_dfs, axis=0)
+            out_df = pd.concat(
+                [out_df.reset_index(drop=True), pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1
+            )
+            out_df.columns = df.columns
             out_df.rename(columns=time_aggd_col_alias_fntr(window_size, "count"))
 
         case _:
