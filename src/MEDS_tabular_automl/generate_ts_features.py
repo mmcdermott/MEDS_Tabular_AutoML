@@ -3,6 +3,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import polars as pl
+from loguru import logger
 from scipy.sparse import csc_array
 
 from MEDS_tabular_automl.utils import DF_T
@@ -21,38 +22,32 @@ def get_ts_columns(feature_columns):
     return ts_columns
 
 
-def fill_missing_entries_with_nan(sparse_df, type):
+def fill_missing_entries_with_nan(sparse_df, type, columns):
     # Fill missing entries with NaN
-    for col in sparse_df.columns:
+    for col in columns:
         sparse_df[col] = sparse_df[col].astype(pd.SparseDtype(type, fill_value=np.nan))
     return sparse_df
 
 
-def get_long_code_df(df, ts_columns):
-    column_to_int = {col: i for i, col in enumerate(ts_columns)}
+def get_long_code_df(df, ts_columns, col_offset):
+    column_to_int = {col: i + col_offset for i, col in enumerate(ts_columns)}
     rows = range(len(df))
     cols = df["code"].map(column_to_int)
     data = np.ones(len(df), dtype=np.bool_)
-    sparse_matrix = csc_array((data, (rows, cols)), shape=(len(df), len(ts_columns)))
-    long_code_df = pd.DataFrame.sparse.from_spmatrix(sparse_matrix, columns=ts_columns)
-    # long_code_df = fill_missing_entries_with_nan(long_code_df, bool)
-    return long_code_df
+    return data, (rows, cols)
 
 
 def get_long_value_df(df, ts_columns):
     column_to_int = {col: i for i, col in enumerate(ts_columns)}
-    value_rows = range(len(df))
-    value_cols = df["code"].map(column_to_int)
-    value_data = df["numerical_value"]
-    value_sparse_matrix = csc_array((value_data, (value_rows, value_cols)), shape=(len(df), len(ts_columns)))
-    long_value_df = pd.DataFrame.sparse.from_spmatrix(value_sparse_matrix, columns=ts_columns)
-    # long_value_df = fill_missing_entries_with_nan(long_value_df, np.float64)
-    return long_value_df
+    rows = range(0, len(df))
+    cols = df["code"].map(column_to_int)
+    data = df["numerical_value"]
+    return data, (rows, cols)
 
 
 def summarize_dynamic_measurements(
     ts_columns: list[str],
-    df: DF_T,
+    df: pd.DataFrame,
 ) -> pd.DataFrame:
     """Summarize dynamic measurements for feature columns that are marked as 'dynamic'.
 
@@ -69,38 +64,44 @@ def summarize_dynamic_measurements(
     ...         'code': ['A', 'A', 'B', 'B'],
     ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04'],
     ...         'numerical_value': [1, 2, 2, 2]}
-    >>> df = pl.DataFrame(data).lazy()
+    >>> df = pd.DataFrame(data)
     >>> ts_columns = ['A', 'B']
     >>> long_df = summarize_dynamic_measurements(ts_columns, df)
     >>> long_df.head()
        patient_id   timestamp  A/value  B/value  A/code  B/code
-    0           1  2021-01-01      1.0      NaN    True     NaN
-    1           1  2021-01-01      2.0      NaN    True     NaN
-    2           1  2020-01-01      NaN      2.0     NaN    True
-    3           2  2021-01-04      NaN      2.0     NaN    True
+    0           1  2021-01-01        1        0       1       0
+    1           1  2021-01-01        2        0       1       0
+    2           1  2020-01-01        0        2       0       1
+    3           2  2021-01-04        0        2       0       1
     >>> long_df.shape
     (4, 6)
-    >>> long_df = summarize_dynamic_measurements(ts_columns, df.filter(pl.col("code") == "A"))
+    >>> long_df = summarize_dynamic_measurements(ts_columns, df[df.code == "A"])
     >>> long_df
        patient_id   timestamp  A/value  B/value  A/code  B/code
-    0           1  2021-01-01      1.0      NaN    True     NaN
-    1           1  2021-01-01      2.0      NaN    True     NaN
+    0           1  2021-01-01        1        0       1       0
+    1           1  2021-01-01        2        0       1       0
     """
-    df = df.collect().to_pandas()
+    logger.info("create code and value")
     id_cols = ["patient_id", "timestamp"]
-    code_df = df.drop(columns=id_cols + ["numerical_value"])
-    long_code_df = get_long_code_df(code_df, ts_columns)
-
     value_df = df.drop(columns=id_cols)
-    long_value_df = get_long_value_df(value_df, ts_columns)
-    long_df = pd.concat(
-        [
-            df[["patient_id", "timestamp"]],
-            long_value_df.rename(columns=lambda c: f"{c}/value"),
-            long_code_df.rename(columns=lambda c: f"{c}/code"),
-        ],
-        axis=1,
+    value_data, (value_rows, value_cols) = get_long_value_df(value_df, ts_columns)
+
+    code_df = df.drop(columns=id_cols + ["numerical_value"])
+    code_data, (code_rows, code_cols) = get_long_code_df(code_df, ts_columns, col_offset=len(ts_columns))
+
+    logger.info("merge")
+    merge_data = np.concatenate([value_data, code_data])
+    merge_rows = np.concatenate([value_rows, code_rows])
+    merge_cols = np.concatenate([value_cols, code_cols])
+    merge_columns = [f"{c}/value" for c in ts_columns] + [f"{c}/code" for c in ts_columns]
+    long_df = pd.DataFrame.sparse.from_spmatrix(
+        csc_array((merge_data, (merge_rows, merge_cols)), shape=(len(value_df), len(merge_columns))),
+        columns=merge_columns,
     )
+    logger.info("add id columns")
+    long_df["timestamp"] = df["timestamp"]
+    long_df["patient_id"] = df["patient_id"]
+    long_df = long_df[id_cols + merge_columns]
     return long_df
 
 
@@ -136,14 +137,13 @@ def get_flat_ts_rep(
         >>> pivot_df = get_flat_ts_rep(feature_columns, df)
         >>> pivot_df
            patient_id   timestamp  A/value  B/value  C/value  A/code  B/code  C/code
-        0           1  2021-01-01      1.0      NaN      NaN    True     NaN     NaN
-        1           1  2021-01-01      2.0      NaN      NaN    True     NaN     NaN
-        2           1  2020-01-01      NaN      2.0      NaN     NaN    True     NaN
-        3           2  2021-01-04      NaN      2.0      NaN     NaN    True     NaN
+        0           1  2021-01-01        1        0        0       1       0       0
+        1           1  2021-01-01        2        0        0       1       0       0
+        2           1  2020-01-01        0        2        0       0       1       0
+        3           2  2021-01-04        0        2        0       0       1       0
     """
-
+    logger.info("load")
     ts_columns = get_ts_columns(feature_columns)
-    ts_shard_df = shard_df.drop_nulls(
-        subset=["timestamp", "code"]
-    )  # filter(pl.col("timestamp", "").is_not_null())
-    return summarize_dynamic_measurements(ts_columns, ts_shard_df)
+    ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
+    pd_df = ts_shard_df.collect().to_pandas()
+    return summarize_dynamic_measurements(ts_columns, pd_df)

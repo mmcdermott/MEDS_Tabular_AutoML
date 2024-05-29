@@ -1,16 +1,13 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-
-
-from pathlib import Path
-
 import hydra
 import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
 
 from MEDS_tabular_automl.generate_summarized_reps import generate_summary
+from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.utils import setup_environment, write_df
 
 
@@ -44,52 +41,39 @@ def summarize_ts_data_over_windows(
         FileNotFoundError: If specified directories or files in the configuration are not found.
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
-    flat_dir, _, feature_columns = setup_environment(cfg)
+    flat_dir, split_to_df, feature_columns = setup_environment(cfg)
+    # Produce ts representation
+    ts_subdir = flat_dir / "ts"
 
-    # Assuming MEDS_cohort_dir is correctly defined somewhere above this snippet
-    ts_dir = Path(cfg.tabularized_data_dir) / "ts"
-    # TODO: Use patient splits here instead
-    ts_fps = list(ts_dir.glob("*/*.parquet"))
-    splits = {fp.parent.stem for fp in ts_fps}
+    for sp, subjects_dfs in split_to_df.items():
+        sp_dir = ts_subdir / sp
+        if sp != "train":
+            continue
 
-    split_to_pair_fps = {}
-    for split in splits:
-        # Categorize files by identifier (base name without '_code' or '_value') using a list comprehension
-        categorized_files = {
-            file.stem.rsplit("_", 1)[0]: {"code": None, "value": None}
-            for file in ts_fps
-            if file.parent.stem == split
-        }
-        for file in ts_fps:
-            if file.parent.stem == split:
-                identifier = file.stem.rsplit("_", 1)[0]
-                suffix = file.stem.split("_")[-1]  # 'code' or 'value'
-                categorized_files[identifier][suffix] = file
+        for i, shard_df in enumerate(subjects_dfs):
+            pivot_fp = sp_dir / f"{i}.parquet"
+            if pivot_fp.exists() and not cfg.do_overwrite:
+                raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {pivot_fp.exists()} exists!")
+            if sp != "train":
+                # remove codes not in training set
+                shard_df = shard_df.filter(pl.col("code").is_in(feature_columns))
 
-        # Process categorized files into pairs ensuring code is first and value is second
-        code_value_pairs = [
-            (info["code"], info["value"])
-            for info in categorized_files.values()
-            if info["code"] is not None and info["value"] is not None
-        ]
+            # Load Sparse DataFrame
+            pivot_df = get_flat_ts_rep(
+                feature_columns=feature_columns,
+                shard_df=shard_df,
+            )
 
-        split_to_pair_fps[split] = code_value_pairs
-
-    # Summarize data and store
-    summary_dir = flat_dir / "summary"
-    for split, pairs in split_to_pair_fps.items():
-        logger.info(f"Processing {split}:")
-        for code_file, value_file in pairs:
-            logger.info(f" - Code file: {code_file}, Value file: {value_file}")
+            # Summarize data -- applying aggregations on various window sizes
             summary_df = generate_summary(
                 feature_columns,
-                [pl.scan_parquet(code_file), pl.scan_parquet(value_file)],
+                pivot_df,
                 cfg.window_sizes,
                 cfg.aggs,
             )
 
-            shard_number = code_file.stem.rsplit("_", 1)[0]
-            write_df(summary_df, summary_dir / split / f"{shard_number}.parquet")
+            logger.info("Writing pivot file")
+            write_df(summary_df, pivot_fp, do_overwrite=cfg.do_overwrite)
 
 
 if __name__ == "__main__":
