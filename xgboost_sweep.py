@@ -9,9 +9,12 @@ from sklearn.metrics import mean_absolute_error
 import scipy.sparse as sp
 import os
 from typing import List, Callable
-import sys 
+import sys
 import pandas as pd
 import glob
+import json
+from scipy.sparse import csr_matrix
+
 
 class Iterator(xgb.DataIter):
     def __init__(self, cfg: DictConfig, split: str = "train"):
@@ -27,19 +30,13 @@ class Iterator(xgb.DataIter):
         self.data_path = Path(cfg.tabularized_data_dir)
         self.dynamic_data_path = self.data_path / "summarize" / split
         self.static_data_path = self.data_path / "static" / split
-
-        self._data_shards = list(self.static_data_path.glob("*.parquet"))
-        # [
-        #     x.stem
-        #     for x in self.static_data_path.iterdir()
-        #     if x.is_file() and x.suffix == ".parquet"
-        # ]
+        self._data_shards = [shard.stem for shard in list(self.static_data_path.glob("*.parquet"))]
         if cfg.iterator.keep_static_data_in_memory:
-            self._static_shards = (
-                self._get_static_shards()
-            )
+            self._static_shards = self._get_static_shards()
 
-        self.codes_set, self.aggs_set, self.min_frequency_set = self._get_inclusion_sets()
+        self.codes_set, self.aggs_set, self.min_frequency_set = (
+            self._get_inclusion_sets()
+        )
 
         self._it = 0
 
@@ -62,17 +59,14 @@ class Iterator(xgb.DataIter):
         if self.cfg.aggs is not None:
             aggs_set = set(self.cfg.aggs)
         if self.cfg.min_code_inclusion_frequency is not None:
-            dataset_freuqency = pd.read_json(
-                self.data_path / "feature_freqs.json" # TODO: make sure this is the right path
+            feature_freqs = json.load(
+                self.data_path
+                / "feature_freqs.json"  # TODO: make sure this is the right path
             )
             min_frequency_set = set(
-                dataset_freuqency.filter(
-                    cs.col("frequency") >= self.cfg.min_code_inclusion_frequency
-                )
-                .select("code")
-                .collect()
-                .to_numpy()
-                .flatten()
+                key
+                for key, value in feature_freqs.items()
+                if value >= self.cfg.min_code_inclusion_frequency
             )
 
         return codes_set, aggs_set, min_frequency_set
@@ -87,50 +81,70 @@ class Iterator(xgb.DataIter):
         """
         static_shards = {}
         for iter in self._data_shards:
-            static_shards[iter] = pl.scan_parquet(
+            static_shards[iter] = self._get_sparse_dynamic_shard_from_file(
                 self.static_data_path / f"{iter}.parquet"
             )
         return static_shards
 
-    def _sparsify_shard(self, df: pl.DataFrame) -> tuple[sp.csc_matrix, np.ndarray]:
+    def _sparsify_shard(self, df: pd.DataFrame) -> tuple[sp.csc_matrix, np.ndarray]:
         """
         Make X and y as scipy sparse arrays for XGBoost.
 
         Args:
-        - df (pl.DataFrame): Data frame to sparsify.
+        - df (pandas.DataFrame): Data frame to sparsify.
 
         Returns:
         - tuple[scipy.sparse.csr_matrix, numpy.ndarray]: Tuple of feature data and labels.
 
         """
-        labels = df.select(
-            [
-                col
-                for col in df.schema.keys()
-                if col.endswith("/task")
-            ]
+        labels = df.loc[:,[col for col in df.columns if col.endswith("/task")]]
+        data = df.drop(columns=labels.columns)
+        return csr_matrix(data), labels.values
+    
+    def _validate_shard_file_inclusion(self, file:Path) -> bool:
+        parts = file.relative_to(self.dynamic_data_path).parts
+        if not parts:
+            return False
+        
+        codes_part = "/".join(parts[2:-2])
+        aggs_part = "/".join(parts[-2:])
+        
+        return (
+            (self.codes_set is None or codes_part in self.codes_set) and
+            (self.min_frequency_set is None or codes_part in self.min_frequency_set) and
+            (self.aggs_set is None or aggs_part in self.aggs_set)
         )
-        data = df.select(
-            [
-                col
-                for col in df.schema.keys()
-                if col not in ["label", "patient_id", "timestamp"]
-                and not col.endswith("/task")
-            ]
+    def _assert_correct_sorting(self, shard: pd.DataFrame):
+        """
+        Assert that the shard is sorted correctly.
+        """
+        if "timestamp" in shard.columns:
+            sort_columns = ["patient_id", "timestamp"]
+        else:
+            sort_columns = ["patient_id"]
+        assert shard[sort_columns].equals(shard[sort_columns].sort_values(by=sort_columns)), (
+            f"Shard is not sorted on correctly. "
+            "Please ensure that the data is sorted on patient_id and timestamp, if applicable."
         )
-        X, y = None, None
-        ### TODO: This could be optimized so that we are collecting the largest shards possible at once and then sparsifying them
-        X = sp.csc_matrix(data.select([col for col in data.schema.keys() if not col.startswith(tuple(self.cfg.window_sizes))]).collect().to_numpy())
-        for window in self.cfg.window_sizes:
-            col_csc = sp.csc_matrix(data.select([col for col in data.schema.keys() if col.startswith(f"{window}/")]).collect().to_numpy())
-            X = sp.hstack([X, col_csc])
 
-        y = labels.collect().to_numpy()
-            
-        ### TODO: fix the need to convert to array here!!!
-        return X.tocsr(), y
+    def _get_sparse_dynamic_shard_from_file(self, path: Path) -> pd.DataFrame:
+        """
+        Load a sparse shard into memory. This returns a shard as a pandas dataframe, 
+        asserted that it is sorted on patient id and timestamp, if included.
 
-    def _load_shard(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
+        Args:
+            - path (Path): Path to the sparse shard.
+
+        Returns:
+            - pd.DataFrame: Data frame with the sparse shard.
+
+        """
+        shard = pd.read_parquet(path)
+        self._assert_correct_sorting(shard)
+        return shard.drop(columns=["patient_id", "timestamp"])
+
+
+    def _load_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """
         Load a specific shard of data from disk and concatenate with static data.
 
@@ -144,43 +158,33 @@ class Iterator(xgb.DataIter):
         """
 
         if self.cfg.iterator.keep_static_data_in_memory:
-            df = self._static_shards[self._data_shards[idx]]
+            static_df = self._static_shards[self._data_shards[idx]]
         else:
-            df = pl.scan_parquet(
+            static_df = self._get_sparse_dynamic_shard_from_file(
                 self.static_data_path / f"{self._data_shards[idx]}.parquet"
             )
 
-        for window in self.cfg.window_sizes:
-            dynamic_df = pl.scan_parquet(
-                self.dynamic_data_path / window / f"{self._data_shards[idx]}.parquet"
-            )
+        files = list(
+            self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}*.parquet")
+        )
 
-            columns = dynamic_df.schema.keys()
-            selected_columns = [
-                col
-                for col in columns
-                if (parts := col.split("/"))
-                and len(parts) > 3
-                and (self.codes_set is None or "/".join(parts[1:-2]) in self.codes_set)
-                and (self.min_frequency_set is None or "/".join(parts[1:-2]) in self.min_frequency_set)
-                and (self.aggs_set is None or "/".join(parts[-2:]) in self.aggs_set)
-            ]
-            selected_columns.extend(["patient_id", "timestamp"])
-            dynamic_df = dynamic_df.select(selected_columns)
+        files = [file for file in files if self._validate_shard_file_inclusion(file)]
 
-            df = pl.concat([df, dynamic_df], how="align")
+        dynamic_dfs = [self._get_sparse_dynamic_shard_from_file(file) for file in files]
+        dynamic_df = pd.concat(dynamic_dfs, axis=1)
 
         ### TODO: add in some type checking etc for safety
 
-        ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks
+        ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks --> nassim told me to do something else
+        task_df = pd.read_parquet(self.data_path / "tasks.parquet")
+        df = task_df.join(static_df, on=["patient_id"], how="left")
+        self._assert_correct_sorting(df)
+        df = df.drop(columns=["patient_id", "timestamp"])
+        df = df.rename({col: f"{col}/task" for col in df.columns}) 
+        df = task_df.join(static_df, on=["patient_id"], how="left")
+        df = pd.concat([df, dynamic_df], axis=1)
 
-        task_df = pl.scan_parquet(self.data_path / "tasks.parquet") 
-        task_df = task_df.rename({col: f"{col}/task" for col in task_df.schema.keys() if col not in ["patient_id", "timestamp"]}) # TODO: filtering of the tasks?? --> need to know more about tasks 
-        ### TODO: Change to join_on with left merge orig df on left, labels on right join on subject_id and timestamp
-        df = df.join(task_df, on=["patient_id", "timestamp"], how="left") 
-
-
-        ### TODO: Figure out best way to export this to dmatrix 
+        ### TODO: Figure out best way to export this to dmatrix
         # --> can we use scipy sparse matrix/array? --> likely we will not be able to collect in memory
         return self._sparsify_shard(df)
 
@@ -201,7 +205,7 @@ class Iterator(xgb.DataIter):
 
         # input_data is a function passed in by XGBoost who has the exact same signature of
         # ``DMatrix``
-        X, y = self._load_shard(self._it)  # self._data_shards[self._it])
+        X, y = self._load_shard_by_index(self._it)  # self._data_shards[self._it])
         input_data(data=X, label=y)
         self._it += 1
         # Return 1 to let XGBoost know we haven't seen all the files yet.
@@ -225,7 +229,7 @@ class Iterator(xgb.DataIter):
         X = []
         y = []
         for i in range(len(self._data_shards)):
-            X_, y_ = self._load_shard(i)
+            X_, y_ = self._load_shard_by_index(i)
             X.append(X_)
             y.append(y_)
 
