@@ -51,12 +51,24 @@ script is a functional test that is also run with `pytest` to verify correctness
 
 1. `scripts/tabularize/identify_columns.py` loads all training shard to identify which feature columns
    to generate tabular data for.
+
+```bash
+POLARS_MAX_THREADS=32 python scripts/identify_columns.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
+
 2. `scripts/tabularize/tabularize_static.py` Iterates through shards and generates tabular vectors for
    each patient. There is a single row per patient for each shard.
-3. `scripts/tabularize/tabularize_ts.py` Iterates through shards and pivots time series data such
-   that we have a column for every feature column and binary presence for codes and numerical values filled in for columns with numeirical measurements. There is a row for every timeseries input.
+
+```bash
+POLARS_MAX_THREADS=32 python scripts/tabularize_static.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
+
 4. `scripts/tabularize/summarize_over_windows.py` For each shard, iterates through window sizes and aggregations to
    and horizontally concatenates the outputs to generate the final tabular representations at every event time for every patient.
+
+```bash
+POLARS_MAX_THREADS=1 python scripts/summarize_over_windows.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
 
 ## Feature Construction, Storage, and Loading
 
