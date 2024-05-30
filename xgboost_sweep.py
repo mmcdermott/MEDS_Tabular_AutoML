@@ -1,30 +1,25 @@
-import hydra
-from omegaconf import DictConfig, OmegaConf
-from pathlib import Path
-import xgboost as xgb
-import polars as pl
-import numpy as np
-import polars.selectors as cs
-from sklearn.metrics import mean_absolute_error
-import scipy.sparse as sp
-import os
-from typing import List, Callable
-import sys
-import pandas as pd
-import glob
 import json
+import os
+from collections.abc import Callable
+from pathlib import Path
+
+import hydra
+import numpy as np
+import pandas as pd
+import scipy.sparse as sp
+import xgboost as xgb
+from omegaconf import DictConfig, OmegaConf
 from scipy.sparse import csr_matrix
+from sklearn.metrics import mean_absolute_error
 
 
 class Iterator(xgb.DataIter):
     def __init__(self, cfg: DictConfig, split: str = "train"):
-        """
-        Initialize the Iterator with the provided configuration and split.
+        """Initialize the Iterator with the provided configuration and split.
 
         Args:
         - cfg (DictConfig): Configuration dictionary.
         - split (str): The data split to use ("train", "tuning", or "held_out").
-
         """
         self.cfg = cfg
         self.data_path = Path(cfg.tabularized_data_dir)
@@ -34,9 +29,7 @@ class Iterator(xgb.DataIter):
         if cfg.iterator.keep_static_data_in_memory:
             self._static_shards = self._get_static_shards()
 
-        self.codes_set, self.aggs_set, self.min_frequency_set = (
-            self._get_inclusion_sets()
-        )
+        self.codes_set, self.aggs_set, self.min_frequency_set = self._get_inclusion_sets()
 
         self._it = 0
 
@@ -45,8 +38,7 @@ class Iterator(xgb.DataIter):
         super().__init__(cache_prefix=os.path.join(".", "cache"))
 
     def _get_inclusion_sets(self) -> tuple[set, set, set]:
-        """
-        Get the inclusion sets for codes and aggregations.
+        """Get the inclusion sets for codes and aggregations.
 
         Returns:
         - tuple[set, set, set]: Tuple of sets for codes, aggregations, and minimum code frequency.
@@ -60,24 +52,19 @@ class Iterator(xgb.DataIter):
             aggs_set = set(self.cfg.aggs)
         if self.cfg.min_code_inclusion_frequency is not None:
             feature_freqs = json.load(
-                self.data_path
-                / "feature_freqs.json"  # TODO: make sure this is the right path
+                self.data_path / "feature_freqs.json"  # TODO: make sure this is the right path
             )
-            min_frequency_set = set(
-                key
-                for key, value in feature_freqs.items()
-                if value >= self.cfg.min_code_inclusion_frequency
-            )
+            min_frequency_set = {
+                key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
+            }
 
         return codes_set, aggs_set, min_frequency_set
 
     def _get_static_shards(self) -> dict:
-        """
-        Load static shards into memory.
+        """Load static shards into memory.
 
         Returns:
         - dict: Dictionary with shard names as keys and data frames as values.
-
         """
         static_shards = {}
         for iter in self._data_shards:
@@ -87,66 +74,59 @@ class Iterator(xgb.DataIter):
         return static_shards
 
     def _sparsify_shard(self, df: pd.DataFrame) -> tuple[sp.csc_matrix, np.ndarray]:
-        """
-        Make X and y as scipy sparse arrays for XGBoost.
+        """Make X and y as scipy sparse arrays for XGBoost.
 
         Args:
         - df (pandas.DataFrame): Data frame to sparsify.
 
         Returns:
         - tuple[scipy.sparse.csr_matrix, numpy.ndarray]: Tuple of feature data and labels.
-
         """
-        labels = df.loc[:,[col for col in df.columns if col.endswith("/task")]]
+        labels = df.loc[:, [col for col in df.columns if col.endswith("/task")]]
         data = df.drop(columns=labels.columns)
         return csr_matrix(data), labels.values
-    
-    def _validate_shard_file_inclusion(self, file:Path) -> bool:
+
+    def _validate_shard_file_inclusion(self, file: Path) -> bool:
         parts = file.relative_to(self.dynamic_data_path).parts
         if not parts:
             return False
-        
+
         codes_part = "/".join(parts[2:-2])
         aggs_part = "/".join(parts[-2:])
-        
+
         return (
-            (self.codes_set is None or codes_part in self.codes_set) and
-            (self.min_frequency_set is None or codes_part in self.min_frequency_set) and
-            (self.aggs_set is None or aggs_part in self.aggs_set)
+            (self.codes_set is None or codes_part in self.codes_set)
+            and (self.min_frequency_set is None or codes_part in self.min_frequency_set)
+            and (self.aggs_set is None or aggs_part in self.aggs_set)
         )
+
     def _assert_correct_sorting(self, shard: pd.DataFrame):
-        """
-        Assert that the shard is sorted correctly.
-        """
+        """Assert that the shard is sorted correctly."""
         if "timestamp" in shard.columns:
             sort_columns = ["patient_id", "timestamp"]
         else:
             sort_columns = ["patient_id"]
         assert shard[sort_columns].equals(shard[sort_columns].sort_values(by=sort_columns)), (
-            f"Shard is not sorted on correctly. "
+            "Shard is not sorted on correctly. "
             "Please ensure that the data is sorted on patient_id and timestamp, if applicable."
         )
 
     def _get_sparse_dynamic_shard_from_file(self, path: Path) -> pd.DataFrame:
-        """
-        Load a sparse shard into memory. This returns a shard as a pandas dataframe, 
-        asserted that it is sorted on patient id and timestamp, if included.
+        """Load a sparse shard into memory. This returns a shard as a pandas dataframe, asserted that it is
+        sorted on patient id and timestamp, if included.
 
         Args:
             - path (Path): Path to the sparse shard.
 
         Returns:
             - pd.DataFrame: Data frame with the sparse shard.
-
         """
         shard = pd.read_parquet(path)
         self._assert_correct_sorting(shard)
         return shard.drop(columns=["patient_id", "timestamp"])
 
-
     def _load_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
-        """
-        Load a specific shard of data from disk and concatenate with static data.
+        """Load a specific shard of data from disk and concatenate with static data.
 
         Args:
         - idx (int): Index of the shard to load.
@@ -154,7 +134,6 @@ class Iterator(xgb.DataIter):
         Returns:
         - X (scipy.sparse.csr_matrix): Feature data frame.
         - y (numpy.ndarray): Labels.
-
         """
 
         if self.cfg.iterator.keep_static_data_in_memory:
@@ -164,34 +143,33 @@ class Iterator(xgb.DataIter):
                 self.static_data_path / f"{self._data_shards[idx]}.parquet"
             )
 
-        files = list(
-            self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}*.parquet")
-        )
+        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}*.parquet"))
 
         files = [file for file in files if self._validate_shard_file_inclusion(file)]
 
         dynamic_dfs = [self._get_sparse_dynamic_shard_from_file(file) for file in files]
         dynamic_df = pd.concat(dynamic_dfs, axis=1)
 
-        ### TODO: add in some type checking etc for safety
+        # TODO: add in some type checking etc for safety
 
-        ### TODO: Figure out features vs labels --> look at esgpt_baseline for loading in labels based on tasks --> nassim told me to do something else
+        # TODO: Figure out features vs labels
+        # --> look at esgpt_baseline for loading in labels based on tasks
+        # --> nassim told me to do something else
         task_df = pd.read_parquet(self.data_path / "tasks.parquet")
         df = task_df.join(static_df, on=["patient_id"], how="left")
         self._assert_correct_sorting(df)
         df = df.drop(columns=["patient_id", "timestamp"])
-        df = df.rename({col: f"{col}/task" for col in df.columns}) 
+        df = df.rename({col: f"{col}/task" for col in df.columns})
         df = task_df.join(static_df, on=["patient_id"], how="left")
         df = pd.concat([df, dynamic_df], axis=1)
 
-        ### TODO: Figure out best way to export this to dmatrix
+        # TODO: Figure out best way to export this to dmatrix
         # --> can we use scipy sparse matrix/array? --> likely we will not be able to collect in memory
         return self._sparsify_shard(df)
 
     def next(self, input_data: Callable):
-        """
-        Advance the iterator by 1 step and pass the data to XGBoost.  This function is
-        called by XGBoost during the construction of ``DMatrix``
+        """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
+        during the construction of ``DMatrix``
 
         Args:
         - input_data (Callable): A function passed by XGBoost with the same signature as `DMatrix`.
@@ -212,19 +190,14 @@ class Iterator(xgb.DataIter):
         return 1
 
     def reset(self):
-        """
-        Reset the iterator to its beginning.
-
-        """
+        """Reset the iterator to its beginning."""
         self._it = 0
 
     def collect_in_memory(self) -> tuple[sp.csr_matrix, np.ndarray]:
-        """
-        Collect the data in memory.
+        """Collect the data in memory.
 
         Returns:
         - tuple[np.ndarray, np.ndarray]: Tuple of feature data and labels.
-
         """
         X = []
         y = []
@@ -240,17 +213,14 @@ class Iterator(xgb.DataIter):
 
 class XGBoostModel:
     def __init__(self, cfg: DictConfig):
-        """
-        Initialize the XGBoostClassifier with the provided configuration.
+        """Initialize the XGBoostClassifier with the provided configuration.
 
         Args:
         - cfg (DictConfig): Configuration dictionary.
         """
 
         self.cfg = cfg
-        self.keep_data_in_memory = getattr(
-            getattr(cfg, "iterator", {}), "keep_data_in_memory", True
-        )
+        self.keep_data_in_memory = getattr(getattr(cfg, "iterator", {}), "keep_data_in_memory", True)
 
         self.itrain = None
         self.ival = None
@@ -263,20 +233,14 @@ class XGBoostModel:
         self.model = None
 
     def train(self):
-        """
-        Train the model.
-
-        """
+        """Train the model."""
         self._build()
         self.model = xgb.train(
             OmegaConf.to_container(self.cfg.model), self.dtrain
         )  # do we want eval and things?
 
     def _build(self):
-        """
-        Build necessary data structures for training.
-
-        """
+        """Build necessary data structures for training."""
         if self.keep_data_in_memory:
             self._build_iterators()
             self._build_dmatrix_in_memory()
@@ -285,10 +249,7 @@ class XGBoostModel:
             self._build_dmatrix_from_iterators()
 
     def _build_dmatrix_in_memory(self):
-        """
-        Build the DMatrix from the data in memory.
-
-        """
+        """Build the DMatrix from the data in memory."""
         X_train, y_train = self.itrain.collect_in_memory()
         X_val, y_val = self.ival.collect_in_memory()
         X_test, y_test = self.itest.collect_in_memory()
@@ -297,32 +258,24 @@ class XGBoostModel:
         self.dtest = xgb.DMatrix(X_test, label=y_test)
 
     def _build_dmatrix_from_iterators(self):
-        """
-        Build the DMatrix from the iterators.
-
-        """
+        """Build the DMatrix from the iterators."""
         self.dtrain = xgb.DMatrix(self.ival)
         self.dval = xgb.DMatrix(self.itest)
         self.dtest = xgb.DMatrix(self.itest)
 
     def _build_iterators(self):
-        """
-        Build the iterators for training, validation, and testing.
-
-        """
+        """Build the iterators for training, validation, and testing."""
         self.itrain = Iterator(self.cfg, split="train")
         self.ival = Iterator(self.cfg, split="tuning")
         self.itest = Iterator(self.cfg, split="held_out")
 
     def evaluate(self) -> float:
-        """
-        Evaluate the model on the test set.
+        """Evaluate the model on the test set.
 
         Returns:
         - float: Evaluation metric (mae).
-
         """
-        ### TODO: Figure out exactly what we want to do here
+        # TODO: Figure out exactly what we want to do here
 
         y_pred = self.model.predict(self.dtest)
         y_true = self.dtest.get_label()
@@ -331,15 +284,13 @@ class XGBoostModel:
 
 @hydra.main(version_base=None, config_path="configs", config_name="tabularize_sweep")
 def optimize(cfg: DictConfig) -> float:
-    """
-    Optimize the model based on the provided configuration.
+    """Optimize the model based on the provided configuration.
 
     Args:
     - cfg (DictConfig): Configuration dictionary.
 
     Returns:
     - float: Evaluation result.
-
     """
 
     model = XGBoostModel(cfg)
