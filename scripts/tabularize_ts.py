@@ -5,10 +5,10 @@ import hydra
 import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
-from tqdm import tqdm
 
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
-from MEDS_tabular_automl.utils import setup_environment, write_df
+from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
+from MEDS_tabular_automl.utils import load_tqdm, setup_environment, write_df
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
@@ -25,27 +25,40 @@ def tabularize_ts_data(
     Args:
         cfg: configuration dictionary containing the necessary parameters for tabularizing the data.
     """
-    flat_dir, split_to_df, feature_columns = setup_environment(cfg)
+    iter_wrapper = load_tqdm(cfg.tqdm)
+    flat_dir, split_to_fp, feature_columns = setup_environment(cfg, load_data=False)
+
     # Produce ts representation
     ts_subdir = flat_dir / "ts"
 
-    for sp, subjects_dfs in split_to_df.items():
+    for sp, shard_fps in split_to_fp.items():
         sp_dir = ts_subdir / sp
 
-        for i, shard_df in enumerate(tqdm(subjects_dfs)):
-            pivot_fp = sp_dir / f"{i}.parquet"
-            if pivot_fp.exists() and not cfg.do_overwrite:
-                raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {pivot_fp.exists()} exists!")
-            if sp != "train":
-                # remove codes not in training set
-                shard_df = shard_df.filter(pl.col("code").is_in(feature_columns))
+        for i, shard_fp in enumerate(iter_wrapper(shard_fps)):
+            out_fp = sp_dir / f"{i}.pkl"
 
-            pivot_df = get_flat_ts_rep(
-                feature_columns=feature_columns,
-                shard_df=shard_df,
+            def read_fn(in_fp):
+                return pl.scan_parquet(in_fp)
+
+            def compute_fn(shard_df):
+                return get_flat_ts_rep(
+                    feature_columns=feature_columns,
+                    shard_df=shard_df,
+                )
+
+            def write_fn(data, out_df):
+                write_df(data, out_df, do_overwrite=cfg.do_overwrite)
+
+            rwlock_wrap(
+                shard_fp,
+                out_fp,
+                read_fn,
+                write_fn,
+                compute_fn,
+                do_overwrite=cfg.do_overwrite,
+                do_return=False,
             )
-            logger.info("Writing pivot file")
-            write_df(pivot_df, pivot_fp, do_overwrite=cfg.do_overwrite)
+    logger.info("Generated TS flat representations.")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
+from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import setup_environment, write_df
 
 pl.enable_string_cache()
@@ -95,28 +96,43 @@ def tabularize_static_data(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
-    flat_dir, split_to_df, feature_columns = setup_environment(cfg)
+    flat_dir, split_to_fp, feature_columns = setup_environment(cfg, load_data=False)
 
     # Produce static representation
     static_subdir = flat_dir / "static"
 
     static_dfs = {}
-    for sp, subjects_dfs in split_to_df.items():
+    for sp, shard_fps in split_to_fp.items():
         static_dfs[sp] = []
         sp_dir = static_subdir / sp
 
-        for i, shard_df in enumerate(subjects_dfs):
+        for i, shard_fp in enumerate(shard_fps):
             fp = sp_dir / f"{i}.parquet"
             static_dfs[sp].append(fp)
             if fp.exists() and not cfg.do_overwrite:
                 raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {fp} exists!")
 
-            df = get_flat_static_rep(
-                feature_columns=feature_columns,
-                shard_df=shard_df,
-            )
+            def read_fn(in_fp):
+                return pl.scan_parquet(in_fp)
 
-            write_df(df, fp, do_overwrite=cfg.do_overwrite, pandas=True)
+            def compute_fn(shard_df):
+                return get_flat_static_rep(
+                    feature_columns=feature_columns,
+                    shard_df=shard_df,
+                )
+
+            def write_fn(data, out_df):
+                write_df(data, out_df, do_overwrite=cfg.do_overwrite)
+
+            rwlock_wrap(
+                shard_fp,
+                fp,
+                read_fn,
+                write_fn,
+                compute_fn,
+                do_overwrite=cfg.do_overwrite,
+                do_return=False,
+            )
 
 
 if __name__ == "__main__":

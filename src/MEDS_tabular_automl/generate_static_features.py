@@ -10,7 +10,14 @@ Functions:
 
 import polars as pl
 
-from MEDS_tabular_automl.utils import DF_T, add_missing_cols, parse_flat_feature_column
+from MEDS_tabular_automl.utils import (
+    DF_T,
+    add_static_missing_cols,
+    parse_static_feature_column,
+)
+
+STATIC_CODE_COL = "/static/present"
+STATIC_VALUE_COL = "/static/first"
 
 
 def summarize_static_measurements(
@@ -32,11 +39,11 @@ def summarize_static_measurements(
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
     """
-    static_present = [c for c in feature_columns if c.startswith("STATIC_") and c.endswith("present")]
-    static_first = [c for c in feature_columns if c.startswith("STATIC_") and c.endswith("first")]
+    static_present = [c for c in feature_columns if c.endswith(STATIC_CODE_COL)]
+    static_first = [c for c in feature_columns if c.endswith(STATIC_VALUE_COL)]
 
     # Handling 'first' static values
-    static_first_codes = [parse_flat_feature_column(c)[1] for c in static_first]
+    static_first_codes = [parse_static_feature_column(c)[0] for c in static_first]
     code_subset = df.filter(pl.col("code").is_in(static_first_codes))
     first_code_subset = code_subset.group_by(pl.col("patient_id")).first().collect()
     static_value_pivot_df = first_code_subset.pivot(
@@ -55,7 +62,7 @@ def summarize_static_measurements(
     # TODO: consider casting with .cast(pl.Float32))
 
     # Handling 'present' static indicators
-    static_present_codes = [parse_flat_feature_column(c)[1] for c in static_present]
+    static_present_codes = [parse_static_feature_column(c)[0] for c in static_present]
     static_present_pivot_df = (
         df.select(*["patient_id", "code"])
         .filter(pl.col("code").is_in(static_present_codes))
@@ -97,10 +104,12 @@ def get_flat_static_rep(
     _summarize_static_measurements, and then normalizes the resulting data to ensure it is
     suitable for further analysis or machine learning tasks.
     """
-    static_features = [c for c in feature_columns if c.startswith("STATIC_")]
+    static_features = [
+        c for c in feature_columns if c.endswith(STATIC_CODE_COL) or c.endswith(STATIC_VALUE_COL)
+    ]
     static_measurements = summarize_static_measurements(static_features, df=shard_df)
     # fill up missing feature columns with nulls
-    normalized_measurements = add_missing_cols(
+    normalized_measurements = add_static_missing_cols(
         static_measurements,
         static_features,
         set_count_0_to_null=False,

@@ -7,9 +7,9 @@ pd.set_option("compute.use_numba", True)
 import polars as pl
 from loguru import logger
 from scipy.sparse import coo_matrix, csr_matrix
-from tqdm import tqdm
 
 from MEDS_tabular_automl.generate_ts_features import get_ts_columns
+from MEDS_tabular_automl.utils import load_tqdm
 
 CODE_AGGREGATIONS = [
     "code/count",
@@ -124,7 +124,7 @@ def sparse_rolling(df, sparse_matrix, timedelta, agg):
     return out_df, out_sparse_matrix
 
 
-def compute_agg(df, window_size: str, agg: str):
+def compute_agg(df, window_size: str, agg: str, use_tqdm=False):
     """Applies aggreagtion to dataframe.
 
     Dataframe is expected to only have the relevant columns for aggregating
@@ -184,37 +184,34 @@ def compute_agg(df, window_size: str, agg: str):
     sparse_matrix = csr_matrix(sparse_matrix)
     logger.info("done grouping")
     out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
-    match agg:
-        case "code/count" | "value/sum":
-            agg = "sum"
-            out_dfs = []
-            for patient_id, subset_df in tqdm(group.items(), total=len(group)):
-                logger.info("sparse rolling setup")
-                subset_sparse_matrix = sparse_matrix[subset_df.index]
-                patient_df = subset_df[["patient_id", "timestamp"]]
-                assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
-                logger.info("sparse rolling start")
-                patient_df, subset_sparse_matrix = sum_merge_timestamps(patient_df, subset_sparse_matrix, agg)
-                patient_df, out_sparse = sparse_rolling(patient_df, subset_sparse_matrix, timedelta, agg)
-                logger.info("sparse rolling complete")
-                out_dfs.append(patient_df)
-                out_sparse_matrix = vstack([out_sparse_matrix, out_sparse])
-            out_df = pd.concat(out_dfs, axis=0)
-            out_df = pd.concat(
-                [out_df.reset_index(drop=True), pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1
-            )
-            out_df.columns = df.columns
-            out_df.rename(columns=time_aggd_col_alias_fntr(window_size, "count"))
 
-        case _:
-            raise ValueError(f"Invalid aggregation `{agg}` for window_size `{window_size}`")
+    out_dfs = []
+    iter_wrapper = load_tqdm(use_tqdm)
+    agg = agg.split("/")[1]
+    for patient_id, subset_df in iter_wrapper(group.items(), total=len(group)):
+        logger.info("sparse rolling setup")
+        subset_sparse_matrix = sparse_matrix[subset_df.index]
+        patient_df = subset_df[["patient_id", "timestamp"]]
+        assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
+        logger.info("sparse rolling start")
+        patient_df, subset_sparse_matrix = sum_merge_timestamps(patient_df, subset_sparse_matrix, agg)
+        patient_df, out_sparse = sparse_rolling(patient_df, subset_sparse_matrix, timedelta, agg)
+        logger.info("sparse rolling complete")
+        out_dfs.append(patient_df)
+        out_sparse_matrix = vstack([out_sparse_matrix, out_sparse])
+    out_df = pd.concat(out_dfs, axis=0)
+    out_df = pd.concat(
+        [out_df.reset_index(drop=True), pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1
+    )
+    out_df.columns = df.columns
+    out_df.rename(columns=time_aggd_col_alias_fntr(window_size, agg))
 
     id_cols = ["patient_id", "timestamp"]
     out_df = out_df.loc[:, id_cols + list(df.columns[2:])]
     return out_df
 
 
-def _generate_summary(df: pd.DataFrame, window_size: str, agg: str) -> pl.LazyFrame:
+def _generate_summary(df: pd.DataFrame, window_size: str, agg: str, use_tqdm=False) -> pl.LazyFrame:
     """Generate a summary of the data frame for a given window size and aggregation.
 
     Args:
@@ -259,12 +256,12 @@ def _generate_summary(df: pd.DataFrame, window_size: str, agg: str) -> pl.LazyFr
         cols = value_cols
     id_cols = ["patient_id", "timestamp"]
     df = df.loc[:, id_cols + cols]
-    out_df = compute_agg(df, window_size, agg)
+    out_df = compute_agg(df, window_size, agg, use_tqdm=use_tqdm)
     return out_df
 
 
 def generate_summary(
-    feature_columns: list[str], df: pd.DataFrame, window_sizes: list[str], aggregations: list[str]
+    feature_columns: list[str], df: pd.DataFrame, window_size, agg: str, use_tqdm=False
 ) -> pl.LazyFrame:
     """Generate a summary of the data frame for given window sizes and aggregations.
 
@@ -326,22 +323,18 @@ def generate_summary(
     final_columns = []
     out_dfs = []
     # Generate summaries for each window size and aggregation
-    for window_size in window_sizes:
-        for agg in aggregations:
-            code_type, agg_name = agg.split("/")
-            final_columns.extend(
-                [f"{window_size}/{c}/{agg_name}" for c in code_value_ts_columns if c.endswith(code_type)]
-            )
-            # only iterate through code_types that exist in the dataframe columns
-            if any([c.endswith(code_type) for c in df.columns]):
-                logger.info(f"Generating aggregation {agg} for window_size {window_size}")
-                # timestamp_dtype = df.dtypes[df.columns.index("timestamp")]
-                # assert timestamp_dtype in [
-                #     pl.Datetime,
-                #     pl.Date,
-                # ], f"timestamp must be of type Date, but is {timestamp_dtype}"
-                out_df = _generate_summary(df, window_size, agg)
-                out_dfs.append(out_df)
+    code_type, agg_name = agg.split("/")
+    final_columns = [f"{window_size}/{c}/{agg_name}" for c in code_value_ts_columns if c.endswith(code_type)]
+    # only iterate through code_types that exist in the dataframe columns
+    if any([c.endswith(code_type) for c in df.columns]):
+        logger.info(f"Generating aggregation {agg} for window_size {window_size}")
+        # timestamp_dtype = df.dtypes[df.columns.index("timestamp")]
+        # assert timestamp_dtype in [
+        #     pl.Datetime,
+        #     pl.Date,
+        # ], f"timestamp must be of type Date, but is {timestamp_dtype}"
+        out_df = _generate_summary(df, window_size, agg, use_tqdm=use_tqdm)
+        out_dfs.append(out_df)
 
     final_columns = sorted(final_columns)
     # Combine all dataframes using successive joins

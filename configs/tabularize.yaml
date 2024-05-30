@@ -25,6 +25,7 @@ n_patients_per_sub_shard: null
 do_overwrite: False
 do_update: True
 seed: 1
+tqdm: True
 
 # Hydra
 hydra:

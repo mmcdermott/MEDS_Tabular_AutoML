@@ -1,12 +1,20 @@
 #!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import hydra
+import polars as pl
+from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-from MEDS_tabular_automl.utils import get_flat_rep_feature_cols, load_meds_data
+from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
+from MEDS_tabular_automl.utils import (
+    compute_feature_frequencies,
+    load_meds_data,
+    load_tqdm,
+)
 
 
 def store_config_yaml(config_fp: Path, cfg: DictConfig):
@@ -63,25 +71,75 @@ def store_columns(
     Args:
         cfg: The configuration object for the tabularization process.
     """
+    iter_wrapper = load_tqdm(cfg.tqdm)
     # create output dir
     flat_dir = Path(cfg.tabularized_data_dir)
     flat_dir.mkdir(exist_ok=True, parents=True)
 
     # load MEDS data
-    split_to_df = load_meds_data(cfg.MEDS_cohort_dir)
+    split_to_fps = load_meds_data(cfg.MEDS_cohort_dir, load_data=False)
 
     # store params in json file
     config_fp = flat_dir / "config.yaml"
     store_config_yaml(config_fp, cfg)
 
-    # 0. Identify Output Columns
-    # We set window_sizes to None here because we want to get the feature column names for the raw flat
-    # representation, not the summarized one.
-    feature_columns = set()
-    for shard_df in split_to_df["train"]:
-        feature_columns.update(get_flat_rep_feature_cols(cfg, shard_df))
-    feature_columns = sorted(list(feature_columns))
-    json.dump(feature_columns, open(flat_dir / "feature_columns.json", "w"))
+    # 0. Identify Output Columns and Frequencies
+    logger.info("Iterating through shards and caching feature frequencies.")
+
+    def compute_fn(shard_df):
+        return compute_feature_frequencies(cfg, shard_df)
+
+    def write_fn(data, out_fp):
+        json.dump(data, open(out_fp, "w"))
+
+    def read_fn(in_fp):
+        return pl.scan_parquet(in_fp)
+
+    # Map: Iterates through shards and caches feature frequencies
+    feature_freq_fp = flat_dir / "feature_freqs"
+    feature_freq_fp.mkdir(exist_ok=True)
+    for shard_fp in iter_wrapper(split_to_fps["train"]):
+        name = shard_fp.stem
+        out_fp = feature_freq_fp / f"{name}.json"
+        rwlock_wrap(
+            shard_fp,
+            out_fp,
+            read_fn,
+            write_fn,
+            compute_fn,
+            do_overwrite=cfg.do_overwrite,
+            do_return=False,
+        )
+
+    logger.info("Summing frequency computations.")
+    # Reduce: sum the frequency computations
+
+    def compute_fn(feature_freq_list):
+        feature_freqs = defaultdict(int)
+        for shard_feature_freq in feature_freq_list:
+            for feature, freq in shard_feature_freq.items():
+                feature_freqs[feature] += freq
+        return feature_freqs, sorted(list(feature_freqs.keys()))
+
+    def write_fn(data, out_fp):
+        feature_freqs, feature_columns = data
+        json.dump(feature_columns, open(out_fp / "feature_columns.json", "w"))
+        json.dump(feature_freqs, open(flat_dir / "feature_freqs.json", "w"))
+
+    def read_fn(in_fp):
+        files = list(in_fp.glob("*.json"))
+        return [json.load(open(fp)) for fp in files]
+
+    rwlock_wrap(
+        feature_freq_fp,
+        flat_dir,
+        read_fn,
+        write_fn,
+        compute_fn,
+        do_overwrite=cfg.do_overwrite,
+        do_return=False,
+    )
+    logger.info("Stored feature columns and frequencies.")
 
 
 if __name__ == "__main__":

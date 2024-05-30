@@ -4,21 +4,25 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from loguru import logger
-from scipy.sparse import csc_array
+from scipy.sparse import coo_matrix
 
+from MEDS_tabular_automl.generate_static_features import (
+    STATIC_CODE_COL,
+    STATIC_VALUE_COL,
+)
 from MEDS_tabular_automl.utils import DF_T
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
 def get_ts_columns(feature_columns):
-    def get_code_type(c):
-        return c.split("/")[-2] == "code"
+    def is_static(c):
+        return c.endswith(STATIC_CODE_COL) or c.endswith(STATIC_VALUE_COL)
 
     def get_code_name(c):
-        return "/".join(c.split("/")[0:-2])
+        return "/".join(c.split("/")[0:-1])
 
-    ts_columns = sorted(list({get_code_name(c) for c in feature_columns if not get_code_type(c) == "static"}))
+    ts_columns = sorted(list({get_code_name(c) for c in feature_columns if not is_static(c)}))
     return ts_columns
 
 
@@ -95,10 +99,9 @@ def summarize_dynamic_measurements(
     merge_cols = np.concatenate([value_cols, code_cols])
     merge_columns = [f"{c}/value" for c in ts_columns] + [f"{c}/code" for c in ts_columns]
     long_df = pd.DataFrame.sparse.from_spmatrix(
-        csc_array((merge_data, (merge_rows, merge_cols)), shape=(len(value_df), len(merge_columns))),
+        coo_matrix((merge_data, (merge_rows, merge_cols)), shape=(len(value_df), len(merge_columns))),
         columns=merge_columns,
     )
-    logger.info("add id columns")
     long_df["timestamp"] = df["timestamp"]
     long_df["patient_id"] = df["patient_id"]
     long_df = long_df[id_cols + merge_columns]
@@ -127,8 +130,8 @@ def get_flat_ts_rep(
             representations.
 
     Example:
-        >>> feature_columns = ['A/value/sum', 'A/code/count', 'B/value/sum', 'B/code/count',
-        ...                    "C/value/sum", "C/code/count", "A/static/present"]
+        >>> feature_columns = ['A/value', 'A/code', 'B/value', 'B/code',
+        ...                    "C/value", "C/code", "A/static/present"]
         >>> data = {'patient_id': [1, 1, 1, 2, 2, 2],
         ...         'code': ['A', 'A', 'B', 'B', 'C', 'C'],
         ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04', None, None],
@@ -142,7 +145,10 @@ def get_flat_ts_rep(
         2           1  2020-01-01        0        2        0       0       1       0
         3           2  2021-01-04        0        2        0       0       1       0
     """
-    logger.info("load")
+    # Remove codes not in training set
+    raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
+    shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
+
     ts_columns = get_ts_columns(feature_columns)
     ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
     pd_df = ts_shard_df.collect().to_pandas()

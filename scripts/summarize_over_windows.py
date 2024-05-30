@@ -8,6 +8,7 @@ from omegaconf import DictConfig
 
 from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
+from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import setup_environment, write_df
 
 
@@ -41,40 +42,56 @@ def summarize_ts_data_over_windows(
         FileNotFoundError: If specified directories or files in the configuration are not found.
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
-    flat_dir, split_to_df, feature_columns = setup_environment(cfg)
+    flat_dir, split_to_fps, feature_columns = setup_environment(cfg, load_data=False)
     # Produce ts representation
     ts_subdir = flat_dir / "ts"
 
-    for sp, subjects_dfs in split_to_df.items():
+    for sp, shard_fps in split_to_fps.items():
         sp_dir = ts_subdir / sp
-        if sp != "train":
-            continue
 
-        for i, shard_df in enumerate(subjects_dfs):
-            pivot_fp = sp_dir / f"{i}.parquet"
-            if pivot_fp.exists() and not cfg.do_overwrite:
-                raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {pivot_fp.exists()} exists!")
-            if sp != "train":
-                # remove codes not in training set
-                shard_df = shard_df.filter(pl.col("code").is_in(feature_columns))
+        for i, shard_fp in enumerate(shard_fps):
+            for window_size in cfg.window_sizes:
+                for agg in cfg.aggs:
+                    pivot_fp = sp_dir / window_size / agg / f"{i}.pkl"
+                    if pivot_fp.exists() and not cfg.do_overwrite:
+                        raise FileExistsError(
+                            f"do_overwrite is {cfg.do_overwrite} and {pivot_fp.exists()} exists!"
+                        )
 
-            # Load Sparse DataFrame
-            pivot_df = get_flat_ts_rep(
-                feature_columns=feature_columns,
-                shard_df=shard_df,
-            )
+                    def read_fn(fp):
+                        return pl.scan_parquet(fp)
 
-            # Summarize data -- applying aggregations on various window sizes
-            summary_df = generate_summary(
-                feature_columns,
-                pivot_df,
-                cfg.window_sizes,
-                cfg.aggs,
-            )
-            assert summary_df.shape[1] > 2, "No data found in the summarized dataframe"
+                    def compute_fn(shard_df):
+                        # Load Sparse DataFrame
+                        pivot_df = get_flat_ts_rep(
+                            feature_columns=feature_columns,
+                            shard_df=shard_df,
+                        )
 
-            logger.info("Writing pivot file")
-            write_df(summary_df, pivot_fp, do_overwrite=cfg.do_overwrite)
+                        # Summarize data -- applying aggregations on various window sizes
+                        summary_df = generate_summary(
+                            feature_columns,
+                            pivot_df,
+                            window_size,
+                            agg,
+                        )
+                        assert summary_df.shape[1] > 2, "No data found in the summarized dataframe"
+
+                        logger.info("Writing pivot file")
+                        return summary_df
+
+                    def write_fn(out_df, out_fp):
+                        write_df(out_df, out_fp, do_overwrite=cfg.do_overwrite)
+
+                    rwlock_wrap(
+                        shard_fp,
+                        pivot_fp,
+                        read_fn,
+                        write_fn,
+                        compute_fn,
+                        do_overwrite=cfg.do_overwrite,
+                        do_return=False,
+                    )
 
 
 if __name__ == "__main__":
