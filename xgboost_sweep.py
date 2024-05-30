@@ -10,7 +10,8 @@ import scipy.sparse as sp
 import os
 from typing import List, Callable
 import sys 
-
+import pandas as pd
+import glob
 
 class Iterator(xgb.DataIter):
     def __init__(self, cfg: DictConfig, split: str = "train"):
@@ -27,11 +28,12 @@ class Iterator(xgb.DataIter):
         self.dynamic_data_path = self.data_path / "summarize" / split
         self.static_data_path = self.data_path / "static" / split
 
-        self._data_shards = [
-            x.stem
-            for x in self.static_data_path.iterdir()
-            if x.is_file() and x.suffix == ".parquet"
-        ]
+        self._data_shards = list(self.static_data_path.glob("*.parquet"))
+        # [
+        #     x.stem
+        #     for x in self.static_data_path.iterdir()
+        #     if x.is_file() and x.suffix == ".parquet"
+        # ]
         if cfg.iterator.keep_static_data_in_memory:
             self._static_shards = (
                 self._get_static_shards()
@@ -60,8 +62,8 @@ class Iterator(xgb.DataIter):
         if self.cfg.aggs is not None:
             aggs_set = set(self.cfg.aggs)
         if self.cfg.min_code_inclusion_frequency is not None:
-            dataset_freuqency = pl.scan_parquet(
-                self.data_path / "code_frequencies.json" # TODO: make sure this is the right path
+            dataset_freuqency = pd.read_json(
+                self.data_path / "feature_freqs.json" # TODO: make sure this is the right path
             )
             min_frequency_set = set(
                 dataset_freuqency.filter(
