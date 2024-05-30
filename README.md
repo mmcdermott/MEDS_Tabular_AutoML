@@ -42,6 +42,34 @@ This repository consists of two key pieces:
    what is more advanced is the efficient construction, storage, and loading of tabular features for the
    candidate AutoML models, enabling a far more extensive search over different featurization strategies.
 
+### Scripts and Examples
+
+See `tests/test_tabularize_integration.py` for an example of the end-to-end pipeline being run on synthetic data. This
+script is a functional test that is also run with `pytest` to verify correctness of the algorithm.
+
+#### Core Scripts:
+
+1. `scripts/tabularize/identify_columns.py` loads all training shard to identify which feature columns
+   to generate tabular data for.
+
+```bash
+POLARS_MAX_THREADS=32 python scripts/identify_columns.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
+
+2. `scripts/tabularize/tabularize_static.py` Iterates through shards and generates tabular vectors for
+   each patient. There is a single row per patient for each shard.
+
+```bash
+POLARS_MAX_THREADS=32 python scripts/tabularize_static.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
+
+4. `scripts/tabularize/summarize_over_windows.py` For each shard, iterates through window sizes and aggregations to
+   and horizontally concatenates the outputs to generate the final tabular representations at every event time for every patient.
+
+```bash
+POLARS_MAX_THREADS=1 python scripts/summarize_over_windows.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+```
+
 ## Feature Construction, Storage, and Loading
 
 Tabularization of a (raw) MEDS dataset is done by running the `scripts/data/tabularize.py` script. This script
@@ -65,26 +93,26 @@ to manage configuration, and the configuration file is located at `configs/tabul
 6. Consider splitting the feature construction and AutoML pipeline parts of this repository into separate
    repositories.
 
-# Config Args Description
+# YAML Configuration File
 
-- MEDS_cohort_dir: directory of MEDS format dataset that is ingested.
-- tabularized_data_dir: output directory of tabularized data.
-- min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
+- `MEDS_cohort_dir`: directory of MEDS format dataset that is ingested.
+- `tabularized_data_dir`: output directory of tabularized data.
+- `min_code_inclusion_frequency`: The base feature inclusion frequency that should be used to dictate
   what features can be included in the flat representation. It can either be a float, in which
   case it applies across all measurements, or `None`, in which case no filtering is applied, or
   a dictionary from measurement type to a float dictating a per-measurement-type inclusion
   cutoff.
-- window_sizes: Beyond writing out a raw, per-event flattened representation, the dataset also has
+- `window_sizes`: Beyond writing out a raw, per-event flattened representation, the dataset also has
   the capability to summarize these flattened representations over the historical windows
   specified in this argument. These are strings specifying time deltas, using this syntax:
   `link`\_. Each window size will be summarized to a separate directory, and will share the same
   subject file split as is used in the raw representation files.
-- codes: A list of codes to include in the flat representation. If `None`, all codes will be included
+- `codes`: A list of codes to include in the flat representation. If `None`, all codes will be included
   in the flat representation.
-- aggs: A list of aggregations to apply to the raw representation. Must have length greater than 0.
-- n_patients_per_sub_shard: The number of subjects that should be included in each output file.
+- `aggs`: A list of aggregations to apply to the raw representation. Must have length greater than 0.
+- `n_patients_per_sub_shard`: The number of subjects that should be included in each output file.
   Lowering this number increases the number of files written, making the process of creating and
   leveraging these files slower but more memory efficient.
-- do_overwrite: If `True`, this function will overwrite the data already stored in the target save
+- `do_overwrite`: If `True`, this function will overwrite the data already stored in the target save
   directory.
-- seed: The seed to use for random number generation.
+- `seed`: The seed to use for random number generation.

@@ -1,9 +1,14 @@
+#!/usr/bin/env python
+"""Tabularizes time-series data in MEDS format into tabular representations."""
+
 import hydra
+import polars as pl
+from loguru import logger
 from omegaconf import DictConfig
-from tqdm import tqdm
 
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
-from MEDS_tabular_automl.utils import setup_environment, write_df
+from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
+from MEDS_tabular_automl.utils import load_tqdm, setup_environment, write_df
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
@@ -18,52 +23,43 @@ def tabularize_ts_data(
         value data: containing a column for every code which the numerical value observed.
 
     Args:
-        cfg:
-            MEDS_cohort_dir: directory of MEDS format dataset that is ingested.
-            tabularized_data_dir: output directory of tabularized data.
-            min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
-                what features can be included in the flat representation. It can either be a float, in which
-                case it applies across all measurements, or `None`, in which case no filtering is applied, or
-                a dictionary from measurement type to a float dictating a per-measurement-type inclusion
-                cutoff.
-            window_sizes: Beyond writing out a raw, per-event flattened representation, the dataset also has
-                the capability to summarize these flattened representations over the historical windows
-                specified in this argument. These are strings specifying time deltas, using this syntax:
-                `link`_. Each window size will be summarized to a separate directory, and will share the same
-                subject file split as is used in the raw representation files.
-            codes: A list of codes to include in the flat representation. If `None`, all codes will be
-                included in the flat representation.
-            aggs: A list of aggregations to apply to the raw representation. Must have length greater than 0.
-            n_patients_per_sub_shard: The number of subjects that should be included in each output file.
-                Lowering this number increases the number of files written, making the process of creating and
-                leveraging these files slower but more memory efficient.
-            do_overwrite: If `True`, this function will overwrite the data already stored in the target save
-                directory.
-            do_update: bool = True
-            seed: The seed to use for random number generation.
+        cfg: configuration dictionary containing the necessary parameters for tabularizing the data.
     """
-    flat_dir, split_to_df, feature_columns = setup_environment(cfg)
+    iter_wrapper = load_tqdm(cfg.tqdm)
+    flat_dir, split_to_fp, feature_columns = setup_environment(cfg, load_data=False)
+
     # Produce ts representation
     ts_subdir = flat_dir / "ts"
 
-    for sp, subjects_dfs in tqdm(list(split_to_df.items()), desc="Flattening Splits"):
+    for sp, shard_fps in split_to_fp.items():
         sp_dir = ts_subdir / sp
 
-        for i, shard_df in enumerate(tqdm(subjects_dfs, desc="Subject chunks", leave=False)):
-            code_fp = sp_dir / f"{i}_code.parquet"
-            value_fp = sp_dir / f"{i}_value.parquet"
-            if code_fp.exists() or value_fp.exists():
-                if cfg.do_update:
-                    continue
-                elif not cfg.do_overwrite:
-                    raise FileExistsError(
-                        f"do_overwrite is {cfg.do_overwrite} and {code_fp.exists()}"
-                        f" or {value_fp.exists()} exists!"
-                    )
+        for i, shard_fp in enumerate(iter_wrapper(shard_fps)):
+            out_fp = sp_dir / f"{i}.pkl"
 
-            code_df, value_df = get_flat_ts_rep(
-                feature_columns=feature_columns,
-                shard_df=shard_df,
+            def read_fn(in_fp):
+                return pl.scan_parquet(in_fp)
+
+            def compute_fn(shard_df):
+                return get_flat_ts_rep(
+                    feature_columns=feature_columns,
+                    shard_df=shard_df,
+                )
+
+            def write_fn(data, out_df):
+                write_df(data, out_df, do_overwrite=cfg.do_overwrite)
+
+            rwlock_wrap(
+                shard_fp,
+                out_fp,
+                read_fn,
+                write_fn,
+                compute_fn,
+                do_overwrite=cfg.do_overwrite,
+                do_return=False,
             )
-            write_df(code_df, code_fp, do_overwrite=cfg.do_overwrite)
-            write_df(value_df, value_fp, do_overwrite=cfg.do_overwrite)
+    logger.info("Generated TS flat representations.")
+
+
+if __name__ == "__main__":
+    tabularize_ts_data()

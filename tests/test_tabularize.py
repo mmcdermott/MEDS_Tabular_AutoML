@@ -3,10 +3,12 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
+import shutil
 import tempfile
 from io import StringIO
 from pathlib import Path
 
+import pandas as pd
 import polars as pl
 from hydra import compose, initialize
 from loguru import logger
@@ -127,12 +129,14 @@ def test_tabularize():
             "tabularized_data_dir": str(tabularized_data_dir.resolve()),
             "min_code_inclusion_frequency": 1,
             "window_sizes": ["30d", "365d", "full"],
+            "aggs": ["code/count", "value/sum"],
             "codes": None,
             "n_patients_per_sub_shard": 2,
-            "do_overwrite": False,
+            "do_overwrite": True,
             "do_update": True,
             "seed": 1,
             "hydra.verbose": True,
+            "tqdm": False,
         }
 
         with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
@@ -140,32 +144,23 @@ def test_tabularize():
             cfg = compose(config_name="tabularize", overrides=overrides)  # config.yaml
         logger.info("caching flat representation of MEDS data")
         store_columns(cfg)
+        assert (tabularized_data_dir / "config.yaml").is_file()
+        assert (tabularized_data_dir / "feature_columns.json").is_file()
+        assert (tabularized_data_dir / "feature_freqs.json").is_file()
         tabularize_static_data(cfg)
         actual_files = [
             (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("static/*/*.parquet"))
         ]
         expected_files = [("train", "1"), ("train", "0"), ("held_out", "0"), ("tuning", "0")]
         assert set(actual_files) == set(expected_files)
+
+        # Check the files are not empty
+        for f in list(tabularized_data_dir.glob("static/*/*.parquet")):
+            assert pl.read_parquet(f).shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
+
         tabularize_ts_data(cfg)
         # confirm the time series files exist:
-        actual_files = [(f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("ts/*/*.parquet"))]
-        expected_files = [
-            ("train", "1_value"),
-            ("train", "0_code"),
-            ("train", "0_value"),
-            ("train", "1_code"),
-            ("held_out", "0_code"),
-            ("held_out", "0_value"),
-            ("tuning", "0_code"),
-            ("tuning", "0_value"),
-        ]
-        assert set(actual_files) == set(expected_files)
-
-        summarize_ts_data_over_windows(cfg)
-        # confirm summary files exist:
-        actual_files = [
-            (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("summary/*/*.parquet"))
-        ]
+        actual_files = [(f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("ts/*/*.pkl"))]
         expected_files = [
             ("train", "1"),
             ("train", "0"),
@@ -173,7 +168,41 @@ def test_tabularize():
             ("tuning", "0"),
         ]
         assert set(actual_files) == set(expected_files)
-        for f in list(tabularized_data_dir.glob("summary/*/*.parquet")):
-            df = pl.read_parquet(f)
+        for f in list(tabularized_data_dir.glob("ts/*/*.pkl")):
+            assert pd.read_pickle(f).shape[0] > 0, "Time-Series Tabular Dataframe Should not be Empty!"
+        shutil.rmtree(tabularized_data_dir / "ts")
+
+        summarize_ts_data_over_windows(cfg)
+        # confirm summary files exist:
+        output_files = list(tabularized_data_dir.glob("ts/*/*/*/*/*.pkl"))
+        actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
+        expected_files = [
+            "train/365d/value/sum/0.pkl",
+            "train/365d/value/sum/1.pkl",
+            "train/365d/code/count/0.pkl",
+            "train/365d/code/count/1.pkl",
+            "train/full/value/sum/0.pkl",
+            "train/full/value/sum/1.pkl",
+            "train/full/code/count/0.pkl",
+            "train/full/code/count/1.pkl",
+            "train/30d/value/sum/0.pkl",
+            "train/30d/value/sum/1.pkl",
+            "train/30d/code/count/0.pkl",
+            "train/30d/code/count/1.pkl",
+            "held_out/365d/value/sum/0.pkl",
+            "held_out/365d/code/count/0.pkl",
+            "held_out/full/value/sum/0.pkl",
+            "held_out/full/code/count/0.pkl",
+            "held_out/30d/value/sum/0.pkl",
+            "held_out/30d/code/count/0.pkl",
+            "tuning/365d/value/sum/0.pkl",
+            "tuning/365d/code/count/0.pkl",
+            "tuning/full/value/sum/0.pkl",
+            "tuning/full/code/count/0.pkl",
+            "tuning/30d/value/sum/0.pkl",
+            "tuning/30d/code/count/0.pkl",
+        ]
+        assert set(actual_files) == set(expected_files)
+        for f in output_files:
+            df = pd.read_pickle(f)
             assert df.shape[0] > 0
-            assert df.columns == ["hi"]

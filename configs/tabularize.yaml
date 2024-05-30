@@ -7,6 +7,8 @@ min_code_inclusion_frequency: ???
 window_sizes: ???
 codes: null
 aggs:
+  - "static/present"
+  - "static/first"
   - "code/count"
   - "value/count"
   - "value/sum"
@@ -23,6 +25,7 @@ n_patients_per_sub_shard: null
 do_overwrite: False
 do_update: True
 seed: 1
+tqdm: True
 
 # Hydra
 hydra:

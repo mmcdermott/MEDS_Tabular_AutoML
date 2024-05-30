@@ -1,12 +1,58 @@
-import polars as pl
+import warnings
 
+import numpy as np
+import pandas as pd
+import polars as pl
+from loguru import logger
+from scipy.sparse import coo_matrix
+
+from MEDS_tabular_automl.generate_static_features import (
+    STATIC_CODE_COL,
+    STATIC_VALUE_COL,
+)
 from MEDS_tabular_automl.utils import DF_T
+
+warnings.simplefilter(action="ignore", category=FutureWarning)
+
+
+def get_ts_columns(feature_columns):
+    def is_static(c):
+        return c.endswith(STATIC_CODE_COL) or c.endswith(STATIC_VALUE_COL)
+
+    def get_code_name(c):
+        return "/".join(c.split("/")[0:-1])
+
+    ts_columns = sorted(list({get_code_name(c) for c in feature_columns if not is_static(c)}))
+    return ts_columns
+
+
+def fill_missing_entries_with_nan(sparse_df, type, columns):
+    # Fill missing entries with NaN
+    for col in columns:
+        sparse_df[col] = sparse_df[col].astype(pd.SparseDtype(type, fill_value=np.nan))
+    return sparse_df
+
+
+def get_long_code_df(df, ts_columns, col_offset):
+    column_to_int = {col: i + col_offset for i, col in enumerate(ts_columns)}
+    rows = range(len(df))
+    cols = df["code"].map(column_to_int)
+    data = np.ones(len(df), dtype=np.bool_)
+    return data, (rows, cols)
+
+
+def get_long_value_df(df, ts_columns):
+    column_to_int = {col: i for i, col in enumerate(ts_columns)}
+    rows = range(0, len(df))
+    cols = df["code"].map(column_to_int)
+    data = df["numerical_value"]
+    return data, (rows, cols)
 
 
 def summarize_dynamic_measurements(
     ts_columns: list[str],
-    df: DF_T,
-) -> pl.LazyFrame:
+    df: pd.DataFrame,
+) -> pd.DataFrame:
     """Summarize dynamic measurements for feature columns that are marked as 'dynamic'.
 
     Args:
@@ -22,49 +68,44 @@ def summarize_dynamic_measurements(
     ...         'code': ['A', 'A', 'B', 'B'],
     ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04'],
     ...         'numerical_value': [1, 2, 2, 2]}
-    >>> df = pl.DataFrame(data).lazy()
+    >>> df = pd.DataFrame(data)
     >>> ts_columns = ['A', 'B']
-    >>> code_df, value_df = summarize_dynamic_measurements(ts_columns, df)
-    >>> code_df.collect()
-    shape: (4, 4)
-    ┌────────────┬────────┬────────┬────────────┐
-    │ patient_id ┆ code/A ┆ code/B ┆ timestamp  │
-    │ ---        ┆ ---    ┆ ---    ┆ ---        │
-    │ i64        ┆ u8     ┆ u8     ┆ str        │
-    ╞════════════╪════════╪════════╪════════════╡
-    │ 1          ┆ 1      ┆ 0      ┆ 2021-01-01 │
-    │ 1          ┆ 1      ┆ 0      ┆ 2021-01-01 │
-    │ 1          ┆ 0      ┆ 1      ┆ 2020-01-01 │
-    │ 2          ┆ 0      ┆ 1      ┆ 2021-01-04 │
-    └────────────┴────────┴────────┴────────────┘
-    >>> value_df.collect()
-    shape: (3, 4)
-    ┌────────────┬────────────┬─────────┬─────────┐
-    │ patient_id ┆ timestamp  ┆ value/A ┆ value/B │
-    │ ---        ┆ ---        ┆ ---     ┆ ---     │
-    │ i64        ┆ str        ┆ f64     ┆ f64     │
-    ╞════════════╪════════════╪═════════╪═════════╡
-    │ 1          ┆ 2021-01-01 ┆ 1.5     ┆ null    │
-    │ 1          ┆ 2020-01-01 ┆ null    ┆ 2.0     │
-    │ 2          ┆ 2021-01-04 ┆ null    ┆ 2.0     │
-    └────────────┴────────────┴─────────┴─────────┘
+    >>> long_df = summarize_dynamic_measurements(ts_columns, df)
+    >>> long_df.head()
+       patient_id   timestamp  A/value  B/value  A/code  B/code
+    0           1  2021-01-01        1        0       1       0
+    1           1  2021-01-01        2        0       1       0
+    2           1  2020-01-01        0        2       0       1
+    3           2  2021-01-04        0        2       0       1
+    >>> long_df.shape
+    (4, 6)
+    >>> long_df = summarize_dynamic_measurements(ts_columns, df[df.code == "A"])
+    >>> long_df
+       patient_id   timestamp  A/value  B/value  A/code  B/code
+    0           1  2021-01-01        1        0       1       0
+    1           1  2021-01-01        2        0       1       0
     """
+    logger.info("create code and value")
+    id_cols = ["patient_id", "timestamp"]
+    value_df = df.drop(columns=id_cols)
+    value_data, (value_rows, value_cols) = get_long_value_df(value_df, ts_columns)
 
-    value_df = (
-        df.select("patient_id", "timestamp", "code", "numerical_value")
-        .collect()
-        .pivot(
-            index=["patient_id", "timestamp"],  # add row index and set agg to None
-            columns=["code"],
-            values=["numerical_value"],
-            aggregate_function="mean",  # TODO round up counts so they are binary
-            separator="/",
-        )
-        .lazy()
+    code_df = df.drop(columns=id_cols + ["numerical_value"])
+    code_data, (code_rows, code_cols) = get_long_code_df(code_df, ts_columns, col_offset=len(ts_columns))
+
+    logger.info("merge")
+    merge_data = np.concatenate([value_data, code_data])
+    merge_rows = np.concatenate([value_rows, code_rows])
+    merge_cols = np.concatenate([value_cols, code_cols])
+    merge_columns = [f"{c}/value" for c in ts_columns] + [f"{c}/code" for c in ts_columns]
+    long_df = pd.DataFrame.sparse.from_spmatrix(
+        coo_matrix((merge_data, (merge_rows, merge_cols)), shape=(len(value_df), len(merge_columns))),
+        columns=merge_columns,
     )
-    value_df = value_df.rename(lambda c: f"value/{c}" if c not in ["patient_id", "timestamp"] else c)
-    code_df = df.drop("numerical_value").collect().to_dummies(columns=["code"], separator="/").lazy()
-    return code_df, value_df
+    long_df["timestamp"] = df["timestamp"]
+    long_df["patient_id"] = df["patient_id"]
+    long_df = long_df[id_cols + merge_columns]
+    return long_df
 
 
 def get_flat_ts_rep(
@@ -89,37 +130,26 @@ def get_flat_ts_rep(
             representations.
 
     Example:
-        >>> feature_columns = ['A', 'B', 'C', "static/A"]
+        >>> feature_columns = ['A/value', 'A/code', 'B/value', 'B/code',
+        ...                    "C/value", "C/code", "A/static/present"]
         >>> data = {'patient_id': [1, 1, 1, 2, 2, 2],
         ...         'code': ['A', 'A', 'B', 'B', 'C', 'C'],
         ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04', None, None],
         ...         'numerical_value': [1, 2, 2, 2, 3, 4]}
         >>> df = pl.DataFrame(data).lazy()
-        >>> code_df, value_df = get_flat_ts_rep(feature_columns, df)
-        >>> code_df.collect()
-        shape: (4, 4)
-        ┌────────────┬────────┬────────┬────────────┐
-        │ patient_id ┆ code/A ┆ code/B ┆ timestamp  │
-        │ ---        ┆ ---    ┆ ---    ┆ ---        │
-        │ i64        ┆ u8     ┆ u8     ┆ str        │
-        ╞════════════╪════════╪════════╪════════════╡
-        │ 1          ┆ 1      ┆ 0      ┆ 2021-01-01 │
-        │ 1          ┆ 1      ┆ 0      ┆ 2021-01-01 │
-        │ 1          ┆ 0      ┆ 1      ┆ 2020-01-01 │
-        │ 2          ┆ 0      ┆ 1      ┆ 2021-01-04 │
-        └────────────┴────────┴────────┴────────────┘
-        >>> value_df.collect()
-        shape: (3, 4)
-        ┌────────────┬────────────┬─────────┬─────────┐
-        │ patient_id ┆ timestamp  ┆ value/A ┆ value/B │
-        │ ---        ┆ ---        ┆ ---     ┆ ---     │
-        │ i64        ┆ str        ┆ f64     ┆ f64     │
-        ╞════════════╪════════════╪═════════╪═════════╡
-        │ 1          ┆ 2021-01-01 ┆ 1.5     ┆ null    │
-        │ 1          ┆ 2020-01-01 ┆ null    ┆ 2.0     │
-        │ 2          ┆ 2021-01-04 ┆ null    ┆ 2.0     │
-        └────────────┴────────────┴─────────┴─────────┘
+        >>> pivot_df = get_flat_ts_rep(feature_columns, df)
+        >>> pivot_df
+           patient_id   timestamp  A/value  B/value  C/value  A/code  B/code  C/code
+        0           1  2021-01-01        1        0        0       1       0       0
+        1           1  2021-01-01        2        0        0       1       0       0
+        2           1  2020-01-01        0        2        0       0       1       0
+        3           2  2021-01-04        0        2        0       0       1       0
     """
-    ts_columns = [c for c in feature_columns if not c.startswith("static")]
-    ts_shard_df = shard_df.filter(pl.col("timestamp").is_not_null())
-    return summarize_dynamic_measurements(ts_columns, ts_shard_df)
+    # Remove codes not in training set
+    raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
+    shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
+
+    ts_columns = get_ts_columns(feature_columns)
+    ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
+    pd_df = ts_shard_df.collect().to_pandas()
+    return summarize_dynamic_measurements(ts_columns, pd_df)
