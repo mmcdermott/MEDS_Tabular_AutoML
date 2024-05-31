@@ -1,42 +1,38 @@
 # Raw data
-base_dir: /storage/teya/fake
-MEDS_cohort_dir: ${base_dir}/MEDS_cohort
-tabularized_data_dir: ${base_dir}/flat_reps
-model_dir: ${base_dir}/models
+MEDS_cohort_dir: ???
+tabularized_data_dir: /storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize
+model_dir: /storage/teya/test/
 
 # Pre-processing
 min_code_inclusion_frequency: 1
-window_sizes: [30d]
+window_sizes: [1d]
 codes: null
 aggs:
   - "code/count"
   - "value/sum"
 
+dynamic_threshold: 0.01
+numerical_value_threshold: 0.1
+
 # Sharding
-n_patients_per_sub_shard: 2
+n_patients_per_sub_shard: null
 
 # Misc
-do_overwrite: True
+do_overwrite: False
 do_update: True
 seed: 1
-tqdm: False
+tqdm: True
 
 model:
   booster: gbtree
   device: cpu
-  nthread: 4
-  max_depth: 6
-  eta: 0.3
-  gamma: 0
-  subsample: 1
-  lambda: 1
-  alpha: 0
+  epochs: 1
   tree_method: hist
-  objective: reg:squaredlogerror
+  objective: binary:logistic
 
 iterator:
-  keep_data_in_memory: True
-  keep_static_data_in_memory: True
+  keep_data_in_memory: False
+  keep_static_data_in_memory: False
 
 # Hydra settings for sweep
 defaults:
@@ -44,8 +40,7 @@ defaults:
   - override hydra/sweeper/sampler: tpe
 
 hydra:
-  mode: MULTIRUN
-  verbose: False
+  verbose: True
   sweep:
     dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
   run:
