@@ -27,7 +27,7 @@ class Iterator(xgb.DataIter):
         self.static_data_path = self.data_path / "static" / split
         self._data_shards = [shard.stem for shard in list(self.static_data_path.glob("*.parquet"))]
         if cfg.iterator.keep_static_data_in_memory:
-            self._static_shards = self._get_static_shards()
+            self._static_shards = self._collect_static_shards_in_memory()
 
         self.codes_set, self.aggs_set, self.min_frequency_set, self.window_set = self._get_inclusion_sets()
 
@@ -46,19 +46,35 @@ class Iterator(xgb.DataIter):
         codes_set = None
         aggs_set = None
         min_frequency_set = None
+        window_set = None
+
         if self.cfg.codes is not None:
             codes_set = set(self.cfg.codes)
+
         if self.cfg.aggs is not None:
             aggs_set = set(self.cfg.aggs)
+
         if self.cfg.min_code_inclusion_frequency is not None:
             with open(self.data_path / "feature_freqs.json") as f:
                 feature_freqs = json.load(f)
             min_frequency_set = {
                 key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
             }
-        window_set = set(self.cfg.window_sizes)
+        if self.cfg.window_sizes is not None:
+            window_set = set(self.cfg.window_sizes)
 
         return codes_set, aggs_set, min_frequency_set, window_set
+
+    def _collect_static_shards_in_memory(self) -> dict:
+        """Load static shards into memory.
+
+        Returns:
+        - dict: Dictionary with shard names as keys and data frames as values.
+        """
+        static_shards = {}
+        for iter in self._data_shards:
+            static_shards[iter] = self._load_static_shard_by_index(iter)
+        return static_shards
 
     def _load_static_shard_by_index(self, idx: int) -> sp.csc_matrix:
         """Load a static shard into memory.
@@ -71,16 +87,86 @@ class Iterator(xgb.DataIter):
         """
         return pd.read_parquet(self.static_data_path / f"{self._data_shards[int(idx)]}.parquet")
 
-    def _get_static_shards(self) -> dict:
-        """Load static shards into memory.
+    def _get_static_shard_by_index(self, idx: int) -> pd.DataFrame:
+        """Get the static shard from memory or disk.
+
+        Args:
+        - shard_name (str): Name of the shard.
 
         Returns:
-        - dict: Dictionary with shard names as keys and data frames as values.
+        - pd.DataFrame: Data frame with the static shard.
         """
-        static_shards = {}
-        for iter in self._data_shards:
-            static_shards[iter] = self._load_static_shard_by_index(iter)
-        return static_shards
+        if self.cfg.iterator.keep_static_data_in_memory:
+            return self._static_shards[self._data_shards[idx]]
+        else:
+            return self._load_static_shard_by_index(self._data_shards[idx])
+
+    def _get_task_by_index(self, idx: int) -> pd.DataFrame:
+        """Get the task data for a specific shard.
+
+        Args:
+        - idx (int): Index of the shard.
+
+        Returns:
+        - pd.DataFrame: Data frame with the task data.
+        """
+        # TODO: replace with something real
+        file = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))[0]
+        shard = pd.read_pickle(file)
+        shard["label"] = np.random.randint(0, 2, shard.shape[0])
+        return shard[["patient_id", "timestamp", "label"]]
+
+    def _load_dynamic_shard_from_file(self, path: Path) -> pd.DataFrame:
+        """Load a sparse shard into memory. This returns a shard as a pandas dataframe, asserted that it is
+        sorted on patient id and timestamp, if included.
+
+        Args:
+            - path (Path): Path to the sparse shard.
+
+        Returns:
+            - pd.DataFrame: Data frame with the sparse shard.
+        """
+        shard = pd.read_pickle(path)
+        self._assert_correct_sorting(shard)
+        return shard.drop(columns=["patient_id", "timestamp"])
+
+    def _get_dynamic_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
+        """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
+        column inclusion."""
+        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))
+
+        files = [file for file in files if self._filter_shard_files_on_window_and_aggs(file)]
+
+        dynamic_dfs = [self._load_dynamic_shard_from_file(file) for file in files]
+        dynamic_df = pd.concat(dynamic_dfs, axis=1)
+        return self._filter_shard_on_codes_and_freqs(dynamic_df)
+
+    def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
+        """Load a specific shard of data from disk and concatenate with static data.
+
+        Args:
+        - idx (int): Index of the shard to load.
+
+        Returns:
+        - X (scipy.sparse.csr_matrix): Feature data frame.
+        - y (numpy.ndarray): Labels.
+        """
+
+        dynamic_df = self._get_dynamic_shard_by_index(idx)
+
+        # TODO: add in some type checking etc for safety
+        static_df = self._get_static_shard_by_index(idx)
+
+        task_df = self._get_task_by_index(idx)
+        task_df = task_df.rename(
+            columns={col: f"{col}/task" for col in task_df.columns if col not in ["patient_id", "timestamp"]}
+        )
+        df = pd.merge(task_df, static_df, on=["patient_id"], how="left")
+        self._assert_correct_sorting(df)
+        df = self._filter_shard_on_codes_and_freqs(df)
+        df = pd.concat([df, dynamic_df], axis=1)
+
+        return self._sparsify_shard(df)
 
     def _sparsify_shard(self, df: pd.DataFrame) -> tuple[sp.csc_matrix, np.ndarray]:
         """Make X and y as scipy sparse arrays for XGBoost.
@@ -99,7 +185,7 @@ class Iterator(xgb.DataIter):
         sparse_matrix = data.sparse.to_coo()
         return csr_matrix(sparse_matrix), labels.values
 
-    def _validate_shard_file_inclusion(self, file: Path) -> bool:
+    def _filter_shard_files_on_window_and_aggs(self, file: Path) -> bool:
         parts = file.relative_to(self.dynamic_data_path).parts
         if not parts:
             return False
@@ -111,61 +197,7 @@ class Iterator(xgb.DataIter):
             self.aggs_set is None or aggs_part in self.aggs_set
         )
 
-    def _assert_correct_sorting(self, shard: pd.DataFrame):
-        """Assert that the shard is sorted correctly."""
-        if "timestamp" in shard.columns:
-            sort_columns = ["patient_id", "timestamp"]
-        else:
-            sort_columns = ["patient_id"]
-        assert shard[sort_columns].equals(shard[sort_columns].sort_values(by=sort_columns)), (
-            "Shard is not sorted on correctly. "
-            "Please ensure that the data is sorted on patient_id and timestamp, if applicable."
-        )
-
-    def _get_sparse_dynamic_shard_from_file(self, path: Path) -> pd.DataFrame:
-        """Load a sparse shard into memory. This returns a shard as a pandas dataframe, asserted that it is
-        sorted on patient id and timestamp, if included.
-
-        Args:
-            - path (Path): Path to the sparse shard.
-
-        Returns:
-            - pd.DataFrame: Data frame with the sparse shard.
-        """
-        shard = pd.read_pickle(path)
-        self._assert_correct_sorting(shard)
-        return shard.drop(columns=["patient_id", "timestamp"])
-
-    def _get_static_shard_by_index(self, idx: int) -> pd.DataFrame:
-        """Get the static shard from memory or disk.
-
-        Args:
-        - shard_name (str): Name of the shard.
-
-        Returns:
-        - pd.DataFrame: Data frame with the static shard.
-        """
-        if self.cfg.iterator.keep_static_data_in_memory:
-            return self._static_shards[self._data_shards[idx]]
-        else:
-            return self._load_static_shard_by_index(self._data_shards[idx])
-
-    def _get_task(self, idx: int) -> pd.DataFrame:
-        """Get the task data for a specific shard.
-
-        Args:
-        - idx (int): Index of the shard.
-
-        Returns:
-        - pd.DataFrame: Data frame with the task data.
-        """
-        # TODO: replace with something real
-        file = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))[0]
-        shard = pd.read_pickle(file)
-        shard["label"] = np.random.randint(0, 2, shard.shape[0])
-        return shard[["patient_id", "timestamp", "label"]]
-
-    def _filter_df(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _filter_shard_on_codes_and_freqs(self, df: pd.DataFrame) -> pd.DataFrame:
         """Filter the dynamic data frame based on the inclusion sets.
 
         Args:
@@ -187,38 +219,16 @@ class Iterator(xgb.DataIter):
 
         return df[filtered_columns]
 
-    def _load_dynamic_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
-        """Load a specific shard of data from disk and concatenate with static data.
-
-        Args:
-        - idx (int): Index of the shard to load.
-
-        Returns:
-        - X (scipy.sparse.csr_matrix): Feature data frame.
-        - y (numpy.ndarray): Labels.
-        """
-
-        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))
-
-        files = [file for file in files if self._validate_shard_file_inclusion(file)]
-
-        dynamic_dfs = [self._get_sparse_dynamic_shard_from_file(file) for file in files]
-        dynamic_df = pd.concat(dynamic_dfs, axis=1)
-        dynamic_df = self._filter_df(dynamic_df)
-
-        # TODO: add in some type checking etc for safety
-        static_df = self._get_static_shard_by_index(idx)
-
-        task_df = self._get_task(idx)
-        task_df = task_df.rename(
-            columns={col: f"{col}/task" for col in task_df.columns if col not in ["patient_id", "timestamp"]}
+    def _assert_correct_sorting(self, shard: pd.DataFrame):
+        """Assert that the shard is sorted correctly."""
+        if "timestamp" in shard.columns:
+            sort_columns = ["patient_id", "timestamp"]
+        else:
+            sort_columns = ["patient_id"]
+        assert shard[sort_columns].equals(shard[sort_columns].sort_values(by=sort_columns)), (
+            "Shard is not sorted on correctly. "
+            "Please ensure that the data is sorted on patient_id and timestamp, if applicable."
         )
-        df = pd.merge(task_df, static_df, on=["patient_id"], how="left")
-        self._assert_correct_sorting(df)
-        df = self._filter_df(df)
-        df = pd.concat([df, dynamic_df], axis=1)
-
-        return self._sparsify_shard(df)
 
     def next(self, input_data: Callable):
         """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
@@ -236,7 +246,7 @@ class Iterator(xgb.DataIter):
 
         # input_data is a function passed in by XGBoost who has the exact same signature of
         # ``DMatrix``
-        X, y = self._load_dynamic_shard_by_index(self._it)  # self._data_shards[self._it])
+        X, y = self._get_shard_by_index(self._it)  # self._data_shards[self._it])
         input_data(data=X, label=y)
         self._it += 1
         # Return 1 to let XGBoost know we haven't seen all the files yet.
@@ -255,7 +265,7 @@ class Iterator(xgb.DataIter):
         X = []
         y = []
         for i in range(len(self._data_shards)):
-            X_, y_ = self._load_dynamic_shard_by_index(i)
+            X_, y_ = self._get_shard_by_index(i)
             X.append(X_)
             y.append(y_)
 
@@ -288,6 +298,8 @@ class XGBoostModel:
     def train(self):
         """Train the model."""
         self._build()
+        # TODO: add in eval, early stopping, etc.
+        # TODO: check for Nan and inf in labels!
         self.model = xgb.train(
             OmegaConf.to_container(self.cfg.model), self.dtrain
         )  # do we want eval and things?
