@@ -1,4 +1,4 @@
-
+#!/usr/bin/env bash
 OUTPUT_DIR=/data/storage/shared/meds_tabular_ml/ebcl_dataset/processed
 PATIENTS_PER_SHARD="2500"
 CHUNKSIZE="200_000_000"

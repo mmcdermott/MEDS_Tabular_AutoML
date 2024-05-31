@@ -13,7 +13,7 @@ rm -rf $OUTPUT_DIR
 POLARS_MAX_THREADS=32 python scripts/identify_columns.py \
     MEDS_cohort_dir=$MEDS_DIR \
     tabularized_data_dir=$OUTPUT_DIR \
-    min_code_inclusion_frequency=1 $WINDOW_SIZES do_overwrite=False $AGGS
+    min_code_inclusion_frequency=1 "$WINDOW_SIZES" do_overwrite=False "$AGGS"
 
 echo "Running tabularize_static.py: tabularizing static data"
 POLARS_MAX_THREADS=32 python scripts/tabularize_static.py \

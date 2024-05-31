@@ -45,8 +45,7 @@ This repository consists of two key pieces:
 ### Scripts and Examples
 
 See `tests/test_tabularize_integration.py` for an example of the end-to-end pipeline being run on synthetic data. This
-script is a functional test that is also run with `pytest` to verify correctness of the algorithm.
-
+script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
 #### Core Scripts:
 
 1. `scripts/tabularize/identify_columns.py` loads all training shard to identify which feature columns
