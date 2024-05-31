@@ -8,7 +8,7 @@ import pandas as pd
 import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
-from scipy.sparse import coo_matrix, csc_matrix, hstack
+from scipy.sparse import coo_matrix, csc_matrix, csr_matrix, hstack
 
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import load_tqdm, setup_environment, write_df
@@ -29,31 +29,45 @@ def merge_dfs(feature_columns, static_df, ts_df):
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
-    static_df[static_df.columns[1:]] = (
-        static_df[static_df.columns[1:]].fillna(0).astype(pd.SparseDtype("float64", fill_value=0))
+    assert static_df.patient_id.is_monotonic_increasing
+    assert ts_df.patient_id.is_monotonic_increasing
+    sparse_time_series = ts_df.drop(columns=["patient_id", "timestamp"]).sparse.to_coo()
+    duplication_index = ts_df["patient_id"].value_counts().sort_index()
+
+    # load static data as sparse matrix
+    static_matrix = static_df.drop(columns="patient_id").values
+    data_list = []
+    rows = []
+    cols = []
+    for row in range(static_matrix.shape[0]):
+        for col in range(static_matrix.shape[1]):
+            data = static_matrix[row, col]
+            if (data is not None) and (data != 0):
+                data_list.append(data)
+                rows.append(row)
+                cols.append(col)
+    static_matrix = csr_matrix(
+        (data_list, (rows, cols)), shape=(static_matrix.shape[0], static_matrix.shape[1])
     )
-    merge_df = pd.merge(ts_df, static_df, on=["patient_id"], how="left")
-    # indexes_df = merge_df[["patient_id", "timestamp"]]
-    # drop indexes
-    merge_df = merge_df.drop(columns=["patient_id", "timestamp"])
+    duplication_index = ts_df["patient_id"].value_counts().sort_index().reset_index(drop=True)
+    reindex_slices = np.repeat(duplication_index.index.values, duplication_index.values)
+    static_matrix = static_matrix[reindex_slices, :]
+
     # TODO: fix naming convention, we are generating value rows with zero frequency so remove those
-    merge_df = merge_df.rename(
-        columns={
-            c: "/".join(c.split("/")[1:-1]) for c in merge_df.columns if c.split("/")[-2] in ["code", "value"]
-        }
-    )
+    ts_columns = ["/".join(c.split("/")[1:-1]) for c in ts_df.columns]
+    sparse_columns = ts_columns + list(static_df.columns)
 
     # Convert to sparse matrix and remove 0 frequency columns (i.e. columns not in feature_columns)
     logger.info(
         "Convert to sparse matrix and remove 0 frequency columns (i.e. columns not in feature_columns)"
     )
-    original_sparse_matrix = merge_df.sparse.to_coo()
-    missing_columns = [col for col in feature_columns if col not in merge_df.columns]
+    set_sparse_cols = set(sparse_columns)
+    missing_columns = [col for col in feature_columns if col not in set_sparse_cols]
 
     # reorder columns to be in order of feature_columns
     logger.info("Reorder columns to be in order of feature_columns")
     final_sparse_matrix = hstack(
-        [original_sparse_matrix, coo_matrix((merge_df.shape[0], len(missing_columns)))]
+        [sparse_time_series, static_matrix, coo_matrix((sparse_time_series.shape[0], len(missing_columns)))]
     )
     index_map = {name: index for index, name in enumerate(feature_columns)}
     reverse_map = [index_map[col] for col in feature_columns]
