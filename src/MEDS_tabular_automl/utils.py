@@ -9,6 +9,7 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import polars as pl
 import polars.selectors as cs
@@ -60,6 +61,8 @@ def write_df(df: DF_T, fp: Path, **kwargs):
                 f"Expected DataFrame to have columns ['patient_id', 'timestamp'], got {df.columns[:2]}"
             )
         df.to_pickle(fp)
+    elif isinstance(df, np.matrix):
+        np.save(fp, df)
     else:
         raise ValueError(f"Unsupported type for df: {type(df)}")
 
@@ -77,7 +80,7 @@ def get_static_col_dtype(col: str) -> pl.DataType:
         case "count" | "has_values_count":
             return pl.UInt32
         case _:
-            raise ValueError(f"Column name {col} malformed! Expected aggregations: 'sum', 'sum_sqd', 'min', 'max', 'value', 'first', 'present', 'count', 'has_values_count'.")
+            raise ValueError(f"Column name {col} malformed!")
 
 
 def add_static_missing_cols(
@@ -346,8 +349,7 @@ def setup_environment(cfg: DictConfig, load_data: bool = True):
         stored_config = OmegaConf.create(yaml_config)
     logger.info(f"Stored config: {stored_config}")
     logger.info(f"Worker config: {cfg}")
-    assert cfg.keys() == stored_config.keys(), (
-        f"Keys in stored config do not match current config.")
+    assert cfg.keys() == stored_config.keys(), "Keys in stored config do not match current config."
     for key in cfg.keys():
         assert key in stored_config, f"Key {key} not found in stored config."
         if key == "worker":

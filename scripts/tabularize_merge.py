@@ -91,12 +91,12 @@ def tabularize_ts_data(
     out_subdir = flat_dir / "sparse"
 
     for shard_fp in iter_wrapper(shard_fps):
-        split = shard_fp.parent.parent.parent.parent.stem
+        split = shard_fp.parts[-5]
         in_ts_fp = shard_fp
         assert in_ts_fp.exists(), f"{in_ts_fp} does not exist!"
         in_static_fp = static_dir / split / f"{shard_fp.stem}.parquet"
         assert in_static_fp.exists(), f"{in_static_fp} does not exist!"
-        out_fp = out_subdir / f"{shard_fp.stem}"
+        out_fp = out_subdir / "/".join(shard_fp.parts[-5:-1]) / f"{shard_fp.stem}"
         out_fp.parent.mkdir(parents=True, exist_ok=True)
 
         def read_fn(in_fps):
