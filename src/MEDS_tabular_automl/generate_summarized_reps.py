@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime
 
 import pandas as pd
 from scipy.sparse import vstack
@@ -178,25 +179,26 @@ def compute_agg(df, window_size: str, agg: str, use_tqdm=False):
         timedelta = df["timestamp"].max() - df["timestamp"].min() + pd.Timedelta(days=1)
     else:
         timedelta = pd.Timedelta(window_size)
-    logger.info("grouping by patient_id")
+    logger.info("Grouping by patient_ids -- this may take a while.")
     group = dict(list(df[["patient_id", "timestamp"]].groupby("patient_id")))
     sparse_matrix = df[df.columns[2:]].sparse.to_coo()
     sparse_matrix = csr_matrix(sparse_matrix)
-    logger.info("done grouping")
+    logger.info("Grouping Complete! Starting sparse rolling.")
     out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
 
     out_dfs = []
     iter_wrapper = load_tqdm(use_tqdm)
     agg = agg.split("/")[1]
-    for patient_id, subset_df in iter_wrapper(group.items(), total=len(group)):
-        logger.info("sparse rolling setup")
+    start_time = datetime.now()
+    for i, (patient_id, subset_df) in enumerate(iter_wrapper(group.items(), total=len(group))):
+        if i % 10 == 0:
+            logger.info(f"Progress is {i}/{len(group)}")
+            logger.info(f"Time elapsed: {datetime.now() - start_time}")
         subset_sparse_matrix = sparse_matrix[subset_df.index]
         patient_df = subset_df[["patient_id", "timestamp"]]
         assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
-        logger.info("sparse rolling start")
         patient_df, subset_sparse_matrix = sum_merge_timestamps(patient_df, subset_sparse_matrix, agg)
         patient_df, out_sparse = sparse_rolling(patient_df, subset_sparse_matrix, timedelta, agg)
-        logger.info("sparse rolling complete")
         out_dfs.append(patient_df)
         out_sparse_matrix = vstack([out_sparse_matrix, out_sparse])
     out_df = pd.concat(out_dfs, axis=0)

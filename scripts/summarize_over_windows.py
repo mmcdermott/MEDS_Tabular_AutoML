@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+import os
+
 import hydra
 import polars as pl
 from loguru import logger
@@ -10,6 +12,15 @@ from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import setup_environment, write_df
+
+
+def hydra_loguru_init() -> None:
+    """Adds loguru output to the logs that hydra scrapes.
+
+    Must be called from a hydra main!
+    """
+    hydra_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+    logger.add(os.path.join(hydra_path, "main.log"))
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
@@ -42,6 +53,8 @@ def summarize_ts_data_over_windows(
         FileNotFoundError: If specified directories or files in the configuration are not found.
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
+    if not cfg.test:
+        hydra_loguru_init()
     flat_dir, split_to_fps, feature_columns = setup_environment(cfg, load_data=False)
     # Produce ts representation
     ts_subdir = flat_dir / "ts"

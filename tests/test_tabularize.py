@@ -137,6 +137,7 @@ def test_tabularize():
             "seed": 1,
             "hydra.verbose": True,
             "tqdm": False,
+            "test": True,
         }
 
         with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml

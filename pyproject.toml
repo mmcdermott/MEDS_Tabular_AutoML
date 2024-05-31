@@ -16,11 +16,13 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas"]
+dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas", "numba", "tqdm"]
 
 [project.optional-dependencies]
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
+local_parallelism = ["hydra-joblib-launcher"]
+slurm_parallelism = ["hydra-submitit-launcher"]
 
 [project.urls]
 Homepage = "https://github.com/mmcdermott/MEDS_polars_functions"

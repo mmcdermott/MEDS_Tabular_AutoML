@@ -13,6 +13,7 @@ import pandas as pd
 import polars as pl
 import polars.selectors as cs
 import yaml
+from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
 DF_T = pl.LazyFrame
@@ -343,5 +344,15 @@ def setup_environment(cfg: DictConfig, load_data: bool = True):
     with open(flat_dir / "config.yaml") as file:
         yaml_config = yaml.safe_load(file)
         stored_config = OmegaConf.create(yaml_config)
-    assert stored_config == cfg, "Stored config does not match current config."
+    logger.info(f"Stored config: {stored_config}")
+    logger.info(f"Worker config: {cfg}")
+    assert cfg.keys() == stored_config.keys(), (
+        f"Keys in stored config do not match current config.")``
+    for key in cfg.keys():
+        assert key in stored_config, f"Key {key} not found in stored config."
+        if key == "worker":
+            continue
+        assert (
+            cfg[key] == stored_config[key]
+        ), f"Config key {key}, value is {cfg[key]} vs {stored_config[key]}"
     return flat_dir, split_to_df, feature_columns
