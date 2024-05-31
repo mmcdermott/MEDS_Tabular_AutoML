@@ -27,12 +27,15 @@ def merge_dfs(feature_columns, static_df, ts_df):
     Returns:
     - pd.DataFrame: A merged dataframe containing static and time-series features.
     """
+    # TODO - store static and ts data as numpy matrices
+    # TODO - Eventually do this duplication at the task specific stage after filtering patients and features
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
     assert static_df.patient_id.is_monotonic_increasing
     assert ts_df.patient_id.is_monotonic_increasing
     sparse_time_series = ts_df.drop(columns=["patient_id", "timestamp"]).sparse.to_coo()
-    duplication_index = ts_df["patient_id"].value_counts().sort_index()
+
+    num_patients = max(static_df.patient_id.nunique(), ts_df.patient_id.nunique())
 
     # load static data as sparse matrix
     static_matrix = static_df.drop(columns="patient_id").values
@@ -46,9 +49,8 @@ def merge_dfs(feature_columns, static_df, ts_df):
                 data_list.append(data)
                 rows.append(row)
                 cols.append(col)
-    static_matrix = csr_matrix(
-        (data_list, (rows, cols)), shape=(static_matrix.shape[0], static_matrix.shape[1])
-    )
+    static_matrix = csr_matrix((data_list, (rows, cols)), shape=(num_patients, static_matrix.shape[1]))
+    # Duplicate static matrix rows to match time-series data
     duplication_index = ts_df["patient_id"].value_counts().sort_index().reset_index(drop=True)
     reindex_slices = np.repeat(duplication_index.index.values, duplication_index.values)
     static_matrix = static_matrix[reindex_slices, :]
@@ -81,7 +83,7 @@ def merge_dfs(feature_columns, static_df, ts_df):
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
-def tabularize_ts_data(
+def merge_data(
     cfg: DictConfig,
 ):
     """Processes a medical dataset to generates and stores flat representatiosn of time-series data.
@@ -146,4 +148,4 @@ def tabularize_ts_data(
 
 
 if __name__ == "__main__":
-    tabularize_ts_data()
+    merge_data()

@@ -15,6 +15,7 @@ from loguru import logger
 
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
+from scripts.tabularize_merge import merge_data
 from scripts.tabularize_static import tabularize_static_data
 from scripts.tabularize_ts import tabularize_ts_data
 
@@ -102,6 +103,60 @@ MEDS_OUTPUTS = {
     "tuning/0": MEDS_TUNING_0,
 }
 
+SUMMARIZE_EXPECTED_FILES = [
+    "train/365d/value/sum/0.pkl",
+    "train/365d/value/sum/1.pkl",
+    "train/365d/code/count/0.pkl",
+    "train/365d/code/count/1.pkl",
+    "train/full/value/sum/0.pkl",
+    "train/full/value/sum/1.pkl",
+    "train/full/code/count/0.pkl",
+    "train/full/code/count/1.pkl",
+    "train/30d/value/sum/0.pkl",
+    "train/30d/value/sum/1.pkl",
+    "train/30d/code/count/0.pkl",
+    "train/30d/code/count/1.pkl",
+    "held_out/365d/value/sum/0.pkl",
+    "held_out/365d/code/count/0.pkl",
+    "held_out/full/value/sum/0.pkl",
+    "held_out/full/code/count/0.pkl",
+    "held_out/30d/value/sum/0.pkl",
+    "held_out/30d/code/count/0.pkl",
+    "tuning/365d/value/sum/0.pkl",
+    "tuning/365d/code/count/0.pkl",
+    "tuning/full/value/sum/0.pkl",
+    "tuning/full/code/count/0.pkl",
+    "tuning/30d/value/sum/0.pkl",
+    "tuning/30d/code/count/0.pkl",
+]
+
+MERGE_EXPECTED_FILES = [
+    "train/365d/value/sum/0.npy",
+    "train/365d/value/sum/1.npy",
+    "train/365d/code/count/0.npy",
+    "train/365d/code/count/1.npy",
+    "train/full/value/sum/0.npy",
+    "train/full/value/sum/1.npy",
+    "train/full/code/count/0.npy",
+    "train/full/code/count/1.npy",
+    "train/30d/value/sum/0.npy",
+    "train/30d/value/sum/1.npy",
+    "train/30d/code/count/0.npy",
+    "train/30d/code/count/1.npy",
+    "held_out/365d/value/sum/0.npy",
+    "held_out/365d/code/count/0.npy",
+    "held_out/full/value/sum/0.npy",
+    "held_out/full/code/count/0.npy",
+    "held_out/30d/value/sum/0.npy",
+    "held_out/30d/code/count/0.npy",
+    "tuning/365d/value/sum/0.npy",
+    "tuning/365d/code/count/0.npy",
+    "tuning/full/value/sum/0.npy",
+    "tuning/full/code/count/0.npy",
+    "tuning/30d/value/sum/0.npy",
+    "tuning/30d/code/count/0.npy",
+]
+
 
 def test_tabularize():
     with tempfile.TemporaryDirectory() as d:
@@ -177,33 +232,13 @@ def test_tabularize():
         # confirm summary files exist:
         output_files = list(tabularized_data_dir.glob("ts/*/*/*/*/*.pkl"))
         actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
-        expected_files = [
-            "train/365d/value/sum/0.pkl",
-            "train/365d/value/sum/1.pkl",
-            "train/365d/code/count/0.pkl",
-            "train/365d/code/count/1.pkl",
-            "train/full/value/sum/0.pkl",
-            "train/full/value/sum/1.pkl",
-            "train/full/code/count/0.pkl",
-            "train/full/code/count/1.pkl",
-            "train/30d/value/sum/0.pkl",
-            "train/30d/value/sum/1.pkl",
-            "train/30d/code/count/0.pkl",
-            "train/30d/code/count/1.pkl",
-            "held_out/365d/value/sum/0.pkl",
-            "held_out/365d/code/count/0.pkl",
-            "held_out/full/value/sum/0.pkl",
-            "held_out/full/code/count/0.pkl",
-            "held_out/30d/value/sum/0.pkl",
-            "held_out/30d/code/count/0.pkl",
-            "tuning/365d/value/sum/0.pkl",
-            "tuning/365d/code/count/0.pkl",
-            "tuning/full/value/sum/0.pkl",
-            "tuning/full/code/count/0.pkl",
-            "tuning/30d/value/sum/0.pkl",
-            "tuning/30d/code/count/0.pkl",
-        ]
-        assert set(actual_files) == set(expected_files)
+
+        assert set(actual_files) == set(SUMMARIZE_EXPECTED_FILES)
         for f in output_files:
             df = pd.read_pickle(f)
             assert df.shape[0] > 0
+
+        merge_data(cfg)
+        output_files = list(tabularized_data_dir.glob("sparse/*/*/*/*/*.npy"))
+        actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
+        assert set(actual_files) == set(MERGE_EXPECTED_FILES)
