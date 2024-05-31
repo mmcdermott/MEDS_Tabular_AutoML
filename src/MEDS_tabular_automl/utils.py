@@ -77,7 +77,7 @@ def get_static_col_dtype(col: str) -> pl.DataType:
         case "count" | "has_values_count":
             return pl.UInt32
         case _:
-            raise ValueError(f"Column name {col} malformed!")
+            raise ValueError(f"Column name {col} malformed! Expected aggregations: 'sum', 'sum_sqd', 'min', 'max', 'value', 'first', 'present', 'count', 'has_values_count'.")
 
 
 def add_static_missing_cols(
@@ -347,7 +347,7 @@ def setup_environment(cfg: DictConfig, load_data: bool = True):
     logger.info(f"Stored config: {stored_config}")
     logger.info(f"Worker config: {cfg}")
     assert cfg.keys() == stored_config.keys(), (
-        f"Keys in stored config do not match current config.")``
+        f"Keys in stored config do not match current config.")
     for key in cfg.keys():
         assert key in stored_config, f"Key {key} not found in stored config."
         if key == "worker":
