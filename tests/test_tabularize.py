@@ -17,6 +17,7 @@ from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
 from scripts.tabularize_ts import tabularize_ts_data
+from scripts.xgboost_sweep import xgboost
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -107,6 +108,7 @@ def test_tabularize():
     with tempfile.TemporaryDirectory() as d:
         MEDS_cohort_dir = Path(d) / "MEDS_cohort"
         tabularized_data_dir = Path(d) / "flat_reps"
+        model_dir = Path(d) / "save_model"
 
         # Create the directories
         MEDS_cohort_dir.mkdir()
@@ -130,7 +132,7 @@ def test_tabularize():
             "min_code_inclusion_frequency": 1,
             "window_sizes": ["30d", "365d", "full"],
             "aggs": ["code/count", "value/sum"],
-            "codes": None,
+            "codes": "null",
             "n_patients_per_sub_shard": 2,
             "do_overwrite": True,
             "do_update": True,
@@ -206,3 +208,15 @@ def test_tabularize():
         for f in output_files:
             df = pd.read_pickle(f)
             assert df.shape[0] > 0
+
+        xgboost_config_kwargs = {
+            "model_dir": str(model_dir.resolve()),
+            "hydra.mode": "MULTIRUN",
+        }
+        xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
+        with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+            cfg = compose(config_name="xgboost_sweep", overrides=overrides)  # config.yaml
+        xgboost(cfg)
+        output_files = list(model_dir.glob("*/*/*_model.json"))
+        assert len(output_files) == 1
