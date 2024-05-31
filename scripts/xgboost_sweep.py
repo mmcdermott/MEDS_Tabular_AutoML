@@ -160,7 +160,7 @@ class Iterator(xgb.DataIter):
         - pd.DataFrame: Data frame with the task data.
         """
         # TODO: replace with something real
-        file = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}*.pkl"))[0]
+        file = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))[0]
         shard = pd.read_pickle(file)
         shard["label"] = np.random.randint(0, 2, shard.shape[0])
         return shard[["patient_id", "timestamp", "label"]]
@@ -198,7 +198,7 @@ class Iterator(xgb.DataIter):
         - y (numpy.ndarray): Labels.
         """
 
-        files = list(self.dynamic_data_path.glob("*/*/*/*.pkl"))
+        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))
 
         files = [file for file in files if self._validate_shard_file_inclusion(file)]
 
