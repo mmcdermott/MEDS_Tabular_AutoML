@@ -1,0 +1,67 @@
+# Raw data
+base_dir: /storage/teya/fake
+MEDS_cohort_dir: ${base_dir}/MEDS_cohort
+tabularized_data_dir: ${base_dir}/flat_reps
+model_dir: ${base_dir}/models
+
+# Pre-processing
+min_code_inclusion_frequency: 1
+window_sizes: [30d]
+codes: null
+aggs:
+  - "code/count"
+  - "value/sum"
+
+# Sharding
+n_patients_per_sub_shard: 2
+
+# Misc
+do_overwrite: True
+do_update: True
+seed: 1
+tqdm: False
+
+model:
+  booster: gbtree
+  device: cpu
+  nthread: 4
+  max_depth: 6
+  eta: 0.3
+  gamma: 0
+  subsample: 1
+  lambda: 1
+  alpha: 0
+  tree_method: hist
+  objective: reg:squaredlogerror
+
+iterator:
+  keep_data_in_memory: True
+  keep_static_data_in_memory: True
+
+# Hydra settings for sweep
+defaults:
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+
+hydra:
+  mode: MULTIRUN
+  verbose: False
+  sweep:
+    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+  run:
+    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+
+  # Optuna Sweeper
+  sweeper:
+    sampler:
+      seed: 1
+    storage: null
+    study_name: tabularize_study_${now:%Y-%m-%d_%H-%M-%S}
+    direction: minimize
+    n_trials: 10
+
+    # Define search space for Optuna
+    params:
+      window_sizes: choice([30d, 365d, full], [30d, full], [30d])
+      # iterator.keep_static_data_in_memory: choice([True], [False])
+      # iterator.keep_data_in_memory: choice([True], [False])

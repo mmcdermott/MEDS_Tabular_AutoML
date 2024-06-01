@@ -185,7 +185,7 @@ def test_tabularize():
             "min_code_inclusion_frequency": 1,
             "window_sizes": ["30d", "365d", "full"],
             "aggs": ["code/count", "value/sum"],
-            "codes": None,
+            "codes": "null",
             "n_patients_per_sub_shard": 2,
             "do_overwrite": True,
             "do_update": True,
@@ -242,3 +242,16 @@ def test_tabularize():
         output_files = list(tabularized_data_dir.glob("sparse/*/*/*/*/*.npy"))
         actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
         assert set(actual_files) == set(MERGE_EXPECTED_FILES)
+
+        # model_dir = Path(d) / "save_model"
+        # xgboost_config_kwargs = {
+        #     "model_dir": str(model_dir.resolve()),
+        #     "hydra.mode": "MULTIRUN",
+        # }
+        # xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
+        # with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
+        #     overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+        #     cfg = compose(config_name="xgboost_sweep", overrides=overrides)  # config.yaml
+        # xgboost(cfg)
+        # output_files = list(model_dir.glob("*/*/*_model.json"))
+        # assert len(output_files) == 1
