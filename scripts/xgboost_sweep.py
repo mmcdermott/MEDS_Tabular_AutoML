@@ -6,7 +6,6 @@ from pathlib import Path
 
 import hydra
 import numpy as np
-import pandas as pd
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
@@ -24,16 +23,11 @@ class Iterator(xgb.DataIter):
         """
         self.cfg = cfg
         self.data_path = Path(cfg.tabularized_data_dir)
-        self.dynamic_data_path = self.data_path / "ts" / split
-        self.static_data_path = self.data_path / "static" / split
-        self._data_shards = [
-            0,
-            1,
-            2,
-            3,
-        ]  # [shard.stem for shard in list(self.static_data_path.glob("*.parquet"))]
-
-        self.codes_set, self.aggs_set, self.codes_mask = self._get_inclusion_sets()
+        self.dynamic_data_path = self.data_path / "sparse" / split
+        self.label_data_path = self.data_path / "task" / split
+        self._data_shards = [4]  # [shard.stem for shard in list(self.static_data_path.glob("*."))]
+        # TODO: need to fix this path/logic
+        self.window_set, self.aggs_set, self.codes_set = self._get_inclusion_sets()
 
         self._it = 0
 
@@ -41,16 +35,68 @@ class Iterator(xgb.DataIter):
         # "cache"
         super().__init__(cache_prefix=os.path.join(".", "cache"))
 
+    def _get_code_set(self) -> set:
+        """Get the set of codes to include in the data based on the configuration."""
+        with open(self.data_path / "feature_columns.json") as f:
+            feature_columns = json.load(f)
+        feature_dict = {col: i for i, col in enumerate(feature_columns)}
+        if self.cfg.codes is not None:
+            codes_set = {feature_dict[code] for code in set(self.cfg.codes) if code in feature_dict}
+
+        if self.cfg.min_code_inclusion_frequency is not None:
+            with open(self.data_path / "feature_freqs.json") as f:
+                feature_freqs = json.load(f)
+            min_frequency_set = {
+                key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
+            }
+            frequency_set = {feature_dict[code] for code in min_frequency_set if code in feature_dict}
+
+        if self.cfg.codes is not None and self.cfg.min_code_inclusion_frequency is not None:
+            codes_set = codes_set.intersection(frequency_set)
+        elif self.cfg.codes is not None:
+            codes_set = codes_set
+        elif self.cfg.min_code_inclusion_frequency is not None:
+            codes_set = frequency_set
+        else:
+            codes_set = None  # set(feature_columns)
+        return codes_set
+
     def _get_inclusion_sets(self) -> tuple[set, set, np.array]:
-        """Get the inclusion sets for codes and aggregations.
+        """Get the inclusion sets for aggregations, window sizes, and a mask for minimum code frequency.
 
         Returns:
-        - tuple[set, set, set]: Tuple of sets for codes, aggregations, and minimum code frequency.
+        - Tuple[Optional[Set[str]], Optional[Set[str]], np.ndarray]: Tuple containing:
+            - Set of aggregations.
+            - Set of window sizes.
+            - Boolean array mask indicating which feature columns meet the inclusion criteria.
+
+        Examples:
+        >>> import tempfile
+        >>> from types import SimpleNamespace
+        >>> cfg = SimpleNamespace(
+        ...     aggs=["code/count", "value/sum"],
+        ...     window_sizes=None,
+        ...     codes=["code1", "code2", "value1"],
+        ...     min_code_inclusion_frequency=2
+        ... )
+        >>> with tempfile.TemporaryDirectory() as tempdir:
+        ...     data_path = Path(tempdir)
+        ...     cfg.tabularized_data_dir = str(data_path)
+        ...     feature_columns = ["code1/code", "code2/code", "value1/value"]
+        ...     feature_freqs = {"code1": 3, "code2": 1, "value1": 5}
+        ...     with open(data_path / "feature_columns.json", "w") as f:
+        ...         json.dump(feature_columns, f)
+        ...     with open(data_path / "feature_freqs.json", "w") as f:
+        ...         json.dump(feature_freqs, f)
+        ...     iterator = Iterator(cfg)
+        ...     aggs_set, window_set, mask = iterator._get_inclusion_sets()
+        ...     assert aggs_set == {"code/count", "value/sum"}
+        ...     assert window_set == None
+        ...     assert np.array_equal(mask, [True, False, True])
         """
-        codes_set = None
-        aggs_set = None
-        min_frequency_set = None
+
         window_set = None
+        aggs_set = None
 
         if self.cfg.aggs is not None:
             aggs_set = set(self.cfg.aggs)
@@ -58,48 +104,9 @@ class Iterator(xgb.DataIter):
         if self.cfg.window_sizes is not None:
             window_set = set(self.cfg.window_sizes)
 
-        feature_columns = json.load(self.data_path / "feature_columns.json")
+        return aggs_set, window_set, self._get_code_set()
 
-        if self.cfg.codes is not None:
-            codes_mask = np.zeros(len(feature_columns), dtype=bool)
-            codes_set = set(self.cfg.codes)
-            for code in codes_set:
-                codes_mask |= np.array([code in col for col in feature_columns])
-        else:
-            codes_mask = np.ones(len(feature_columns), dtype=bool)
-
-        if self.cfg.min_code_inclusion_frequency is not None:
-            frequency_mask = np.zeros(len(feature_columns), dtype=bool)
-            with open(self.data_path / "feature_freqs.json") as f:
-                feature_freqs = json.load(f)
-            min_frequency_set = {
-                key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
-            }
-            for code in min_frequency_set:
-                frequency_mask |= np.array([code in col for col in feature_columns])
-        else:
-            frequency_mask = np.ones(len(feature_columns), dtype=bool)
-
-        mask = codes_mask | frequency_mask
-
-        return aggs_set, window_set, mask
-
-    def _get_task_by_index(self, idx: int) -> pd.DataFrame:
-        """Get the task data for a specific shard.
-
-        Args:
-        - idx (int): Index of the shard.
-
-        Returns:
-        - pd.DataFrame: Data frame with the task data.
-        """
-        # TODO: replace with something real
-        file = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))[0]
-        shard = pd.read_pickle(file)
-        shard["label"] = np.random.randint(0, 2, shard.shape[0])
-        return shard[["patient_id", "timestamp", "label"]]
-
-    def _load_dynamic_shard_from_file(self, path: Path) -> sp.csr_matrix:
+    def _load_dynamic_shard_from_file(self, path: Path) -> sp.csc_matrix:
         """Load a sparse shard into memory.
 
         Args:
@@ -107,20 +114,56 @@ class Iterator(xgb.DataIter):
 
         Returns:
             - sp.coo_matrix: Data frame with the sparse shard.
+        >>> import tempfile
+        >>> from types import SimpleNamespace
+        >>> with tempfile.TemporaryDirectory() as tempdir:
+        ...     sample_shard_path = Path(tempdir) / "sample_shard.npy"
+        ...     sample_shard_data = np.array([[0, 1, 0],
+        ...                               [1, 0, 1],
+        ...                               [0, 1, 0]])
+        ...     sample_filtered_data = np.array([[1, 0],
+        ...                               [0, 1],
+        ...                               [1, 0]])
+        ...     np.save(sample_shard_path, sample_shard_data)
+        ...     cfg = SimpleNamespace(
+        ...         aggs=None,
+        ...         window_sizes=None,
+        ...         codes=None,
+        ...         min_code_inclusion_frequency=None,
+        ...         tabularized_data_dir=Path(tempdir)
+        ...     )
+        ...     feature_columns = ["code1/code", "code2/code", "value1/value"]
+        ...     with open(Path(tempdir) / "feature_columns.json", "w") as f:
+        ...         json.dump(feature_columns, f)
+        ...     iterator_instance = Iterator(cfg)
+        ...     iterator_instance.codes_mask = np.array([False, True, True])
+        ...     loaded_shard = iterator_instance._load_dynamic_shard_from_file(sample_shard_path)
+        ...     assert isinstance(loaded_shard, sp.csc_matrix)
+        ...     expected_csc = sp.csc_matrix(sample_filtered_data)
+        ...     assert sp.issparse(loaded_shard)
+        ...     assert np.array_equal(loaded_shard.data, expected_csc.data)
+        ...     assert np.array_equal(loaded_shard.indices, expected_csc.indices)
+        ...     assert np.array_equal(loaded_shard.indptr, expected_csc.indptr)
         """
-        shard = np.load(path)  # TODO: check this with nassim
-        self._filter_shard_on_codes_and_freqs(shard)
-        return shard
+        # column_shard is of form event_idx, feature_idx, value
+        column_shard = np.load(path).T  # TODO: Fix this!!!
+        shard = sp.csc_matrix(
+            (column_shard[:, 0], (column_shard[:, 1], column_shard[:, 2])),
+            shape=(
+                max(column_shard[:, 1].astype(np.int32) + 1),
+                max(column_shard[:, 2].astype(np.int32) + 1),
+            ),
+        )
+        return self._filter_shard_on_codes_and_freqs(shard)
 
-    def _get_dynamic_shard_by_index(self, idx: int) -> sp.csc_matrix:
+    def _get_dynamic_shard_by_index(self, idx: int) -> sp.csr_matrix:
         """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
         column inclusion."""
 
-        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.pkl"))
-        files = [file for file in files if self._filter_shard_files_on_window_and_aggs(file)]
-
-        dynamic_coos = [sp.csc_matrix(self._load_dynamic_shard_from_file(file)) for file in files]
-        return sp.hstack(dynamic_coos)
+        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.npy"))
+        files = sorted([file for file in files if self._filter_shard_files_on_window_and_aggs(file)])
+        dynamic_cscs = [self._load_dynamic_shard_from_file(file) for file in files]
+        return sp.hstack(dynamic_cscs).tocsr()[self._valid_event_ids[idx], :]
 
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """Load a specific shard of data from disk and concatenate with static data.
@@ -136,10 +179,10 @@ class Iterator(xgb.DataIter):
         dynamic_df = self._get_dynamic_shard_by_index(idx)
         logger.debug(f"Dynamic data loading took {datetime.now() - time}")
         time = datetime.now()
-        task_df = self._get_task_by_index(idx)
+        label_df = self._get_label_by_index(idx)
         logger.debug(f"Task data loading took {datetime.now() - time}")
 
-        return sp.csr_matrix(dynamic_df), task_df["label"].values
+        return dynamic_df, label_df["label"].values
 
     def _filter_shard_files_on_window_and_aggs(self, file: Path) -> bool:
         parts = file.relative_to(self.dynamic_data_path).parts
@@ -153,7 +196,7 @@ class Iterator(xgb.DataIter):
             self.aggs_set is None or aggs_part in self.aggs_set
         )
 
-    def _filter_shard_on_codes_and_freqs(self, df: sp.coo_matrix) -> sp.sp.csr_matrix:
+    def _filter_shard_on_codes_and_freqs(self, df: sp.csc_matrix) -> sp.csc_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
         frame to only include columns that are True in the mask.
 
@@ -163,7 +206,9 @@ class Iterator(xgb.DataIter):
         Returns:
         - df (scipy.sparse.sp.csr_matrix): Filtered data frame.
         """
-        return sp.csr_matrix(df)[:, self.codes_mask]
+        if self.codes_set is None:
+            return df
+        return df[:, list({index for index in self.codes_set if index < df.shape[1]})]
 
     def next(self, input_data: Callable):
         """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
@@ -193,7 +238,7 @@ class Iterator(xgb.DataIter):
         """Reset the iterator to its beginning."""
         self._it = 0
 
-    def collect_in_memory(self) -> tuple[sp.sp.csr_matrix, np.ndarray]:
+    def collect_in_memory(self) -> tuple[sp.coo_matrix, np.ndarray]:
         """Collect the data in memory.
 
         Returns:
@@ -243,14 +288,12 @@ class XGBoostModel:
 
     def _build(self):
         """Build necessary data structures for training."""
-        start_time = datetime.now()
         if self.keep_data_in_memory:
             self._build_iterators()
             self._build_dmatrix_in_memory()
         else:
             self._build_iterators()
             self._build_dmatrix_from_iterators()
-        logger.debug(f"Data loading took {datetime.now() - start_time}")
 
     def _build_dmatrix_in_memory(self):
         """Build the DMatrix from the data in memory."""

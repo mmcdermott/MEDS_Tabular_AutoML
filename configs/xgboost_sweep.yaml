@@ -32,7 +32,6 @@ model:
 
 iterator:
   keep_data_in_memory: False
-  keep_static_data_in_memory: False
 
 # Hydra settings for sweep
 defaults:
@@ -40,7 +39,7 @@ defaults:
   - override hydra/sweeper/sampler: tpe
 
 hydra:
-  verbose: True
+  verbose: False
   sweep:
     dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
   run:
