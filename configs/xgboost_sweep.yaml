@@ -1,7 +1,7 @@
 # Raw data
 MEDS_cohort_dir: ???
-tabularized_data_dir: /storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize
-model_dir: /storage/teya/test/
+tabularized_data_dir: ???
+model_dir: ${tabularized_data_dir}/model
 
 # Pre-processing
 min_code_inclusion_frequency: 1

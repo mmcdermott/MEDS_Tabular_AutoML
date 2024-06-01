@@ -22,7 +22,6 @@ dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
 local_parallelism = ["hydra-joblib-launcher"]
-slurm_parallelism = ["hydra-submitit-launcher"]
 
 [project.urls]
 Homepage = "https://github.com/mmcdermott/MEDS_polars_functions"

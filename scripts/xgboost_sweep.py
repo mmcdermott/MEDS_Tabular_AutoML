@@ -1,11 +1,12 @@
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 
 import hydra
 import numpy as np
+import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
@@ -25,7 +26,8 @@ class Iterator(xgb.DataIter):
         self.data_path = Path(cfg.tabularized_data_dir)
         self.dynamic_data_path = self.data_path / "sparse" / split
         self.label_data_path = self.data_path / "task" / split
-        self._data_shards = [4]  # [shard.stem for shard in list(self.static_data_path.glob("*."))]
+        self._data_shards = [4]  # sort([shard.stem for shard in list(self.static_data_path.glob("*."))])
+        self.valid_event_ids, self.labels = self.load_labels()
         # TODO: need to fix this path/logic
         self.window_set, self.aggs_set, self.codes_set = self._get_inclusion_sets()
 
@@ -34,6 +36,23 @@ class Iterator(xgb.DataIter):
         # XGBoost will generate some cache files under current directory with the prefix
         # "cache"
         super().__init__(cache_prefix=os.path.join(".", "cache"))
+
+    def load_labels(self) -> tuple[Mapping[int, list], Mapping[int, list]]:
+        """Loads valid event ids and labels for each shard.
+
+        Returns:
+        - Tuple[Mapping[int, list], Mapping[int, list]]: Tuple containing:
+            dictionary from shard number to list of valid event ids -- used for indexing rows
+                in the sparse matrix
+            dictionary from shard number to list of labels for these valid event ids
+        """
+        label_fps = {shard: self.label_data_path / f"{shard}.parquet" for shard in self._data_shards}
+        cached_labels, cached_event_ids = dict(), dict()
+        for shard, label_fp in label_fps.items():
+            label_df = pl.scan_parquet(label_fp)
+            cached_event_ids[shard] = label_df.select(pl.col("event_id")).collect().to_series()
+            cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
+        return cached_event_ids, cached_labels
 
     def _get_code_set(self) -> set:
         """Get the set of codes to include in the data based on the configuration."""
