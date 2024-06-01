@@ -1,0 +1,21 @@
+# Path to the task configuration file
+config_path: task.yaml
+
+# Raw Data
+data:
+  # Path to the data file or directory
+  path: /storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort/train/0.parquet
+
+  # Data standard, one of (csv, meds, esgpt)
+  standard: meds
+
+# Output Directory (saves as .parquet file)
+output_dir: results/
+
+# Hydra
+hydra:
+  job:
+    name: ACES_${now:%Y-%m-%d_%H-%M-%S}
+  run:
+    dir: ${ACES_dir}/.logs/${hydra.job.name}
+# aces-cli --config-dir='./' --config-name='config.yaml'
