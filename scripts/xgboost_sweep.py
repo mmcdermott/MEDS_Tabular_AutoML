@@ -128,7 +128,7 @@ class Iterator(xgb.DataIter):
 
         codes_set, num_features = self._get_code_set()
 
-        return window_set, aggs_set, codes_set, num_features
+        return sorted(window_set), sorted(aggs_set), sorted(codes_set), num_features
 
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
         """Load a sparse shard into memory.
@@ -175,7 +175,7 @@ class Iterator(xgb.DataIter):
         shard = sp.csc_matrix(
             (column_shard[:, 0], (column_shard[:, 1], column_shard[:, 2])),
             shape=(
-                max(self.valid_event_ids[self._data_shards[idx]]) + 1,
+                max(self.valid_event_ids[self._data_shards[idx]], column_shard[:, 1]) + 1,
                 self.num_features,
             ),
         )
@@ -183,12 +183,22 @@ class Iterator(xgb.DataIter):
 
     def _get_dynamic_shard_by_index(self, idx: int) -> sp.csr_matrix:
         """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
-        column inclusion."""
+        column inclusion.
 
-        files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.npy"))
-        files = sorted([file for file in files if self._filter_shard_files_on_window_and_aggs(file)])
-        dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
-        return sp.hstack(dynamic_csrs).tocsr()[self.valid_event_ids[self._data_shards[idx]], :]
+        Args:
+        - idx (int): Index of the shard to load.
+
+        Returns:
+        - sp.csr_matrix: Filtered sparse matrix.
+        """
+        shard_name = self._data_shards[idx]
+        shard_pattern = f"*/*/*/{shard_name}.npy"
+        files = self.dynamic_data_path.glob(shard_pattern)
+        valid_files = sorted(file for file in files if self._filter_shard_files_on_window_and_aggs(file))
+        dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in valid_files]
+        combined_csr = sp.hstack(dynamic_csrs, format="csr")
+        valid_indices = self.valid_event_ids[shard_name]
+        return combined_csr[valid_indices, :]
 
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """Load a specific shard of data from disk and concatenate with static data.
@@ -210,15 +220,19 @@ class Iterator(xgb.DataIter):
 
     def _filter_shard_files_on_window_and_aggs(self, file: Path) -> bool:
         parts = file.relative_to(self.dynamic_data_path).parts
-        if not parts:
+        if len(parts) < 2:
             return False
 
         windows_part = parts[0]
         aggs_part = "/".join(parts[1:-1])
 
-        return (self.window_set is None or windows_part in self.window_set) and (
-            self.aggs_set is None or aggs_part in self.aggs_set
-        )
+        if self.window_set is not None and windows_part not in self.window_set:
+            return False
+
+        if self.aggs_set is not None and aggs_part not in self.aggs_set:
+            return False
+
+        return True
 
     def _filter_shard_on_codes_and_freqs(self, df: sp.csc_matrix) -> sp.csc_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
