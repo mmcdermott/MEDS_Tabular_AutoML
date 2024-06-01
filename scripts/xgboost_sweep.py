@@ -3,6 +3,7 @@ import os
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
+from timeit import timeit
 
 import hydra
 import numpy as np
@@ -25,11 +26,12 @@ class Iterator(xgb.DataIter):
         self.cfg = cfg
         self.data_path = Path(cfg.tabularized_data_dir)
         self.dynamic_data_path = self.data_path / "sparse" / split
-        self.label_data_path = self.data_path / "task" / split
-        self._data_shards = [4]  # sort([shard.stem for shard in list(self.static_data_path.glob("*."))])
+        self.task_data_path = self.data_path / "task" / split
+        self._data_shards = sorted(
+            [shard.stem for shard in list(self.task_data_path.glob("*.parquet"))]
+        )  # [2, 4, 5] #
         self.valid_event_ids, self.labels = self.load_labels()
-        # TODO: need to fix this path/logic
-        self.window_set, self.aggs_set, self.codes_set = self._get_inclusion_sets()
+        self.window_set, self.aggs_set, self.codes_set, self.num_features = self._get_inclusion_sets()
 
         self._it = 0
 
@@ -46,7 +48,7 @@ class Iterator(xgb.DataIter):
                 in the sparse matrix
             dictionary from shard number to list of labels for these valid event ids
         """
-        label_fps = {shard: self.label_data_path / f"{shard}.parquet" for shard in self._data_shards}
+        label_fps = {shard: self.task_data_path / f"{shard}.parquet" for shard in self._data_shards}
         cached_labels, cached_event_ids = dict(), dict()
         for shard, label_fp in label_fps.items():
             label_df = pl.scan_parquet(label_fp)
@@ -78,7 +80,8 @@ class Iterator(xgb.DataIter):
             codes_set = frequency_set
         else:
             codes_set = None  # set(feature_columns)
-        return codes_set
+        # TODO: make sure we aren't filtering out static columns!!!
+        return list(codes_set), len(feature_columns)
 
     def _get_inclusion_sets(self) -> tuple[set, set, np.array]:
         """Get the inclusion sets for aggregations, window sizes, and a mask for minimum code frequency.
@@ -123,9 +126,11 @@ class Iterator(xgb.DataIter):
         if self.cfg.window_sizes is not None:
             window_set = set(self.cfg.window_sizes)
 
-        return aggs_set, window_set, self._get_code_set()
+        codes_set, num_features = self._get_code_set()
 
-    def _load_dynamic_shard_from_file(self, path: Path) -> sp.csc_matrix:
+        return window_set, aggs_set, codes_set, num_features
+
+    def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
         """Load a sparse shard into memory.
 
         Args:
@@ -157,20 +162,21 @@ class Iterator(xgb.DataIter):
         ...     iterator_instance = Iterator(cfg)
         ...     iterator_instance.codes_mask = np.array([False, True, True])
         ...     loaded_shard = iterator_instance._load_dynamic_shard_from_file(sample_shard_path)
-        ...     assert isinstance(loaded_shard, sp.csc_matrix)
-        ...     expected_csc = sp.csc_matrix(sample_filtered_data)
+        ...     assert isinstance(loaded_shard, sp.csr_matrix)
+        ...     expected_csr = sp.csr_matrix(sample_filtered_data)
         ...     assert sp.issparse(loaded_shard)
-        ...     assert np.array_equal(loaded_shard.data, expected_csc.data)
-        ...     assert np.array_equal(loaded_shard.indices, expected_csc.indices)
-        ...     assert np.array_equal(loaded_shard.indptr, expected_csc.indptr)
+        ...     assert np.array_equal(loaded_shard.data, expected_csr.data)
+        ...     assert np.array_equal(loaded_shard.indices, expected_csr.indices)
+        ...     assert np.array_equal(loaded_shard.indptr, expected_csr.indptr)
         """
         # column_shard is of form event_idx, feature_idx, value
         column_shard = np.load(path).T  # TODO: Fix this!!!
+
         shard = sp.csc_matrix(
             (column_shard[:, 0], (column_shard[:, 1], column_shard[:, 2])),
             shape=(
-                max(column_shard[:, 1].astype(np.int32) + 1),
-                max(column_shard[:, 2].astype(np.int32) + 1),
+                max(self.valid_event_ids[self._data_shards[idx]]) + 1,
+                self.num_features,
             ),
         )
         return self._filter_shard_on_codes_and_freqs(shard)
@@ -181,8 +187,8 @@ class Iterator(xgb.DataIter):
 
         files = list(self.dynamic_data_path.glob(f"*/*/*/{self._data_shards[idx]}.npy"))
         files = sorted([file for file in files if self._filter_shard_files_on_window_and_aggs(file)])
-        dynamic_cscs = [self._load_dynamic_shard_from_file(file) for file in files]
-        return sp.hstack(dynamic_cscs).tocsr()[self._valid_event_ids[idx], :]
+        dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
+        return sp.hstack(dynamic_csrs).tocsr()[self.valid_event_ids[self._data_shards[idx]], :]
 
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """Load a specific shard of data from disk and concatenate with static data.
@@ -198,10 +204,9 @@ class Iterator(xgb.DataIter):
         dynamic_df = self._get_dynamic_shard_by_index(idx)
         logger.debug(f"Dynamic data loading took {datetime.now() - time}")
         time = datetime.now()
-        label_df = self._get_label_by_index(idx)
+        label_df = self.labels[self._data_shards[idx]]
         logger.debug(f"Task data loading took {datetime.now() - time}")
-
-        return dynamic_df, label_df["label"].values
+        return dynamic_df, label_df
 
     def _filter_shard_files_on_window_and_aggs(self, file: Path) -> bool:
         parts = file.relative_to(self.dynamic_data_path).parts
@@ -227,7 +232,7 @@ class Iterator(xgb.DataIter):
         """
         if self.codes_set is None:
             return df
-        return df[:, list({index for index in self.codes_set if index < df.shape[1]})]
+        return df[:, self.codes_set]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
 
     def next(self, input_data: Callable):
         """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
@@ -358,8 +363,12 @@ def xgboost(cfg: DictConfig) -> float:
     Returns:
     - float: Evaluation result.
     """
+    logger.debug("Initializing XGBoost model")
     model = XGBoostModel(cfg)
+    logger.debug("Training XGBoost model")
+    time = datetime.now()
     model.train()
+    logger.debug(f"Training took {datetime.now() - time}")
     # save model
     save_dir = (
         Path(cfg.model_dir)
@@ -369,8 +378,14 @@ def xgboost(cfg: DictConfig) -> float:
     save_dir.mkdir(parents=True, exist_ok=True)
 
     model.model.save_model(save_dir / f"{np.random.randint(100000, 999999)}_model.json")
+
     return model.evaluate()
 
 
 if __name__ == "__main__":
-    xgboost()
+    # start_time = datetime.now()
+    # xgboost()
+    # logger.debug(f"Total time: {datetime.now() - start_time}")
+    num = 10
+    time = timeit(xgboost, number=num) / num
+    logger.debug(f"Training time averaged over {num} runs: {time}")
