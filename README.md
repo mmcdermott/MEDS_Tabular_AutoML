@@ -46,27 +46,29 @@ This repository consists of two key pieces:
 
 See `tests/test_tabularize_integration.py` for an example of the end-to-end pipeline being run on synthetic data. This
 script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
+
 #### Core Scripts:
 
-1. `scripts/tabularize/identify_columns.py` loads all training shard to identify which feature columns
+1. `scripts/identify_columns.py` loads all training shard to identify which feature columns
    to generate tabular data for.
-
-```bash
-POLARS_MAX_THREADS=32 python scripts/identify_columns.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
-```
-
-2. `scripts/tabularize/tabularize_static.py` Iterates through shards and generates tabular vectors for
+2. `scripts/tabularize_static.py` Iterates through shards and generates tabular vectors for
    each patient. There is a single row per patient for each shard.
+3. `scripts/summarize_over_windows.py` For each shard, iterates through window sizes and aggregations to and
+   horizontally concatenates the outputs to generate the final tabular representations at every event time for
+   every patient.
+4. `scripts/tabularize_merge` Aligns the time-series window aggregations (generated in the previous step) with
+   the static tabular vectors and caches them for training.
+5. `scripts/hf_cohort/aces_task_extraction.py` Generates the task labels and caches them with the event_id
+   indexes which align them with the nearest prior event in the tabular data.
+6. `scripts/xgboost_sweep.py` Tunes XGboost on methods. Iterates through the labels and corresponding tabular data.
+
+We run this on an example dataset using the following bash scripts in sequence:
 
 ```bash
-POLARS_MAX_THREADS=32 python scripts/tabularize_static.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
-```
-
-4. `scripts/tabularize/summarize_over_windows.py` For each shard, iterates through window sizes and aggregations to
-   and horizontally concatenates the outputs to generate the final tabular representations at every event time for every patient.
-
-```bash
-POLARS_MAX_THREADS=1 python scripts/summarize_over_windows.py MEDS_cohort_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort tabularized_data_dir=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize min_code_inclusion_frequency=1 "window_sizes=[1d, 7d, full]" do_overwrite=True
+bash hf_cohort_shard.sh  # processes the dataset into meds format
+bash hf_cohort_e2e.sh  # performs (steps 1-4 above)
+bash hf_cohort/aces_task.sh  # generates labels (step 5)
+bash xgboost.sh  # trains xgboos (step 6)
 ```
 
 ## Feature Construction, Storage, and Loading
