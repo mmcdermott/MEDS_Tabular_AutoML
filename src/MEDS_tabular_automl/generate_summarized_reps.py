@@ -1,13 +1,12 @@
 from collections.abc import Callable
-from datetime import datetime
 
 import pandas as pd
-from scipy.sparse import vstack
 
 pd.set_option("compute.use_numba", True)
+import numpy as np
 import polars as pl
 from loguru import logger
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import coo_array, csr_array, sparray, vstack
 
 from MEDS_tabular_automl.generate_ts_features import get_ts_columns
 from MEDS_tabular_automl.utils import load_tqdm
@@ -43,18 +42,18 @@ def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]
 
 def sparse_aggregate(sparse_matrix, agg):
     if agg == "sum":
-        merged_matrix = sparse_matrix.sum(axis=0)
+        merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "min":
         merged_matrix = sparse_matrix.min(axis=0)
     elif agg == "max":
         merged_matrix = sparse_matrix.max(axis=0)
     elif agg == "sum_sqd":
-        merged_matrix = sparse_matrix.power(2).sum(axis=0)
+        merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "count":
         merged_matrix = sparse_matrix.getnnz(axis=0)
     else:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
-    return csr_matrix(merged_matrix)
+    return merged_matrix
 
 
 def sum_merge_timestamps(df, sparse_matrix, agg):
@@ -81,7 +80,7 @@ def sum_merge_timestamps(df, sparse_matrix, agg):
     # Create a new sparse matrix with summed rows per unique timestamp
     patient_id = df["patient_id"].iloc[0]
     timestamps = []
-    output_matrix = csr_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
+    output_matrix = csr_array((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
 
     # Loop through each group and sum
     for timestamp, rows in indices.items():
@@ -116,7 +115,7 @@ def sparse_rolling(df, sparse_matrix, timedelta, agg):
     patient_id = df.iloc[0].patient_id
     df = df.drop(columns="patient_id").reset_index(drop=True).reset_index()
     timestamps = []
-    out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
+    out_sparse_matrix = coo_array((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
     for each in df[["index", "timestamp"]].rolling(on="timestamp", window=timedelta):
         timestamps.append(each.index.max())
         agg_subset_matrix = sparse_aggregate(sparse_matrix[each["index"]], agg)
@@ -125,7 +124,49 @@ def sparse_rolling(df, sparse_matrix, timedelta, agg):
     return out_df, out_sparse_matrix
 
 
-def compute_agg(df, window_size: str, agg: str, use_tqdm=False):
+def get_rolling_window_indicies(index_df, window_size):
+    """Get the indices for the rolling windows."""
+    if window_size == "full":
+        newest_date = df.select(pl.col("timestamp")).max().collect().item()
+        oldest_date = df.select(pl.col("timestamp")).min().collect().item()
+        timedelta = newest_date - oldest_date + pd.Timedelta(days=1)
+    else:
+        timedelta = pd.Timedelta(window_size)
+    return (
+        index_df.with_row_index("index")
+        .rolling(index_column="timestamp", period=timedelta, group_by="patient_id")
+        .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
+        .select(pl.col("min_index", "max_index"))
+        .collect()
+    )
+
+
+def aggregate_matrix(windows, matrix, agg, use_tqdm=False):
+    """Aggregate the matrix based on the windows."""
+    tqdm = load_tqdm(use_tqdm)
+    agg = agg.split("/")[-1]
+    dtype = np.float32
+    matrix = csr_array(matrix.astype(dtype))
+    if agg.startswith("sum"):
+        out_dtype = np.float32
+    else:
+        out_dtype = np.int32
+    data, row, col = [], [], []
+    for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
+        min_index = window["min_index"]
+        max_index = window["max_index"]
+        subset_matrix = matrix[min_index : max_index + 1, :]
+        agg_matrix = sparse_aggregate(subset_matrix, agg).astype(out_dtype)
+        nozero_ind = np.nonzero(agg_matrix)[0]
+        col.append(nozero_ind)
+        data.append(agg_matrix[nozero_ind])
+        row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
+    row = np.concatenate(row)
+    out_matrix = coo_array((np.concatenate(data), (row, np.concatenate(col))), dtype=out_dtype)
+    return csr_array(out_matrix)
+
+
+def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, use_tqdm=False):
     """Applies aggreagtion to dataframe.
 
     Dataframe is expected to only have the relevant columns for aggregating
@@ -175,45 +216,27 @@ def compute_agg(df, window_size: str, agg: str, use_tqdm=False):
     patient_id                    int64
     dtype: object
     """
-    if window_size == "full":
-        timedelta = df["timestamp"].max() - df["timestamp"].min() + pd.Timedelta(days=1)
-    else:
-        timedelta = pd.Timedelta(window_size)
-    logger.info("Grouping by patient_ids -- this may take a while.")
-    group = dict(list(df[["patient_id", "timestamp"]].groupby("patient_id")))
-    sparse_matrix = df[df.columns[2:]].sparse.to_coo()
-    sparse_matrix = csr_matrix(sparse_matrix)
-    logger.info("Grouping Complete! Starting sparse rolling.")
-    out_sparse_matrix = coo_matrix((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
-
-    out_dfs = []
-    iter_wrapper = load_tqdm(use_tqdm)
-    agg = agg.split("/")[1]
-    start_time = datetime.now()
-    for i, (patient_id, subset_df) in enumerate(iter_wrapper(group.items(), total=len(group))):
-        if i % 10 == 0:
-            logger.info(f"Progress is {i}/{len(group)}")
-            logger.info(f"Time elapsed: {datetime.now() - start_time}")
-        subset_sparse_matrix = sparse_matrix[subset_df.index]
-        patient_df = subset_df[["patient_id", "timestamp"]]
-        assert patient_df.timestamp.isnull().sum() == 0, "timestamp cannot be null"
-        patient_df, subset_sparse_matrix = sum_merge_timestamps(patient_df, subset_sparse_matrix, agg)
-        patient_df, out_sparse = sparse_rolling(patient_df, subset_sparse_matrix, timedelta, agg)
-        out_dfs.append(patient_df)
-        out_sparse_matrix = vstack([out_sparse_matrix, out_sparse])
-    out_df = pd.concat(out_dfs, axis=0)
-    out_df = pd.concat(
-        [out_df.reset_index(drop=True), pd.DataFrame.sparse.from_spmatrix(out_sparse_matrix)], axis=1
+    logger.info("Step 1: Grouping by same (patient_ids, timestamps) and aggregating")
+    group_df = (
+        index_df.with_row_index("index")
+        .group_by(["patient_id", "timestamp"], maintain_order=True)
+        .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
+        .collect()
     )
-    out_df.columns = df.columns
-    out_df.rename(columns=time_aggd_col_alias_fntr(window_size, agg))
+    index_df = group_df.lazy().select(pl.col("patient_id", "timestamp"))
+    windows = group_df.select(pl.col("min_index", "max_index"))
+    logger.info("Step 1.5: Running sparse aggregation.")
+    matrix = aggregate_matrix(windows, matrix, agg, use_tqdm)
+    logger.info("Step 2: computing rolling windows and aggregating.")
+    windows = get_rolling_window_indicies(index_df, window_size)
+    logger.info("Starting final sparse aggregations.")
+    matrix = aggregate_matrix(windows, matrix, agg, use_tqdm)
+    return matrix
 
-    id_cols = ["patient_id", "timestamp"]
-    out_df = out_df.loc[:, id_cols + list(df.columns[2:])]
-    return out_df
 
-
-def _generate_summary(df: pd.DataFrame, window_size: str, agg: str, use_tqdm=False) -> pl.LazyFrame:
+def _generate_summary(
+    ts_columns: list[str], index_df: pd.DataFrame, matrix: sparray, window_size: str, agg: str, use_tqdm=False
+) -> pl.LazyFrame:
     """Generate a summary of the data frame for a given window size and aggregation.
 
     Args:
@@ -250,20 +273,12 @@ def _generate_summary(df: pd.DataFrame, window_size: str, agg: str, use_tqdm=Fal
     """
     if agg not in VALID_AGGREGATIONS:
         raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
-    code_cols = [c for c in df.columns if c.endswith("code")]
-    value_cols = [c for c in df.columns if c.endswith("value")]
-    if agg in CODE_AGGREGATIONS:
-        cols = code_cols
-    else:
-        cols = value_cols
-    id_cols = ["patient_id", "timestamp"]
-    df = df.loc[:, id_cols + cols]
-    out_df = compute_agg(df, window_size, agg, use_tqdm=use_tqdm)
-    return out_df
+    out_matrix = compute_agg(index_df, sparse_matrix, window_size, agg, use_tqdm=use_tqdm)
+    return out_matrix
 
 
 def generate_summary(
-    feature_columns: list[str], df: pd.DataFrame, window_size, agg: str, use_tqdm=False
+    feature_columns: list[str], index_df: pl.LazyFrame, matrix: sparray, window_size, agg: str, use_tqdm=False
 ) -> pl.LazyFrame:
     """Generate a summary of the data frame for given window sizes and aggregations.
 
@@ -318,34 +333,40 @@ def generate_summary(
         0              NaN                NaN                 0
     """
     logger.info("Sorting sparse dataframe by patient_id and timestamp")
-    df = df.sort_values(["patient_id", "timestamp"]).reset_index(drop=True)
     assert len(feature_columns), "feature_columns must be a non-empty list"
     ts_columns = get_ts_columns(feature_columns)
-    code_value_ts_columns = [f"{c}/code" for c in ts_columns] + [f"{c}/value" for c in ts_columns]
-    final_columns = []
-    out_dfs = []
     # Generate summaries for each window size and aggregation
     code_type, agg_name = agg.split("/")
-    final_columns = [f"{window_size}/{c}/{agg_name}" for c in code_value_ts_columns if c.endswith(code_type)]
     # only iterate through code_types that exist in the dataframe columns
-    if any([c.endswith(code_type) for c in df.columns]):
-        logger.info(f"Generating aggregation {agg} for window_size {window_size}")
-        # timestamp_dtype = df.dtypes[df.columns.index("timestamp")]
-        # assert timestamp_dtype in [
-        #     pl.Datetime,
-        #     pl.Date,
-        # ], f"timestamp must be of type Date, but is {timestamp_dtype}"
-        out_df = _generate_summary(df, window_size, agg, use_tqdm=use_tqdm)
-        out_dfs.append(out_df)
+    assert any([c.endswith(code_type) for c in ts_columns])
+    logger.info(f"Generating aggregation {agg} for window_size {window_size}")
+    out_matrix = _generate_summary(ts_columns, index_df, matrix, window_size, agg, use_tqdm=use_tqdm)
+    return out_matrix
 
-    final_columns = sorted(final_columns)
-    # Combine all dataframes using successive joins
-    result_df = pd.concat(out_dfs)
-    # Add in missing feature columns with default values
-    missing_columns = [col for col in final_columns if col not in result_df.columns]
 
-    result_df[missing_columns] = pd.DataFrame.sparse.from_spmatrix(
-        coo_matrix((result_df.shape[0], len(missing_columns)))
+if __name__ == "__main__":
+    import json
+    from pathlib import Path
+
+    from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
+
+    feature_columns = json.load(
+        open(
+            Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize") / "feature_columns.json"
+        )
     )
-    result_df = result_df[["patient_id", "timestamp"] + final_columns]
-    return result_df
+    df = pl.scan_parquet(
+        Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed")
+        / "final_cohort"
+        / "train"
+        / "0.parquet"
+    )
+    index_df, sparse_matrix = get_flat_ts_rep(feature_columns, df)
+    generate_summary(
+        feature_columns=feature_columns,
+        index_df=index_df,
+        matrix=sparse_matrix,
+        window_size="full",
+        agg="code/count",
+        use_tqdm=True,
+    )

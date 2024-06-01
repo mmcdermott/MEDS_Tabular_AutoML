@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from loguru import logger
-from scipy.sparse import coo_matrix
+from scipy.sparse import csr_array
 
 from MEDS_tabular_automl.generate_static_features import (
     STATIC_CODE_COL,
@@ -19,10 +19,7 @@ def get_ts_columns(feature_columns):
     def is_static(c):
         return c.endswith(STATIC_CODE_COL) or c.endswith(STATIC_VALUE_COL)
 
-    def get_code_name(c):
-        return "/".join(c.split("/")[0:-1])
-
-    ts_columns = sorted(list({get_code_name(c) for c in feature_columns if not is_static(c)}))
+    ts_columns = sorted(list({c for c in feature_columns if not is_static(c)}))
     return ts_columns
 
 
@@ -33,19 +30,36 @@ def fill_missing_entries_with_nan(sparse_df, type, columns):
     return sparse_df
 
 
-def get_long_code_df(df, ts_columns, col_offset):
-    column_to_int = {col: i + col_offset for i, col in enumerate(ts_columns)}
-    rows = range(len(df))
-    cols = df["code"].map(column_to_int)
-    data = np.ones(len(df), dtype=np.bool_)
+def get_long_code_df(df, ts_columns):
+    column_to_int = {col: i for i, col in enumerate(ts_columns)}
+    rows = range(df.select(pl.len()).collect().item())
+    cols = (
+        df.with_columns(
+            pl.concat_str([pl.col("code"), pl.lit("/code")]).replace(column_to_int).alias("code_index")
+        )
+        .select("code_index")
+        .collect()
+        .to_series()
+        .to_numpy()
+    )
+    data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
     return data, (rows, cols)
 
 
 def get_long_value_df(df, ts_columns):
     column_to_int = {col: i for i, col in enumerate(ts_columns)}
-    rows = range(0, len(df))
-    cols = df["code"].map(column_to_int)
-    data = df["numerical_value"]
+    value_df = df.drop_nulls("numerical_value")
+    rows = range(value_df.select(pl.len()).collect().item())
+    cols = (
+        value_df.with_columns(
+            pl.concat_str([pl.col("code"), pl.lit("/value")]).replace(column_to_int).alias("value_index")
+        )
+        .select("value_index")
+        .collect()
+        .to_series()
+        .to_numpy()
+    )
+    data = value_df.select(pl.col("numerical_value")).collect().to_series().to_numpy()
     return data, (rows, cols)
 
 
@@ -85,27 +99,28 @@ def summarize_dynamic_measurements(
     0           1  2021-01-01        1        0       1       0
     1           1  2021-01-01        2        0       1       0
     """
-    logger.info("create code and value")
+    logger.info("Generating Sparse matrix for Time Series Features")
     id_cols = ["patient_id", "timestamp"]
+
+    # Confirm dataframe is sorted
+    check_df = df.select(pl.col(id_cols))
+    assert check_df.sort(by=id_cols).collect().equals(check_df.collect()), "data frame must be sorted"
+
+    # Generate sparse matrices
     value_df = df.drop(columns=id_cols)
     value_data, (value_rows, value_cols) = get_long_value_df(value_df, ts_columns)
-
     code_df = df.drop(columns=id_cols + ["numerical_value"])
-    code_data, (code_rows, code_cols) = get_long_code_df(code_df, ts_columns, col_offset=len(ts_columns))
+    code_data, (code_rows, code_cols) = get_long_code_df(code_df, ts_columns)
 
-    logger.info("merge")
     merge_data = np.concatenate([value_data, code_data])
     merge_rows = np.concatenate([value_rows, code_rows])
     merge_cols = np.concatenate([value_cols, code_cols])
-    merge_columns = [f"{c}/value" for c in ts_columns] + [f"{c}/code" for c in ts_columns]
-    long_df = pd.DataFrame.sparse.from_spmatrix(
-        coo_matrix((merge_data, (merge_rows, merge_cols)), shape=(len(value_df), len(merge_columns))),
-        columns=merge_columns,
+    merge_columns = ts_columns
+    sp_matrix = csr_array(
+        (merge_data, (merge_rows, merge_cols)),
+        shape=(value_df.select(pl.len()).collect().item(), len(merge_columns)),
     )
-    long_df["timestamp"] = df["timestamp"]
-    long_df["patient_id"] = df["patient_id"]
-    long_df = long_df[id_cols + merge_columns]
-    return long_df
+    return df.select(pl.col(id_cols)), sp_matrix
 
 
 def get_flat_ts_rep(
@@ -151,5 +166,4 @@ def get_flat_ts_rep(
 
     ts_columns = get_ts_columns(feature_columns)
     ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
-    pd_df = ts_shard_df.collect().to_pandas()
-    return summarize_dynamic_measurements(ts_columns, pd_df)
+    return summarize_dynamic_measurements(ts_columns, ts_shard_df)
