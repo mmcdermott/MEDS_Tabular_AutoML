@@ -26,9 +26,8 @@ tqdm: True
 model:
   booster: gbtree
   device: cpu
-  epochs: 1
   tree_method: hist
-  objective: binary:logistic
+  objective: reg:squarederror
 
 iterator:
   keep_data_in_memory: False
