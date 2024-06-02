@@ -10,10 +10,15 @@ import scipy.sparse as sp
 import xgboost as xgb
 from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import roc_auc_score
 
 from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.utils import get_feature_indices, load_matrix
+
+from loguru import logger
+
+from datetime import datetime
+
 
 
 class Iterator(xgb.DataIter, TimeableMixin):
@@ -64,7 +69,12 @@ class Iterator(xgb.DataIter, TimeableMixin):
         for shard, label_fp in label_fps.items():
             label_df = pl.scan_parquet(label_fp)
             cached_event_ids[shard] = label_df.select(pl.col("event_id")).collect().to_series()
+
+            # TODO: check this for Nan or any other case we need to worry about 
             cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
+            # if self.cfg.iterator.binarize_task:
+            #     cached_labels[shard] = cached_labels[shard].map_elements(lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8)
+        
         return cached_event_ids, cached_labels
 
     @TimeableMixin.TimeAs
@@ -104,36 +114,6 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
         Returns:
             - sp.coo_matrix: Data frame with the sparse shard.
-        >>> import tempfile
-        >>> from types import SimpleNamespace
-        >>> with tempfile.TemporaryDirectory() as tempdir:
-        ...     sample_shard_path = Path(tempdir) / "sample_shard.npy"
-        ...     sample_shard_data = np.array([[0, 1, 0],
-        ...                               [1, 0, 1],
-        ...                               [0, 1, 0]])
-        ...     sample_filtered_data = np.array([[1, 0],
-        ...                               [0, 1],
-        ...                               [1, 0]])
-        ...     np.save(sample_shard_path, sample_shard_data)
-        ...     cfg = SimpleNamespace(
-        ...         aggs=None,
-        ...         window_sizes=None,
-        ...         codes=None,
-        ...         min_code_inclusion_frequency=None,
-        ...         tabularized_data_dir=Path(tempdir)
-        ...     )
-        ...     feature_columns = ["code1/code", "code2/code", "value1/value"]
-        ...     with open(Path(tempdir) / "feature_columns.json", "w") as f:
-        ...         json.dump(feature_columns, f)
-        ...     iterator_instance = Iterator(cfg)
-        ...     iterator_instance.codes_mask = np.array([False, True, True])
-        ...     loaded_shard = iterator_instance._load_dynamic_shard_from_file(sample_shard_path)
-        ...     assert isinstance(loaded_shard, sp.csr_matrix)
-        ...     expected_csr = sp.csr_matrix(sample_filtered_data)
-        ...     assert sp.issparse(loaded_shard)
-        ...     assert np.array_equal(loaded_shard.data, expected_csr.data)
-        ...     assert np.array_equal(loaded_shard.indices, expected_csr.indices)
-        ...     assert np.array_equal(loaded_shard.indptr, expected_csr.indptr)
         """
         # column_shard is of form event_idx, feature_idx, value
         matrix = load_matrix(path)
@@ -160,7 +140,9 @@ class Iterator(xgb.DataIter, TimeableMixin):
         files = self.file_name_resolver.get_model_files(
             self.cfg.window_sizes, self.cfg.aggs, self.split, self._data_shards[idx]
         )
-        assert all([file.exists() for file in files])
+        if not all(file.exists() for file in files):
+            raise ValueError("Not all files exist")
+        
         shard_name = self._data_shards[idx]
         dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
         combined_csr = sp.hstack(dynamic_csrs, format="csr")  # TODO: check this
@@ -247,7 +229,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return X, y
 
 
-class XGBoostModel:
+class XGBoostModel(TimeableMixin):
     def __init__(self, cfg: DictConfig):
         """Initialize the XGBoostClassifier with the provided configuration.
 
@@ -267,16 +249,19 @@ class XGBoostModel:
         self.dheld_out = None
 
         self.model = None
-
     @TimeableMixin.TimeAs
-    def train(self):
+    def _train(self):
         """Train the model."""
-        self._build()
         # TODO: add in eval, early stopping, etc.
         # TODO: check for Nan and inf in labels!
         self.model = xgb.train(
             OmegaConf.to_container(self.cfg.model), self.dtrain
-        )  # do we want eval and things?
+        )   # TODO: fix eval etc. 
+    @TimeableMixin.TimeAs
+    def train(self):
+        """Train the model."""
+        self._build()
+        self._train()
 
     @TimeableMixin.TimeAs
     def _build(self):
@@ -291,7 +276,7 @@ class XGBoostModel:
     @TimeableMixin.TimeAs
     def _build_dmatrix_in_memory(self):
         """Build the DMatrix from the data in memory."""
-        X_train, y_train = self.itrain.collect_in_memory()
+        X_train, y_train = self.ituning.collect_in_memory()
         X_tuning, y_tuning = self.ituning.collect_in_memory()
         X_held_out, y_held_out = self.iheld_out.collect_in_memory()
         self.dtrain = xgb.DMatrix(X_train, label=y_train)
@@ -301,7 +286,7 @@ class XGBoostModel:
     @TimeableMixin.TimeAs
     def _build_dmatrix_from_iterators(self):
         """Build the DMatrix from the iterators."""
-        self.dtrain = xgb.DMatrix(self.irain)
+        self.dtrain = xgb.DMatrix(self.itrain)
         self.dtuning = xgb.DMatrix(self.ituning)
         self.dheld_out = xgb.DMatrix(self.iheld_out)
 
@@ -323,10 +308,10 @@ class XGBoostModel:
 
         y_pred = self.model.predict(self.dheld_out)
         y_true = self.dheld_out.get_label()
-        return mean_absolute_error(y_true, y_pred)
+        return roc_auc_score(y_true, y_pred)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="xgboost_sweep")
+@hydra.main(version_base=None, config_path="../configs", config_name="xgboost")
 def xgboost(cfg: DictConfig) -> float:
     """Optimize the model based on the provided configuration.
 
@@ -338,17 +323,26 @@ def xgboost(cfg: DictConfig) -> float:
     """
     model = XGBoostModel(cfg)
     model.train()
+    logger.info("Time Profiling:")
+    logger.info("Train Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model._profile_durations().items())))
+    logger.info("Train Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.itrain._profile_durations().items())))
+    logger.info("Tuning Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.ituning._profile_durations().items())))
+    logger.info("Held Out Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.iheld_out._profile_durations().items())))
+
+    # print("Time Profiling:")
+    # print("Train Time: \n", model._profile_durations())
+    # print("Train Iterator Time: \n", model.itrain._profile_durations())
+    # print("Tuning Iterator Time: \n", model.ituning._profile_durations())
+    # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
+
     # save model
-    save_dir = (
-        Path(cfg.model_dir)
-        / "_".join(map(str, cfg.window_sizes))
-        / "_".join([agg.replace("/", "") for agg in cfg.aggs])
-    )
+    save_dir = Path(cfg.model_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    model.model.save_model(save_dir / f"{np.random.randint(100000, 999999)}_model.json")
-
-    return model.evaluate()
+    model.model.save_model(save_dir / "model.json")
+    auc = model.evaluate()
+    logger.info(f"ROC AUC: {auc}")
+    return auc
 
 
 if __name__ == "__main__":

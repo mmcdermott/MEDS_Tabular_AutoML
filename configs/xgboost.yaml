@@ -1,11 +1,13 @@
 # Raw data
 MEDS_cohort_dir: ???
-tabularized_data_dir: ???
-model_dir: ${tabularized_data_dir}/model
+tabularized_data_dir: ${MEDS_cohort_dir}/tabularize
+task_dir: ${tabularized_data_dir}/task
+model_dir: ${MEDS_cohort_dir}/model_${now:%Y-%m-%d_%H-%M-%S}/
+cache_dir: ${tabularized_data_dir}/.cache
 
 # Pre-processing
 min_code_inclusion_frequency: 1
-window_sizes: [1d]
+window_sizes: [full]
 codes: null
 aggs:
   - "code/count"
@@ -28,10 +30,11 @@ model:
   booster: gbtree
   device: cpu
   tree_method: hist
-  objective: reg:squarederror
+  objective: binary:logistic
 
 iterator:
   keep_data_in_memory: False
+  binarize_task: True
 
 # Hydra settings for sweep
 defaults:
@@ -41,9 +44,9 @@ defaults:
 hydra:
   verbose: False
   sweep:
-    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${tabularized_data_dir}/.logs/${now:%Y-%m-%d_%H-%M-%S}
   run:
-    dir: ${tabularized_data_dir}/.logs/etl/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${tabularized_data_dir}/.logs/${now:%Y-%m-%d_%H-%M-%S}
 
   # Optuna Sweeper
   sweeper:
@@ -57,5 +60,4 @@ hydra:
     # Define search space for Optuna
     params:
       window_sizes: choice([30d, 365d, full], [30d, full], [30d])
-      # iterator.keep_static_data_in_memory: choice([True], [False])
       # iterator.keep_data_in_memory: choice([True], [False])
