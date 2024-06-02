@@ -168,34 +168,17 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_featu
     if agg is a code aggregation or only value columns if it is a value aggreagation.
 
     Example:
-    >>> from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
-    >>> feature_columns = ['A/value/sum', 'A/code/count', 'B/value/sum', 'B/code/count',
-    ...                    "C/value/sum", "C/code/count", "A/static/present"]
-    >>> data = {'patient_id': [1, 1, 1, 2, 2, 2],
-    ...         'code': ['A', 'A', 'B', 'B', 'C', 'C'],
-    ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04', None, None],
-    ...         'numerical_value': [1, 2, 2, 2, 3, 4]}
-    >>> df = pl.DataFrame(data).lazy()
-    >>> df = get_flat_ts_rep(feature_columns, df)
-    >>> df
-       patient_id   timestamp  A/value  B/value  C/value  A/code  B/code  C/code
-    0           1  2021-01-01        1        0        0       1       0       0
-    1           1  2021-01-01        2        0        0       1       0       0
-    2           1  2020-01-01        0        2        0       0       1       0
-    3           2  2021-01-04        0        2        0       0       1       0
-    >>> df['timestamp'] = pd.to_datetime(df['timestamp'])
-    >>> df.dtypes
-    patient_id               int64
-    timestamp       datetime64[ns]
-    A/value       Sparse[int64, 0]
-    B/value       Sparse[int64, 0]
-    C/value       Sparse[int64, 0]
-    A/code        Sparse[int64, 0]
-    B/code        Sparse[int64, 0]
-    C/code        Sparse[int64, 0]
-    dtype: object
-    >>> output = compute_agg(df[['patient_id', 'timestamp', 'A/code', 'B/code', 'C/code']],
-    ...  "1d", "code/count")
+    >>> from datetime import datetime
+    >>> df = pd.DataFrame({
+    ...     "patient_id": [1, 1, 1, 2],
+    ...     "timestamp": [
+    ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
+    ...     ],
+    ...     "A/code": [1, 1, 0, 0],
+    ...     "B/code": [0, 0, 1, 1],
+    ...     "C/code": [0, 0, 0, 0],
+    ... })
+    >>> output = compute_agg(df, "1d", "code/count")
     >>> output
        1d/A/code/count  1d/B/code/count  1d/C/code/count  timestamp  patient_id
     0                1                0                0 2021-01-01           1
@@ -247,23 +230,20 @@ def _generate_summary(
     - pl.LazyFrame: The summarized data frame.
 
     Expect:
-        >>> from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
-        >>> feature_columns = ['A/value/sum', 'A/code/count', 'B/value/sum', 'B/code/count',
-        ...                    "C/value/sum", "C/code/count", "A/static/present"]
-        >>> data = {'patient_id': [1, 1, 1, 2, 2, 2],
-        ...         'code': ['A', 'A', 'B', 'B', 'C', 'C'],
-        ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04', None, None],
-        ...         'numerical_value': [1, 2, 2, 2, 3, 4]}
-        >>> df = pl.DataFrame(data).lazy()
-        >>> pivot_df = get_flat_ts_rep(feature_columns, df)
-        >>> pivot_df['timestamp'] = pd.to_datetime(pivot_df['timestamp'])
-        >>> pivot_df
-           patient_id  timestamp  A/value  B/value  C/value  A/code  B/code  C/code
-        0           1 2021-01-01        1        0        0       1       0       0
-        1           1 2021-01-01        2        0        0       1       0       0
-        2           1 2020-01-01        0        2        0       0       1       0
-        3           2 2021-01-04        0        2        0       0       1       0
-        >>> _generate_summary(pivot_df, "full", "value/sum")
+        >>> from datetime import datetime
+        >>> wide_df = pd.DataFrame({
+        ...     "patient_id": [1, 1, 1, 2],
+        ...     "timestamp": [
+        ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
+        ...     ],
+        ...     "A/code": [1, 1, 0, 0],
+        ...     "B/code": [0, 0, 1, 1],
+        ...     "C/code": [0, 0, 0, 0],
+        ...     "A/value": [1, 2, 0, 0],
+        ...     "B/value": [0, 0, 2, 2],
+        ...     "C/value": [0, 0, 0, 0],
+        ... })
+        >>> _generate_summary(wide_df, "full", "value/sum")
            full/A/value/count  full/B/value/count  full/C/value/count  timestamp  patient_id
         0                   1                   0                   0 2021-01-01           1
         1                   3                   0                   0 2021-01-01           1
