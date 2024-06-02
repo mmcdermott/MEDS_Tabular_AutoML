@@ -10,7 +10,7 @@ import scipy.sparse as sp
 import xgboost as xgb
 from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, mean_absolute_error
 
 from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.utils import get_feature_indices, load_matrix
@@ -36,7 +36,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         # self.dynamic_data_path = self.data_path / "sparse" / split
         # self.task_data_path = self.data_path / "task" / split
         self._data_shards = sorted(
-            [shard.stem for shard in self.file_name_resolver.list_label_files(split)]
+            ["0"]#[shard.stem for shard in self.file_name_resolver.list_label_files(split)]
         )  # [2, 4, 5] #
         self.valid_event_ids, self.labels = self.load_labels()
         self.codes_set, self.num_features = self._get_code_set()
@@ -48,7 +48,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         # XGBoost will generate some cache files under current directory with the prefix
         # "cache"
         super().__init__(
-            cache_prefix=os.path.join(".", "cache")
+            cache_prefix=os.path.join(self.file_name_resolver.get_cache_dir())
         )  # TODO: Change where this is!! it should be in the same directory it comes from!!
         #  this is security issue!
 
@@ -106,7 +106,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return list(codes_set), len(feature_columns)
 
     @TimeableMixin.TimeAs
-    def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
+    def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csr_matrix:
         """Load a sparse shard into memory.
 
         Args:
@@ -175,7 +175,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return dynamic_df, label_df
 
     @TimeableMixin.TimeAs
-    def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csc_matrix:
+    def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csr_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
         frame to only include columns that are True in the mask.
 
@@ -193,7 +193,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
         df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
         self._register_end(key=key)
-        return df
+        return sp.csr_matrix(df)
 
     @TimeableMixin.TimeAs
     def next(self, input_data: Callable):
@@ -289,7 +289,7 @@ class XGBoostModel(TimeableMixin):
     @TimeableMixin.TimeAs
     def _build_dmatrix_in_memory(self):
         """Build the DMatrix from the data in memory."""
-        X_train, y_train = self.ituning.collect_in_memory()
+        X_train, y_train = self.itrain.collect_in_memory()
         X_tuning, y_tuning = self.ituning.collect_in_memory()
         X_held_out, y_held_out = self.iheld_out.collect_in_memory()
         self.dtrain = xgb.DMatrix(X_train, label=y_train)
@@ -321,7 +321,7 @@ class XGBoostModel(TimeableMixin):
 
         y_pred = self.model.predict(self.dheld_out)
         y_true = self.dheld_out.get_label()
-        return roc_auc_score(y_true, y_pred)
+        return mean_absolute_error(y_true, y_pred)
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="xgboost")
@@ -336,17 +336,17 @@ def xgboost(cfg: DictConfig) -> float:
     """
     model = XGBoostModel(cfg)
     model.train()
-    logger.info("Time Profiling:")
-    logger.info("Train Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model._profile_durations().items())))
-    logger.info("Train Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.itrain._profile_durations().items())))
-    logger.info("Tuning Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.ituning._profile_durations().items())))
-    logger.info("Held Out Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.iheld_out._profile_durations().items())))
+    # logger.info("Time Profiling:")
+    # logger.info("Train Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model._profile_durations().items())))
+    # logger.info("Train Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.itrain._profile_durations().items())))
+    # logger.info("Tuning Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.ituning._profile_durations().items())))
+    # logger.info("Held Out Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.iheld_out._profile_durations().items())))
 
-    # print("Time Profiling:")
-    # print("Train Time: \n", model._profile_durations())
-    # print("Train Iterator Time: \n", model.itrain._profile_durations())
-    # print("Tuning Iterator Time: \n", model.ituning._profile_durations())
-    # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
+    print("Time Profiling:")
+    print("Train Time: \n", model._profile_durations())
+    print("Train Iterator Time: \n", model.itrain._profile_durations())
+    print("Tuning Iterator Time: \n", model.ituning._profile_durations())
+    print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
 
     # save model
     save_dir = Path(cfg.model_dir)

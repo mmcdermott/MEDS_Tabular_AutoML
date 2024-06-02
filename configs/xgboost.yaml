@@ -6,8 +6,8 @@ model_dir: ${MEDS_cohort_dir}/model_${now:%Y-%m-%d_%H-%M-%S}/
 cache_dir: ${tabularized_data_dir}/.cache
 
 # Pre-processing
-min_code_inclusion_frequency: 1
-window_sizes: [full]
+min_code_inclusion_frequency: 10
+window_sizes: [1d]
 codes: null
 aggs:
   - "code/count"
@@ -30,7 +30,7 @@ model:
   booster: gbtree
   device: cpu
   tree_method: hist
-  objective: binary:logistic
+  objective: reg:squarederror
 
 iterator:
   keep_data_in_memory: False

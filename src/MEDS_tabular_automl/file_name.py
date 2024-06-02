@@ -16,6 +16,10 @@ class FileNameResolver:
     def tabularize_dir(self):
         return Path(self.cfg.tabularized_data_dir)
 
+    @property
+    def cache_dir(self):
+        return Path(self.cfg.cache_dir)
+    
     def get_meds_dir(self):
         return self.meds_dir / "final_cohort"
 
@@ -90,6 +94,9 @@ class FileNameResolver:
         if split:
             return sorted(list(self.get_label_dir().glob(f"{split}/*.parquet")))
         return sorted(list(self.get_label_dir().glob("*/*.parquet")))
+    
+    def get_cache_dir(self):
+        return self.cache_dir
 
     def get_model_files(self, window_sizes, aggs, split, shard_num: int):
         # Given a shard number, returns the model files
