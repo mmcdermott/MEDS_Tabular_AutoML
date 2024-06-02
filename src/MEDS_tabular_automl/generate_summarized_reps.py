@@ -112,7 +112,7 @@ def sparse_rolling(df, sparse_matrix, timedelta, agg):
 def get_rolling_window_indicies(index_df, window_size):
     """Get the indices for the rolling windows."""
     if window_size == "full":
-        timedelta = pd.Timedelta(150*52, unit="W") # just use 150 years as time delta
+        timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
     else:
         timedelta = pd.Timedelta(window_size)
     return (

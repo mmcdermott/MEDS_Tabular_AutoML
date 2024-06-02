@@ -21,14 +21,13 @@ def feature_name_to_code(feature_name: str) -> str:
     """Converts a feature name to a code name."""
     return "/".join(feature_name.split("/")[:-1])
 
+
 def get_long_code_df(df, ts_columns):
     """Pivots the codes data frame to a long format one-hot rep for time series data."""
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
     rows = range(df.select(pl.len()).collect().item())
     cols = (
-        df.with_columns(
-            pl.col("code").cast(str).replace(column_to_int).cast(int).alias("code_index")
-        )
+        df.with_columns(pl.col("code").cast(str).replace(column_to_int).cast(int).alias("code_index"))
         .select("code_index")
         .collect()
         .to_series()
@@ -42,12 +41,12 @@ def get_long_code_df(df, ts_columns):
 def get_long_value_df(df, ts_columns):
     """Pivots the numerical value data frame to a long format for time series data."""
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
-    value_df = df.with_row_index("index").drop_nulls("numerical_value").filter(pl.col("code").is_in(ts_columns))
+    value_df = (
+        df.with_row_index("index").drop_nulls("numerical_value").filter(pl.col("code").is_in(ts_columns))
+    )
     rows = value_df.select(pl.col("index")).collect().to_series().to_numpy()
     cols = (
-        value_df.with_columns(
-            pl.col("code").cast(str).replace(column_to_int).cast(int).alias("value_index")
-        )
+        value_df.with_columns(pl.col("code").cast(str).replace(column_to_int).cast(int).alias("value_index"))
         .select("value_index")
         .collect()
         .to_series()
