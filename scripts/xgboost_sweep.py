@@ -1,16 +1,14 @@
 import json
 import os
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from pathlib import Path
-from timeit import timeit
 
 import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
-from loguru import logger
+from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import mean_absolute_error
 
@@ -18,7 +16,7 @@ from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.utils import get_feature_indices, load_matrix
 
 
-class Iterator(xgb.DataIter):
+class Iterator(xgb.DataIter, TimeableMixin):
     def __init__(self, cfg: DictConfig, split: str = "train"):
         """Initialize the Iterator with the provided configuration and split.
 
@@ -44,8 +42,12 @@ class Iterator(xgb.DataIter):
 
         # XGBoost will generate some cache files under current directory with the prefix
         # "cache"
-        super().__init__(cache_prefix=os.path.join(".", "cache"))
+        super().__init__(
+            cache_prefix=os.path.join(".", "cache")
+        )  # TODO: Change where this is!! it should be in the same directory it comes from!!
+        #  this is security issue!
 
+    @TimeableMixin.TimeAs
     def load_labels(self) -> tuple[Mapping[int, list], Mapping[int, list]]:
         """Loads valid event ids and labels for each shard.
 
@@ -65,6 +67,7 @@ class Iterator(xgb.DataIter):
             cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
         return cached_event_ids, cached_labels
 
+    @TimeableMixin.TimeAs
     def _get_code_set(self) -> set:
         """Get the set of codes to include in the data based on the configuration."""
         with open(self.file_name_resolver.get_feature_columns_fp()) as f:
@@ -92,6 +95,7 @@ class Iterator(xgb.DataIter):
         # TODO: make sure we aren't filtering out static columns!!!
         return list(codes_set), len(feature_columns)
 
+    @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
         """Load a sparse shard into memory.
 
@@ -140,6 +144,7 @@ class Iterator(xgb.DataIter):
 
         return self._filter_shard_on_codes_and_freqs(agg, sp.csc_matrix(matrix))
 
+    @TimeableMixin.TimeAs
     def _get_dynamic_shard_by_index(self, idx: int) -> sp.csr_matrix:
         """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
         column inclusion.
@@ -163,6 +168,7 @@ class Iterator(xgb.DataIter):
         valid_indices = self.valid_event_ids[shard_name]
         return combined_csr[valid_indices, :]
 
+    @TimeableMixin.TimeAs
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
         """Load a specific shard of data from disk and concatenate with static data.
 
@@ -173,14 +179,11 @@ class Iterator(xgb.DataIter):
         - X (scipy.sparse.csr_matrix): Feature data frame.ß
         - y (numpy.ndarray): Labels.
         """
-        time = datetime.now()
         dynamic_df = self._get_dynamic_shard_by_index(idx)
-        logger.debug(f"Dynamic data loading took {datetime.now() - time}")
-        time = datetime.now()
         label_df = self.labels[self._data_shards[idx]]
-        logger.debug(f"Task data loading took {datetime.now() - time}")
         return dynamic_df, label_df
 
+    @TimeableMixin.TimeAs
     def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csc_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
         frame to only include columns that are True in the mask.
@@ -197,6 +200,7 @@ class Iterator(xgb.DataIter):
         code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
         return df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
 
+    @TimeableMixin.TimeAs
     def next(self, input_data: Callable):
         """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
         during the construction of ``DMatrix``
@@ -207,7 +211,6 @@ class Iterator(xgb.DataIter):
         Returns:
         - int: 0 if end of iteration, 1 otherwise.
         """
-        start_time = datetime.now()
         if self._it == len(self._data_shards):
             # return 0 to let XGBoost know this is the end of iteration
             return 0
@@ -218,13 +221,14 @@ class Iterator(xgb.DataIter):
         input_data(data=X, label=y)
         self._it += 1
         # Return 1 to let XGBoost know we haven't seen all the files yet.
-        logger.debug(f"******** One iteration took {datetime.now() - start_time}")
         return 1
 
+    @TimeableMixin.TimeAs
     def reset(self):
         """Reset the iterator to its beginning."""
         self._it = 0
 
+    @TimeableMixin.TimeAs
     def collect_in_memory(self) -> tuple[sp.coo_matrix, np.ndarray]:
         """Collect the data in memory.
 
@@ -255,15 +259,16 @@ class XGBoostModel:
         self.keep_data_in_memory = getattr(getattr(cfg, "iterator", {}), "keep_data_in_memory", True)
 
         self.itrain = None
-        self.ival = None
-        self.itest = None
+        self.ituning = None
+        self.iheld_out = None
 
         self.dtrain = None
-        self.dval = None
-        self.dtest = None
+        self.dtuning = None
+        self.dheld_out = None
 
         self.model = None
 
+    @TimeableMixin.TimeAs
     def train(self):
         """Train the model."""
         self._build()
@@ -273,6 +278,7 @@ class XGBoostModel:
             OmegaConf.to_container(self.cfg.model), self.dtrain
         )  # do we want eval and things?
 
+    @TimeableMixin.TimeAs
     def _build(self):
         """Build necessary data structures for training."""
         if self.keep_data_in_memory:
@@ -282,27 +288,31 @@ class XGBoostModel:
             self._build_iterators()
             self._build_dmatrix_from_iterators()
 
+    @TimeableMixin.TimeAs
     def _build_dmatrix_in_memory(self):
         """Build the DMatrix from the data in memory."""
         X_train, y_train = self.itrain.collect_in_memory()
-        X_val, y_val = self.ival.collect_in_memory()
-        X_test, y_test = self.itest.collect_in_memory()
+        X_tuning, y_tuning = self.ituning.collect_in_memory()
+        X_held_out, y_held_out = self.iheld_out.collect_in_memory()
         self.dtrain = xgb.DMatrix(X_train, label=y_train)
-        self.dval = xgb.DMatrix(X_val, label=y_val)
-        self.dtest = xgb.DMatrix(X_test, label=y_test)
+        self.dtuning = xgb.DMatrix(X_tuning, label=y_tuning)
+        self.dheld_out = xgb.DMatrix(X_held_out, label=y_held_out)
 
+    @TimeableMixin.TimeAs
     def _build_dmatrix_from_iterators(self):
         """Build the DMatrix from the iterators."""
-        self.dtrain = xgb.DMatrix(self.ival)
-        self.dval = xgb.DMatrix(self.itest)
-        self.dtest = xgb.DMatrix(self.itest)
+        self.dtrain = xgb.DMatrix(self.irain)
+        self.dtuning = xgb.DMatrix(self.ituning)
+        self.dheld_out = xgb.DMatrix(self.iheld_out)
 
+    @TimeableMixin.TimeAs
     def _build_iterators(self):
         """Build the iterators for training, validation, and testing."""
         self.itrain = Iterator(self.cfg, split="train")
-        self.ival = Iterator(self.cfg, split="tuning")
-        self.itest = Iterator(self.cfg, split="held_out")
+        self.ituning = Iterator(self.cfg, split="tuning")
+        self.iheld_out = Iterator(self.cfg, split="held_out")
 
+    @TimeableMixin.TimeAs
     def evaluate(self) -> float:
         """Evaluate the model on the test set.
 
@@ -311,8 +321,8 @@ class XGBoostModel:
         """
         # TODO: Figure out exactly what we want to do here
 
-        y_pred = self.model.predict(self.dtest)
-        y_true = self.dtest.get_label()
+        y_pred = self.model.predict(self.dheld_out)
+        y_true = self.dheld_out.get_label()
         return mean_absolute_error(y_true, y_pred)
 
 
@@ -326,12 +336,8 @@ def xgboost(cfg: DictConfig) -> float:
     Returns:
     - float: Evaluation result.
     """
-    logger.debug("Initializing XGBoost model")
     model = XGBoostModel(cfg)
-    logger.debug("Training XGBoost model")
-    time = datetime.now()
     model.train()
-    logger.debug(f"Training took {datetime.now() - time}")
     # save model
     save_dir = (
         Path(cfg.model_dir)
@@ -346,9 +352,4 @@ def xgboost(cfg: DictConfig) -> float:
 
 
 if __name__ == "__main__":
-    # start_time = datetime.now()
-    # xgboost()
-    # logger.debug(f"Total time: {datetime.now() - start_time}")
-    num = 10
-    time = timeit(xgboost, number=num) / num
-    logger.debug(f"Training time averaged over {num} runs: {time}")
+    xgboost()
