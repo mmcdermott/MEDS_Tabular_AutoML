@@ -61,7 +61,7 @@ def main(cfg):
             .rename({"trigger": "timestamp", "subject_id": "patient_id"})
             .sort(by=["patient_id", "timestamp"])
         )
-        feature_columns = json.read(Path(cfg.tabularized_data_dir) / "feature_columns.json")
+        feature_columns = json.load(open(Path(cfg.tabularized_data_dir) / "feature_columns.json"))
         data_df = pl.scan_parquet(in_fp)
         data_df = get_unique_time_events_df(get_events_df(data_df, feature_columns))
         data_df = data_df.drop(["code", "numerical_value"])
