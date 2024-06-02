@@ -12,10 +12,16 @@ from hydra import compose, initialize
 from loguru import logger
 
 from MEDS_tabular_automl.file_name import FileNameResolver
-from MEDS_tabular_automl.utils import VALUE_AGGREGATIONS, get_feature_names, load_matrix
+from MEDS_tabular_automl.utils import (
+    VALUE_AGGREGATIONS,
+    get_events_df,
+    get_feature_names,
+    load_matrix,
+)
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
+from scripts.xgboost_sweep import xgboost
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -261,6 +267,11 @@ def test_tabularize():
                 f"Static Data Tabular Dataframe Should have {expected_num_cols}"
                 f"Columns but has {static_matrix.shape[1]}!"
             )
+        static_first_fp = f_name_resolver.get_flat_static_rep("tuning", "0", "static/first")
+        static_present_fp = f_name_resolver.get_flat_static_rep("tuning", "0", "static/present")
+        assert (
+            load_matrix(static_first_fp).shape[0] == load_matrix(static_present_fp).shape[0]
+        ), "static data first and present aggregations have different numbers of rows"
 
         summarize_ts_data_over_windows(cfg)
         # confirm summary files exist:
@@ -273,21 +284,39 @@ def test_tabularize():
             sparse_array = load_matrix(f)
             assert sparse_array.shape[0] > 0
             assert sparse_array.shape[1] > 0
+        ts_code_fp = f_name_resolver.get_flat_ts_rep("tuning", "0", "365d", "code/count")
+        ts_value_fp = f_name_resolver.get_flat_ts_rep("tuning", "0", "365d", "value/sum")
+        assert (
+            load_matrix(ts_code_fp).shape[0] == load_matrix(ts_value_fp).shape[0]
+        ), "time series code and value have different numbers of rows"
+        assert (
+            load_matrix(static_first_fp).shape[0] == load_matrix(ts_value_fp).shape[0]
+        ), "static data and time series have different numbers of rows"
 
-        # merge_data(cfg)
-        # output_files = f_name_resolver.list_sparse_files()
-        # actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
-        # assert set(actual_files) == set(MERGE_EXPECTED_FILES)
+        # Create fake labels
+        for f in f_name_resolver.list_meds_files():
+            df = pl.read_parquet(f)
+            df = get_events_df(df, feature_columns)
+            pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
+            df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
+            df = df.select(pl.col(["patient_id", "timestamp", "label"]))
+            df = df.unique(subset=["patient_id", "timestamp"])
+            df = df.with_row_index("event_id")
 
-        # model_dir = Path(d) / "save_model"
-        # xgboost_config_kwargs = {
-        #     "model_dir": str(model_dir.resolve()),
-        #     "hydra.mode": "MULTIRUN",
-        # }
-        # xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
-        # with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
-        #     overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
-        #     cfg = compose(config_name="xgboost_sweep", overrides=overrides)  # config.yaml
-        # xgboost(cfg)
-        # output_files = list(model_dir.glob("*/*/*_model.json"))
-        # assert len(output_files) == 1
+            split = f.parent.stem
+            shard_num = f.stem
+            out_f = f_name_resolver.get_label(split, shard_num)
+            out_f.parent.mkdir(parents=True, exist_ok=True)
+            df.write_parquet(out_f)
+        model_dir = Path(d) / "save_model"
+        xgboost_config_kwargs = {
+            "model_dir": str(model_dir.resolve()),
+            "hydra.mode": "MULTIRUN",
+        }
+        xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
+        with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+            cfg = compose(config_name="xgboost_sweep", overrides=overrides)  # config.yaml
+        xgboost(cfg)
+        output_files = list(model_dir.glob("*/*/*_model.json"))
+        assert len(output_files) == 1

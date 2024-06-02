@@ -22,6 +22,7 @@ do_overwrite: False
 do_update: True
 seed: 1
 tqdm: True
+test: False
 
 model:
   booster: gbtree
