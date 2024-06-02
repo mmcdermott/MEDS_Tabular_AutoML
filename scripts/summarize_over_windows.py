@@ -72,8 +72,6 @@ def summarize_ts_data_over_windows(
         split = shard_fp.parent.stem
         assert split in ["train", "held_out", "tuning"], f"Invalid split {split}"
         ts_fp = f_name_resolver.get_flat_ts_rep(split, shard_num, window_size, agg)
-        if ts_fp.exists() and not cfg.do_overwrite:
-            raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {ts_fp.exists()} exists!")
 
         def read_fn(fp):
             return pl.scan_parquet(fp)
