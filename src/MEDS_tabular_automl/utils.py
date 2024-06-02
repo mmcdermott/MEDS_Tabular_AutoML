@@ -259,14 +259,14 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> list[str]:
     static_df = shard_df.filter(
         pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
     )
-    static_code_freqs_df = static_df.groupby("code").agg(pl.count("code").alias("count")).collect()
+    static_code_freqs_df = static_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     static_code_freqs = {
         row["code"] + "/static/present": row["count"] for row in static_code_freqs_df.iter_rows(named=True)
     }
 
     static_value_df = static_df.filter(pl.col("numerical_value").is_not_null())
     static_value_freqs_df = (
-        static_value_df.groupby("code").agg(pl.count("numerical_value").alias("count")).collect()
+        static_value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
     )
     static_value_freqs = {
         row["code"] + "/static/first": row["count"] for row in static_value_freqs_df.iter_rows(named=True)
@@ -275,11 +275,11 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> list[str]:
     ts_df = shard_df.filter(
         pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_not_null()
     )
-    code_freqs_df = ts_df.groupby("code").agg(pl.count("code").alias("count")).collect()
+    code_freqs_df = ts_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     code_freqs = {row["code"] + "/code": row["count"] for row in code_freqs_df.iter_rows(named=True)}
 
     value_df = ts_df.filter(pl.col("numerical_value").is_not_null())
-    value_freqs_df = value_df.groupby("code").agg(pl.count("numerical_value").alias("count")).collect()
+    value_freqs_df = value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
     value_freqs = {row["code"] + "/value": row["count"] for row in value_freqs_df.iter_rows(named=True)}
 
     combined_freqs = {**static_code_freqs, **static_value_freqs, **code_freqs, **value_freqs}

@@ -26,16 +26,14 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install -e .
-          pip install pytest
-          pip install pytest-cov[toml]
+          pip install -e .[tests]
 
       #----------------------------------------------
       #              run test suite
       #----------------------------------------------
       - name: Run tests
         run: |
-          pytest -v --doctest-modules --cov
+          pytest -v --doctest-modules --cov --ignore=hf_cohort/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.0.1
