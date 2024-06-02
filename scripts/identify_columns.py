@@ -128,7 +128,7 @@ def store_columns(
 
     rwlock_wrap(
         feature_dir / "identify_train_columns",
-        feature_dir,
+        f_name_resolver.get_feature_columns_fp(),
         read_fn,
         write_fn,
         compute_fn,

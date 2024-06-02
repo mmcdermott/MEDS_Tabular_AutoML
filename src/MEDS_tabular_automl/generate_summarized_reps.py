@@ -355,16 +355,16 @@ if __name__ == "__main__":
     df = pl.scan_parquet(
         Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed")
         / "final_cohort"
-        / "train"
-        / "0.parquet"
+        / "held_out"
+        / "7.parquet"
     )
-    agg = "value/count"
+    agg = "code/count"
     index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, df)
     generate_summary(
         feature_columns=feature_columns,
         index_df=index_df,
         matrix=sparse_matrix,
-        window_size="full",
-        agg="code/count",
+        window_size="1d",
+        agg=agg,
         use_tqdm=True,
     )

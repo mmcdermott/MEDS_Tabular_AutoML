@@ -376,8 +376,10 @@ def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str,
 
 def get_events_df(shard_df: pl.DataFrame, feature_columns) -> pl.DataFrame:
     """Extracts Events DataFrame with one row per observation (timestamps can be duplicated)"""
-    # raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
-    # shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
+    # Filter out feature_columns that were not present in the training set
+    raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
+    shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
+    # Drop rows with missing timestamp or code to get events
     ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
     return ts_shard_df
 
