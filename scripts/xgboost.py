@@ -145,10 +145,19 @@ class Iterator(xgb.DataIter, TimeableMixin):
         
         shard_name = self._data_shards[idx]
         dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
+
+        fn_name = "_get_dynamic_shard_by_index"
+        hstack_key = f"{fn_name}/hstack"
+        self._register_start(key=hstack_key)
         combined_csr = sp.hstack(dynamic_csrs, format="csr")  # TODO: check this
+        self._register_end(key=hstack_key)
         # Filter Rows
         valid_indices = self.valid_event_ids[shard_name]
-        return combined_csr[valid_indices, :]
+        filter_key = f"{fn_name}/filter"
+        self._register_start(key=filter_key)
+        out = combined_csr[valid_indices, :]
+        self._register_end(key=filter_key)
+        return out
 
     @TimeableMixin.TimeAs
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csr_matrix, np.ndarray]:
