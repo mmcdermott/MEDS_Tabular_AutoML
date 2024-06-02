@@ -178,9 +178,13 @@ class Iterator(xgb.DataIter, TimeableMixin):
         """
         if self.codes_set is None:
             return df
+        key=f"_filter_shard_on_codes_and_freqs/{agg}"
+        self._register_start(key=key)
         feature_ids = self.agg_to_feature_ids[agg]
         code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
-        return df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
+        df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
+        self._register_end(key=key)
+        return df
 
     @TimeableMixin.TimeAs
     def next(self, input_data: Callable):
