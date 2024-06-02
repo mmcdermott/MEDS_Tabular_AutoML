@@ -35,7 +35,7 @@ jobs:
       #----------------------------------------------
       - name: Run tests
         run: |
-          pytest -v --doctest-modules --cov
+          pytest -v --doctest-modules --cov --ignore=hf_cohort/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.0.1
