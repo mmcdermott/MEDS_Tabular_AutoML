@@ -103,10 +103,10 @@ def summarize_dynamic_measurements(
 
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:
-        code_df = df.drop(columns=id_cols + ["numerical_value"])
+        code_df = df.drop(*(id_cols + ["numerical_value"]))
         data, (rows, cols) = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:
-        value_df = df.drop(columns=id_cols)
+        value_df = df.drop(*id_cols)
         data, (rows, cols) = get_long_value_df(value_df, ts_columns)
 
     sp_matrix = csr_array(

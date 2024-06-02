@@ -226,7 +226,7 @@ def test_tabularize():
             file_path = MEDS_cohort_dir / "final_cohort" / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
             df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S.%f")).write_parquet(
+            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(
                 file_path
             )
 
