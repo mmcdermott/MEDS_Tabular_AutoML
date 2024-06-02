@@ -7,8 +7,14 @@ from omegaconf import DictConfig
 class FileNameResolver:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
-        self.meds_dir = Path(cfg.MEDS_cohort_dir)
-        self.tabularize_dir = Path(cfg.tabularized_data_dir)
+
+    @property
+    def meds_dir(self):
+        return Path(self.cfg.MEDS_cohort_dir)
+
+    @property
+    def tabularize_dir(self):
+        return Path(self.cfg.tabularized_data_dir)
 
     def get_meds_dir(self):
         return self.meds_dir / "final_cohort"
