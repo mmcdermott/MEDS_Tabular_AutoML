@@ -31,13 +31,13 @@ class FileNameResolver:
     def get_config_path(self):
         return self.tabularize_dir / "config.yaml"
 
-    def get_meds_shard(self, shard_num: int):
+    def get_meds_shard(self, split: str, shard_num: int):
         # Given a shard number, return the MEDS format data
-        return self.get_meds_dir() / f"{shard_num}.parquet"
+        return self.get_meds_dir() / split / f"{shard_num}.parquet"
 
-    def get_flat_static_rep(self, split: str, shard_num: int):
+    def get_flat_static_rep(self, split: str, shard_num: int, agg: str):
         # Given a shard number, returns the static representation path
-        return self.get_static_dir() / split / f"{shard_num}.parquet"
+        return self.get_static_dir() / split / f"{shard_num}" / f"{agg}.npz"
 
     def get_flat_ts_rep(self, split: str, shard_num: int, window_size: int, agg: str):
         # Given a shard number, returns the time series representation path
@@ -56,8 +56,8 @@ class FileNameResolver:
     def list_static_files(self, split=None):
         # List all static files
         if split:
-            return sorted(list(self.get_static_dir().glob(f"{split}/*.parquet")))
-        return sorted(list(self.get_static_dir().glob("*/*.parquet")))
+            return sorted(list(self.get_static_dir().glob(f"{split}/*/*.npz")))
+        return sorted(list(self.get_static_dir().glob("*/*/*.npz")))
 
     def list_ts_files(self, split=None):
         # List all time series files

@@ -196,7 +196,8 @@ class Iterator(xgb.DataIter):
         files = self.dynamic_data_path.glob(shard_pattern)
         valid_files = sorted(file for file in files if self._filter_shard_files_on_window_and_aggs(file))
         dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in valid_files]
-        combined_csr = sp.hstack(dynamic_csrs, format="csr")
+        combined_csr = sp.hstack(dynamic_csrs, format="csr")  # TODO: check this
+        # Filter Rows
         valid_indices = self.valid_event_ids[shard_name]
         return combined_csr[valid_indices, :]
 

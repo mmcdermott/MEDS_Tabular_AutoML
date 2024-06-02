@@ -14,7 +14,13 @@ from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import hydra_loguru_init, load_tqdm, write_df
+from MEDS_tabular_automl.utils import (
+    STATIC_CODE_AGGREGATION,
+    STATIC_VALUE_AGGREGATION,
+    hydra_loguru_init,
+    load_tqdm,
+    write_df,
+)
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
@@ -56,7 +62,8 @@ def summarize_ts_data_over_windows(
     feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
 
     # shuffle tasks
-    tabularization_tasks = list(product(meds_shard_fps, cfg.window_sizes, cfg.aggs))
+    aggs = [agg for agg in cfg.aggs if agg not in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]]
+    tabularization_tasks = list(product(meds_shard_fps, cfg.window_sizes, aggs))
     np.random.shuffle(tabularization_tasks)
 
     # iterate through them
@@ -73,7 +80,7 @@ def summarize_ts_data_over_windows(
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
-            index_df, sparse_matrix = get_flat_ts_rep(feature_columns, shard_df)
+            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)
 
             # Summarize data -- applying aggregations on a specific window size + aggregation combination
             summary_df = generate_summary(
@@ -83,7 +90,7 @@ def summarize_ts_data_over_windows(
                 window_size,
                 agg,
             )
-            assert summary_df.shape[1] > 2, "No data found in the summarized dataframe"
+            assert summary_df.shape[1] > 0, "No data found in the summarized dataframe"
 
             logger.info("Writing pivot file")
             return summary_df

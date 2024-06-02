@@ -13,7 +13,13 @@ from omegaconf import DictConfig, OmegaConf
 from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import hydra_loguru_init, load_tqdm, write_df
+from MEDS_tabular_automl.utils import (
+    STATIC_CODE_AGGREGATION,
+    STATIC_VALUE_AGGREGATION,
+    hydra_loguru_init,
+    load_tqdm,
+    write_df,
+)
 
 pl.enable_string_cache()
 
@@ -110,11 +116,14 @@ def tabularize_static_data(
     feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
 
     # shuffle tasks
-    tabularization_tasks = list(product(meds_shard_fps, cfg.window_sizes, cfg.aggs))
+    static_aggs = [agg for agg in cfg.aggs if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]]
+    tabularization_tasks = list(product(meds_shard_fps, static_aggs))
     np.random.shuffle(tabularization_tasks)
 
-    for shard_fp in iter_wrapper(meds_shard_fps):
-        static_fp = f_name_resolver.get_flat_static_rep(shard_fp.parent.stem, shard_fp.stem)
+    for shard_fp, agg in iter_wrapper(tabularization_tasks):
+        static_fp = f_name_resolver.get_flat_static_rep(
+            shard_fp.parent.stem, shard_fp.stem, agg.split("/")[-1]
+        )
         if static_fp.exists() and not cfg.do_overwrite:
             raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {static_fp} exists!")
 
@@ -123,6 +132,7 @@ def tabularize_static_data(
 
         def compute_fn(shard_df):
             return get_flat_static_rep(
+                agg=agg,
                 feature_columns=feature_columns,
                 shard_df=shard_df,
             )

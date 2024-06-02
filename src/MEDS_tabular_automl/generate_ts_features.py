@@ -6,31 +6,19 @@ import polars as pl
 from loguru import logger
 from scipy.sparse import csr_array
 
-from MEDS_tabular_automl.generate_static_features import (
-    STATIC_CODE_COL,
-    STATIC_VALUE_COL,
+from MEDS_tabular_automl.utils import (
+    CODE_AGGREGATIONS,
+    DF_T,
+    VALUE_AGGREGATIONS,
+    get_events_df,
+    get_feature_names,
 )
-from MEDS_tabular_automl.utils import DF_T
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
-def get_ts_columns(feature_columns):
-    def is_static(c):
-        return c.endswith(STATIC_CODE_COL) or c.endswith(STATIC_VALUE_COL)
-
-    ts_columns = sorted(list({c for c in feature_columns if not is_static(c)}))
-    return ts_columns
-
-
-def fill_missing_entries_with_nan(sparse_df, type, columns):
-    # Fill missing entries with NaN
-    for col in columns:
-        sparse_df[col] = sparse_df[col].astype(pd.SparseDtype(type, fill_value=np.nan))
-    return sparse_df
-
-
 def get_long_code_df(df, ts_columns):
+    """Pivots the codes data frame to a long format one-hot rep for time series data."""
     column_to_int = {col: i for i, col in enumerate(ts_columns)}
     rows = range(df.select(pl.len()).collect().item())
     cols = (
@@ -47,9 +35,10 @@ def get_long_code_df(df, ts_columns):
 
 
 def get_long_value_df(df, ts_columns):
+    """Pivots the numerical value data frame to a long format for time series data."""
     column_to_int = {col: i for i, col in enumerate(ts_columns)}
-    value_df = df.drop_nulls("numerical_value")
-    rows = range(value_df.select(pl.len()).collect().item())
+    value_df = df.with_row_index("index").drop_nulls("numerical_value")
+    rows = value_df.select(pl.col("index")).collect().to_series().to_numpy()
     cols = (
         value_df.with_columns(
             pl.concat_str([pl.col("code"), pl.lit("/value")]).replace(column_to_int).alias("value_index")
@@ -64,6 +53,7 @@ def get_long_value_df(df, ts_columns):
 
 
 def summarize_dynamic_measurements(
+    agg: str,
     ts_columns: list[str],
     df: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -106,24 +96,23 @@ def summarize_dynamic_measurements(
     check_df = df.select(pl.col(id_cols))
     assert check_df.sort(by=id_cols).collect().equals(check_df.collect()), "data frame must be sorted"
 
-    # Generate sparse matrices
-    value_df = df.drop(columns=id_cols)
-    value_data, (value_rows, value_cols) = get_long_value_df(value_df, ts_columns)
-    code_df = df.drop(columns=id_cols + ["numerical_value"])
-    code_data, (code_rows, code_cols) = get_long_code_df(code_df, ts_columns)
+    # Generate sparse matrix
+    if agg in CODE_AGGREGATIONS:
+        code_df = df.drop(columns=id_cols + ["numerical_value"])
+        data, (rows, cols) = get_long_code_df(code_df, ts_columns)
+    elif agg in VALUE_AGGREGATIONS:
+        value_df = df.drop(columns=id_cols)
+        data, (rows, cols) = get_long_value_df(value_df, ts_columns)
 
-    merge_data = np.concatenate([value_data, code_data])
-    merge_rows = np.concatenate([value_rows, code_rows])
-    merge_cols = np.concatenate([value_cols, code_cols])
-    merge_columns = ts_columns
     sp_matrix = csr_array(
-        (merge_data, (merge_rows, merge_cols)),
-        shape=(value_df.select(pl.len()).collect().item(), len(merge_columns)),
+        (data, (rows, cols)),
+        shape=(df.select(pl.len()).collect().item(), len(ts_columns)),
     )
     return df.select(pl.col(id_cols)), sp_matrix
 
 
 def get_flat_ts_rep(
+    agg: str,
     feature_columns: list[str],
     shard_df: DF_T,
 ) -> pl.LazyFrame:
@@ -161,9 +150,6 @@ def get_flat_ts_rep(
         3           2  2021-01-04        0        2        0       0       1       0
     """
     # Remove codes not in training set
-    raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
-    shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
-
-    ts_columns = get_ts_columns(feature_columns)
-    ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
-    return summarize_dynamic_measurements(ts_columns, ts_shard_df)
+    shard_df = get_events_df(shard_df, feature_columns)
+    ts_columns = get_feature_names(agg, feature_columns)
+    return summarize_dynamic_measurements(agg, ts_columns, shard_df)

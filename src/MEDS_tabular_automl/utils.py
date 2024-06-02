@@ -5,7 +5,6 @@ Attributes:
         dataframes, etc.
     DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
-import json
 import os
 from collections.abc import Mapping
 from pathlib import Path
@@ -14,14 +13,29 @@ import hydra
 import numpy as np
 import polars as pl
 import polars.selectors as cs
-import yaml
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
+
+STATIC_CODE_AGGREGATION = "static/present"
+STATIC_VALUE_AGGREGATION = "static/first"
+
+CODE_AGGREGATIONS = [
+    "code/count",
+]
+
+VALUE_AGGREGATIONS = [
+    "value/count",
+    "value/has_values_count",
+    "value/sum",
+    "value/sum_sqd",
+    "value/min",
+    "value/max",
+]
 
 
 def hydra_loguru_init() -> None:
@@ -360,27 +374,41 @@ def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str,
     return split_to_df
 
 
-def setup_environment(cfg: DictConfig, load_data: bool = True):
-    # check output dir
-    flat_dir = Path(cfg.tabularized_data_dir)
-    assert flat_dir.exists()
+def get_events_df(shard_df: pl.DataFrame, feature_columns) -> pl.DataFrame:
+    """Extracts Events DataFrame with one row per observation (timestamps can be duplicated)"""
+    # raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
+    # shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
+    ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
+    return ts_shard_df
 
-    # load MEDS data
-    split_to_df = load_meds_data(cfg.MEDS_cohort_dir, load_data)
-    feature_columns = json.load(open(flat_dir / "feature_columns.json"))
 
-    # Check that the stored config matches the current config
-    with open(flat_dir / "config.yaml") as file:
-        yaml_config = yaml.safe_load(file)
-        stored_config = OmegaConf.create(yaml_config)
-    logger.info(f"Stored config: {stored_config}")
-    logger.info(f"Worker config: {cfg}")
-    assert cfg.keys() == stored_config.keys(), "Keys in stored config do not match current config."
-    for key in cfg.keys():
-        assert key in stored_config, f"Key {key} not found in stored config."
-        if key == "worker":
-            continue
-        assert (
-            cfg[key] == stored_config[key]
-        ), f"Config key {key}, value is {cfg[key]} vs {stored_config[key]}"
-    return flat_dir, split_to_df, feature_columns
+def get_unique_time_events_df(events_df: pl.DataFrame):
+    """Updates Events DataFrame to have unique timestamps and sorted by patient_id and timestamp."""
+    assert events_df.select(pl.col("timestamp")).is_nan().any().collect().item() == 0
+    # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
+    events_df = (
+        events_df.drop_nulls("timestamp")
+        .select(pl.col(["patient_id", "timestamp"]))
+        .unique(maintain_order=True)
+    )
+    assert events_df.sort(by=["patient_id", "timestamp"]).collect().equals(events_df.collect())
+    return events_df
+
+
+def get_feature_names(agg, feature_columns) -> str:
+    """Indices of columns in feature_columns list."""
+    if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]:
+        return [c for c in feature_columns if c.endswith(agg)]
+    elif agg in CODE_AGGREGATIONS:
+        return [c for c in feature_columns if c.endswith("/code")]
+    elif agg in VALUE_AGGREGATIONS:
+        return [c for c in feature_columns if c.endswith("/value")]
+    else:
+        raise ValueError(f"Unknown aggregation type {agg}")
+
+
+def get_feature_indices(agg, feature_columns) -> str:
+    """Indices of columns in feature_columns list."""
+    feature_to_index = {c: i for i, c in enumerate(feature_columns)}
+    agg_features = get_feature_names(agg, feature_columns)
+    return [feature_to_index[c] for c in agg_features]

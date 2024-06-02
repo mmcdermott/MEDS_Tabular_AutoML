@@ -8,23 +8,8 @@ import polars as pl
 from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray, vstack
 
-from MEDS_tabular_automl.generate_ts_features import get_ts_columns
-from MEDS_tabular_automl.utils import load_tqdm
-
-CODE_AGGREGATIONS = [
-    "code/count",
-]
-
-VALUE_AGGREGATIONS = [
-    "value/count",
-    "value/has_values_count",
-    "value/sum",
-    "value/sum_sqd",
-    "value/min",
-    "value/max",
-]
-
-VALID_AGGREGATIONS = CODE_AGGREGATIONS + VALUE_AGGREGATIONS
+from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
+from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm
 
 
 def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]:
@@ -141,7 +126,7 @@ def get_rolling_window_indicies(index_df, window_size):
     )
 
 
-def aggregate_matrix(windows, matrix, agg, use_tqdm=False):
+def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
     """Aggregate the matrix based on the windows."""
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
@@ -162,11 +147,15 @@ def aggregate_matrix(windows, matrix, agg, use_tqdm=False):
         data.append(agg_matrix[nozero_ind])
         row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
     row = np.concatenate(row)
-    out_matrix = coo_array((np.concatenate(data), (row, np.concatenate(col))), dtype=out_dtype)
+    out_matrix = coo_array(
+        (np.concatenate(data), (row, np.concatenate(col))),
+        dtype=out_dtype,
+        shape=(windows.shape[0], num_features),
+    )
     return csr_array(out_matrix)
 
 
-def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, use_tqdm=False):
+def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
     """Applies aggreagtion to dataframe.
 
     Dataframe is expected to only have the relevant columns for aggregating
@@ -216,7 +205,6 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, use_tqdm=
     patient_id                    int64
     dtype: object
     """
-    logger.info("Step 1: Grouping by same (patient_ids, timestamps) and aggregating")
     group_df = (
         index_df.with_row_index("index")
         .group_by(["patient_id", "timestamp"], maintain_order=True)
@@ -226,16 +214,22 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, use_tqdm=
     index_df = group_df.lazy().select(pl.col("patient_id", "timestamp"))
     windows = group_df.select(pl.col("min_index", "max_index"))
     logger.info("Step 1.5: Running sparse aggregation.")
-    matrix = aggregate_matrix(windows, matrix, agg, use_tqdm)
+    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     logger.info("Step 2: computing rolling windows and aggregating.")
     windows = get_rolling_window_indicies(index_df, window_size)
     logger.info("Starting final sparse aggregations.")
-    matrix = aggregate_matrix(windows, matrix, agg, use_tqdm)
+    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     return matrix
 
 
 def _generate_summary(
-    ts_columns: list[str], index_df: pd.DataFrame, matrix: sparray, window_size: str, agg: str, use_tqdm=False
+    ts_columns: list[str],
+    index_df: pd.DataFrame,
+    matrix: sparray,
+    window_size: str,
+    agg: str,
+    num_features,
+    use_tqdm=False,
 ) -> pl.LazyFrame:
     """Generate a summary of the data frame for a given window size and aggregation.
 
@@ -271,9 +265,11 @@ def _generate_summary(
         2                   3                   2                   0 2021-01-01           1
         0                   0                   2                   0 2021-01-04           2
     """
-    if agg not in VALID_AGGREGATIONS:
-        raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
-    out_matrix = compute_agg(index_df, matrix, window_size, agg, use_tqdm=use_tqdm)
+    if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
+        raise ValueError(
+            f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
+        )
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, num_features, use_tqdm=use_tqdm)
     return out_matrix
 
 
@@ -332,23 +328,24 @@ def generate_summary(
         2              NaN                NaN                 0
         0              NaN                NaN                 0
     """
-    logger.info("Sorting sparse dataframe by patient_id and timestamp")
     assert len(feature_columns), "feature_columns must be a non-empty list"
-    ts_columns = get_ts_columns(feature_columns)
+    ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
-    code_type, agg_name = agg.split("/")
+    code_type, _ = agg.split("/")
     # only iterate through code_types that exist in the dataframe columns
     assert any([c.endswith(code_type) for c in ts_columns])
-    logger.info(f"Generating aggregation {agg} for window_size {window_size}")
-    out_matrix = _generate_summary(ts_columns, index_df, matrix, window_size, agg, use_tqdm=use_tqdm)
+    logger.info(
+        f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
+    )
+    out_matrix = _generate_summary(
+        ts_columns, index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm
+    )
     return out_matrix
 
 
 if __name__ == "__main__":
     import json
     from pathlib import Path
-
-    from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 
     feature_columns = json.load(
         open(
@@ -361,7 +358,8 @@ if __name__ == "__main__":
         / "train"
         / "0.parquet"
     )
-    index_df, sparse_matrix = get_flat_ts_rep(feature_columns, df)
+    agg = "value/count"
+    index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, df)
     generate_summary(
         feature_columns=feature_columns,
         index_df=index_df,

@@ -12,7 +12,7 @@ from hydra import compose, initialize
 from loguru import logger
 
 from MEDS_tabular_automl.file_name import FileNameResolver
-from MEDS_tabular_automl.utils import load_matrix
+from MEDS_tabular_automl.utils import VALUE_AGGREGATIONS, get_feature_names, load_matrix
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
@@ -101,6 +101,35 @@ MEDS_OUTPUTS = {
     "tuning/0": MEDS_TUNING_0,
 }
 
+CODE_COLS = [
+    "ADMISSION//CARDIAC/code",
+    "ADMISSION//ORTHOPEDIC/code",
+    "ADMISSION//PULMONARY/code",
+    "DISCHARGE/code",
+    "DOB/code",
+    "HR/code",
+    "TEMP/code",
+]
+VALUE_COLS = ["HR/value", "TEMP/value"]
+STATIC_PRESENT_COLS = [
+    "EYE_COLOR//BLUE/static/present",
+    "EYE_COLOR//BROWN/static/present",
+    "EYE_COLOR//HAZEL/static/present",
+    "HEIGHT/static/present",
+]
+STATIC_FIRST_COLS = ["HEIGHT/static/first"]
+
+EXPECTED_STATIC_FILES = [
+    "tabularize/static/held_out/0/first.npz",
+    "tabularize/static/held_out/0/present.npz",
+    "tabularize/static/train/0/first.npz",
+    "tabularize/static/train/0/present.npz",
+    "tabularize/static/train/1/first.npz",
+    "tabularize/static/train/1/present.npz",
+    "tabularize/static/tuning/0/first.npz",
+    "tabularize/static/tuning/0/present.npz",
+]
+
 SUMMARIZE_EXPECTED_FILES = [
     "train/1/365d/value/sum.npz",
     "train/1/365d/code/count.npz",
@@ -166,7 +195,7 @@ def test_tabularize():
             "tabularized_data_dir": str(tabularized_data_dir.resolve()),
             "min_code_inclusion_frequency": 1,
             "window_sizes": ["30d", "365d", "full"],
-            "aggs": ["code/count", "value/sum"],
+            "aggs": ["code/count", "value/sum", "static/present", "static/first"],
             "codes": "null",
             "n_patients_per_sub_shard": 2,
             "do_overwrite": True,
@@ -209,19 +238,33 @@ def test_tabularize():
         assert (tabularized_data_dir / "config.yaml").is_file()
         assert (tabularized_data_dir / "feature_columns.json").is_file()
         assert (tabularized_data_dir / "feature_freqs.json").is_file()
-        tabularize_static_data(cfg)
-        actual_files = [(f.parent.stem, f.stem) for f in f_name_resolver.list_static_files()]
-        expected_files = [("train", "1"), ("train", "0"), ("held_out", "0"), ("tuning", "0")]
-        f_name_resolver.get_static_dir()
-        assert set(actual_files) == set(expected_files)
 
+        feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
+        assert get_feature_names("code/count", feature_columns) == sorted(CODE_COLS)
+        assert get_feature_names("static/present", feature_columns) == sorted(STATIC_PRESENT_COLS)
+        assert get_feature_names("static/first", feature_columns) == sorted(STATIC_FIRST_COLS)
+        for value_agg in VALUE_AGGREGATIONS:
+            assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
+
+        # Check Static File Generation
+        tabularize_static_data(cfg)
+        actual_files = [str(Path(*f.parts[-5:])) for f in f_name_resolver.list_static_files()]
+        assert set(actual_files) == set(EXPECTED_STATIC_FILES)
         # Check the files are not empty
-        for f in list(tabularized_data_dir.glob("static/*/*.parquet")):
-            assert pl.read_parquet(f).shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
+        for f in f_name_resolver.list_static_files():
+            static_matrix = load_matrix(f)
+            assert static_matrix.shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
+            expected_num_cols = len(get_feature_names(f"static/{f.stem}", feature_columns))
+            logger.info((static_matrix.shape[1], expected_num_cols))
+            logger.info(f_name_resolver.list_static_files())
+            assert static_matrix.shape[1] == expected_num_cols, (
+                f"Static Data Tabular Dataframe Should have {expected_num_cols}"
+                f"Columns but has {static_matrix.shape[1]}!"
+            )
 
         summarize_ts_data_over_windows(cfg)
         # confirm summary files exist:
-        output_files = list(tabularized_data_dir.glob("ts/*/*/*/*/*.npz"))
+        output_files = f_name_resolver.list_ts_files()
         f_name_resolver.list_ts_files()
         actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
 
@@ -232,7 +275,7 @@ def test_tabularize():
             assert sparse_array.shape[1] > 0
 
         # merge_data(cfg)
-        # output_files = list(tabularized_data_dir.glob("sparse/*/*/*/*/*.npz"))
+        # output_files = f_name_resolver.list_sparse_files()
         # actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
         # assert set(actual_files) == set(MERGE_EXPECTED_FILES)
 
