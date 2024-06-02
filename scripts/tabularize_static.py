@@ -121,9 +121,7 @@ def tabularize_static_data(
     np.random.shuffle(tabularization_tasks)
 
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
-        static_fp = f_name_resolver.get_flat_static_rep(
-            shard_fp.parent.stem, shard_fp.stem, agg.split("/")[-1]
-        )
+        static_fp = f_name_resolver.get_flat_static_rep(shard_fp.parent.stem, shard_fp.stem, agg)
         if static_fp.exists() and not cfg.do_overwrite:
             raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {static_fp} exists!")
 

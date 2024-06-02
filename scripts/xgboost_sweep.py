@@ -14,6 +14,9 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import mean_absolute_error
 
+from MEDS_tabular_automl.file_name import FileNameResolver
+from MEDS_tabular_automl.utils import get_feature_indices, load_matrix
+
 
 class Iterator(xgb.DataIter):
     def __init__(self, cfg: DictConfig, split: str = "train"):
@@ -24,14 +27,18 @@ class Iterator(xgb.DataIter):
         - split (str): The data split to use ("train", "tuning", or "held_out").
         """
         self.cfg = cfg
-        self.data_path = Path(cfg.tabularized_data_dir)
-        self.dynamic_data_path = self.data_path / "sparse" / split
-        self.task_data_path = self.data_path / "task" / split
+        self.file_name_resolver = FileNameResolver(cfg)
+        self.split = split
+        # self.data_path = Path(cfg.tabularized_data_dir)
+        # self.dynamic_data_path = self.data_path / "sparse" / split
+        # self.task_data_path = self.data_path / "task" / split
         self._data_shards = sorted(
-            [shard.stem for shard in list(self.task_data_path.glob("*.parquet"))]
+            [shard.stem for shard in self.file_name_resolver.list_label_files(split)]
         )  # [2, 4, 5] #
         self.valid_event_ids, self.labels = self.load_labels()
-        self.window_set, self.aggs_set, self.codes_set, self.num_features = self._get_inclusion_sets()
+        self.codes_set, self.num_features = self._get_code_set()
+        feature_columns = json.load(open(self.file_name_resolver.get_feature_columns_fp()))
+        self.agg_to_feature_ids = {agg: get_feature_indices(agg, feature_columns) for agg in cfg.aggs}
 
         self._it = 0
 
@@ -48,7 +55,9 @@ class Iterator(xgb.DataIter):
                 in the sparse matrix
             dictionary from shard number to list of labels for these valid event ids
         """
-        label_fps = {shard: self.task_data_path / f"{shard}.parquet" for shard in self._data_shards}
+        label_fps = {
+            shard: self.file_name_resolver.get_label(self.split, shard) for shard in self._data_shards
+        }
         cached_labels, cached_event_ids = dict(), dict()
         for shard, label_fp in label_fps.items():
             label_df = pl.scan_parquet(label_fp)
@@ -58,14 +67,14 @@ class Iterator(xgb.DataIter):
 
     def _get_code_set(self) -> set:
         """Get the set of codes to include in the data based on the configuration."""
-        with open(self.data_path / "feature_columns.json") as f:
+        with open(self.file_name_resolver.get_feature_columns_fp()) as f:
             feature_columns = json.load(f)
         feature_dict = {col: i for i, col in enumerate(feature_columns)}
         if self.cfg.codes is not None:
             codes_set = {feature_dict[code] for code in set(self.cfg.codes) if code in feature_dict}
 
         if self.cfg.min_code_inclusion_frequency is not None:
-            with open(self.data_path / "feature_freqs.json") as f:
+            with open(self.file_name_resolver.get_feature_freqs_fp()) as f:
                 feature_freqs = json.load(f)
             min_frequency_set = {
                 key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
@@ -82,53 +91,6 @@ class Iterator(xgb.DataIter):
             codes_set = None  # set(feature_columns)
         # TODO: make sure we aren't filtering out static columns!!!
         return list(codes_set), len(feature_columns)
-
-    def _get_inclusion_sets(self) -> tuple[set, set, np.array]:
-        """Get the inclusion sets for aggregations, window sizes, and a mask for minimum code frequency.
-
-        Returns:
-        - Tuple[Optional[Set[str]], Optional[Set[str]], np.ndarray]: Tuple containing:
-            - Set of aggregations.
-            - Set of window sizes.
-            - Boolean array mask indicating which feature columns meet the inclusion criteria.
-
-        Examples:
-        >>> import tempfile
-        >>> from types import SimpleNamespace
-        >>> cfg = SimpleNamespace(
-        ...     aggs=["code/count", "value/sum"],
-        ...     window_sizes=None,
-        ...     codes=["code1", "code2", "value1"],
-        ...     min_code_inclusion_frequency=2
-        ... )
-        >>> with tempfile.TemporaryDirectory() as tempdir:
-        ...     data_path = Path(tempdir)
-        ...     cfg.tabularized_data_dir = str(data_path)
-        ...     feature_columns = ["code1/code", "code2/code", "value1/value"]
-        ...     feature_freqs = {"code1": 3, "code2": 1, "value1": 5}
-        ...     with open(data_path / "feature_columns.json", "w") as f:
-        ...         json.dump(feature_columns, f)
-        ...     with open(data_path / "feature_freqs.json", "w") as f:
-        ...         json.dump(feature_freqs, f)
-        ...     iterator = Iterator(cfg)
-        ...     aggs_set, window_set, mask = iterator._get_inclusion_sets()
-        ...     assert aggs_set == {"code/count", "value/sum"}
-        ...     assert window_set == None
-        ...     assert np.array_equal(mask, [True, False, True])
-        """
-
-        window_set = None
-        aggs_set = None
-
-        if self.cfg.aggs is not None:
-            aggs_set = set(self.cfg.aggs)
-
-        if self.cfg.window_sizes is not None:
-            window_set = set(self.cfg.window_sizes)
-
-        codes_set, num_features = self._get_code_set()
-
-        return sorted(window_set), sorted(aggs_set), sorted(codes_set), num_features
 
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
         """Load a sparse shard into memory.
@@ -170,16 +132,13 @@ class Iterator(xgb.DataIter):
         ...     assert np.array_equal(loaded_shard.indptr, expected_csr.indptr)
         """
         # column_shard is of form event_idx, feature_idx, value
-        column_shard = np.load(path).T  # TODO: Fix this!!!
+        matrix = load_matrix(path)
+        if path.stem in ["first", "present"]:
+            agg = f"static/{path.stem}"
+        else:
+            agg = f"{path.parent.stem}/{path.stem}"
 
-        shard = sp.csc_matrix(
-            (column_shard[:, 0], (column_shard[:, 1], column_shard[:, 2])),
-            shape=(
-                max(self.valid_event_ids[self._data_shards[idx]], column_shard[:, 1]) + 1,
-                self.num_features,
-            ),
-        )
-        return self._filter_shard_on_codes_and_freqs(shard)
+        return self._filter_shard_on_codes_and_freqs(agg, sp.csc_matrix(matrix))
 
     def _get_dynamic_shard_by_index(self, idx: int) -> sp.csr_matrix:
         """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
@@ -191,11 +150,14 @@ class Iterator(xgb.DataIter):
         Returns:
         - sp.csr_matrix: Filtered sparse matrix.
         """
+        # TODO Nassim Fix this guy
+        # get all window_size x aggreagation files using the file resolver
+        files = self.file_name_resolver.get_model_files(
+            self.cfg.window_sizes, self.cfg.aggs, self.split, self._data_shards[idx]
+        )
+        assert all([file.exists() for file in files])
         shard_name = self._data_shards[idx]
-        shard_pattern = f"*/*/*/{shard_name}.npy"
-        files = self.dynamic_data_path.glob(shard_pattern)
-        valid_files = sorted(file for file in files if self._filter_shard_files_on_window_and_aggs(file))
-        dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in valid_files]
+        dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
         combined_csr = sp.hstack(dynamic_csrs, format="csr")  # TODO: check this
         # Filter Rows
         valid_indices = self.valid_event_ids[shard_name]
@@ -219,23 +181,7 @@ class Iterator(xgb.DataIter):
         logger.debug(f"Task data loading took {datetime.now() - time}")
         return dynamic_df, label_df
 
-    def _filter_shard_files_on_window_and_aggs(self, file: Path) -> bool:
-        parts = file.relative_to(self.dynamic_data_path).parts
-        if len(parts) < 2:
-            return False
-
-        windows_part = parts[0]
-        aggs_part = "/".join(parts[1:-1])
-
-        if self.window_set is not None and windows_part not in self.window_set:
-            return False
-
-        if self.aggs_set is not None and aggs_part not in self.aggs_set:
-            return False
-
-        return True
-
-    def _filter_shard_on_codes_and_freqs(self, df: sp.csc_matrix) -> sp.csc_matrix:
+    def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csc_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
         frame to only include columns that are True in the mask.
 
@@ -247,7 +193,9 @@ class Iterator(xgb.DataIter):
         """
         if self.codes_set is None:
             return df
-        return df[:, self.codes_set]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
+        feature_ids = self.agg_to_feature_ids[agg]
+        code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
+        return df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
 
     def next(self, input_data: Callable):
         """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost

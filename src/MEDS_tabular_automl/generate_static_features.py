@@ -19,6 +19,7 @@ from MEDS_tabular_automl.utils import (
     STATIC_VALUE_AGGREGATION,
     get_events_df,
     get_feature_names,
+    get_unique_time_events_df,
     parse_static_feature_column,
 )
 
@@ -53,7 +54,6 @@ def get_sparse_static_rep(static_features, static_df, meds_df, feature_columns) 
     Returns:
     - pd.DataFrame: A merged dataframe containing static and time-series features.
     """
-    # TODO - Eventually do this duplication at the task specific stage after filtering patients and features
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
     # Check static_df is sorted and unique
@@ -62,7 +62,7 @@ def get_sparse_static_rep(static_features, static_df, meds_df, feature_columns) 
         static_df.select(pl.len()).collect().item()
         == static_df.select(pl.col("patient_id").n_unique()).collect().item()
     )
-    meds_df = get_events_df(meds_df, feature_columns)
+    meds_df = get_unique_time_events_df(get_events_df(meds_df, feature_columns))
 
     # load static data as sparse matrix
     static_matrix = convert_to_matrix(

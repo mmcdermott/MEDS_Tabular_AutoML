@@ -386,7 +386,7 @@ def get_events_df(shard_df: pl.DataFrame, feature_columns) -> pl.DataFrame:
 
 def get_unique_time_events_df(events_df: pl.DataFrame):
     """Updates Events DataFrame to have unique timestamps and sorted by patient_id and timestamp."""
-    assert events_df.select(pl.col("timestamp")).is_nan().any().collect().item() == 0
+    assert events_df.select(pl.col("timestamp")).null_count().collect().item() == 0
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
         events_df.drop_nulls("timestamp")
