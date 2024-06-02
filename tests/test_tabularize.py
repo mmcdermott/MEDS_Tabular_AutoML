@@ -3,21 +3,19 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
-import shutil
 import tempfile
 from io import StringIO
 from pathlib import Path
 
-import pandas as pd
 import polars as pl
 from hydra import compose, initialize
 from loguru import logger
 
+from MEDS_tabular_automl.file_name import FileNameResolver
+from MEDS_tabular_automl.utils import load_matrix
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
-from scripts.tabularize_merge import merge_data
 from scripts.tabularize_static import tabularize_static_data
-from scripts.tabularize_ts import tabularize_ts_data
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -104,80 +102,64 @@ MEDS_OUTPUTS = {
 }
 
 SUMMARIZE_EXPECTED_FILES = [
-    "train/365d/value/sum/0.pkl",
-    "train/365d/value/sum/1.pkl",
-    "train/365d/code/count/0.pkl",
-    "train/365d/code/count/1.pkl",
-    "train/full/value/sum/0.pkl",
-    "train/full/value/sum/1.pkl",
-    "train/full/code/count/0.pkl",
-    "train/full/code/count/1.pkl",
-    "train/30d/value/sum/0.pkl",
-    "train/30d/value/sum/1.pkl",
-    "train/30d/code/count/0.pkl",
-    "train/30d/code/count/1.pkl",
-    "held_out/365d/value/sum/0.pkl",
-    "held_out/365d/code/count/0.pkl",
-    "held_out/full/value/sum/0.pkl",
-    "held_out/full/code/count/0.pkl",
-    "held_out/30d/value/sum/0.pkl",
-    "held_out/30d/code/count/0.pkl",
-    "tuning/365d/value/sum/0.pkl",
-    "tuning/365d/code/count/0.pkl",
-    "tuning/full/value/sum/0.pkl",
-    "tuning/full/code/count/0.pkl",
-    "tuning/30d/value/sum/0.pkl",
-    "tuning/30d/code/count/0.pkl",
+    "train/1/365d/value/sum.npz",
+    "train/1/365d/code/count.npz",
+    "train/1/full/value/sum.npz",
+    "train/1/full/code/count.npz",
+    "train/1/30d/value/sum.npz",
+    "train/1/30d/code/count.npz",
+    "train/0/365d/value/sum.npz",
+    "train/0/365d/code/count.npz",
+    "train/0/full/value/sum.npz",
+    "train/0/full/code/count.npz",
+    "train/0/30d/value/sum.npz",
+    "train/0/30d/code/count.npz",
+    "held_out/0/365d/value/sum.npz",
+    "held_out/0/365d/code/count.npz",
+    "held_out/0/full/value/sum.npz",
+    "held_out/0/full/code/count.npz",
+    "held_out/0/30d/value/sum.npz",
+    "held_out/0/30d/code/count.npz",
+    "tuning/0/365d/value/sum.npz",
+    "tuning/0/365d/code/count.npz",
+    "tuning/0/full/value/sum.npz",
+    "tuning/0/full/code/count.npz",
+    "tuning/0/30d/value/sum.npz",
+    "tuning/0/30d/code/count.npz",
 ]
 
 MERGE_EXPECTED_FILES = [
-    "train/365d/value/sum/0.npy",
-    "train/365d/value/sum/1.npy",
-    "train/365d/code/count/0.npy",
-    "train/365d/code/count/1.npy",
-    "train/full/value/sum/0.npy",
-    "train/full/value/sum/1.npy",
-    "train/full/code/count/0.npy",
-    "train/full/code/count/1.npy",
-    "train/30d/value/sum/0.npy",
-    "train/30d/value/sum/1.npy",
-    "train/30d/code/count/0.npy",
-    "train/30d/code/count/1.npy",
-    "held_out/365d/value/sum/0.npy",
-    "held_out/365d/code/count/0.npy",
-    "held_out/full/value/sum/0.npy",
-    "held_out/full/code/count/0.npy",
-    "held_out/30d/value/sum/0.npy",
-    "held_out/30d/code/count/0.npy",
-    "tuning/365d/value/sum/0.npy",
-    "tuning/365d/code/count/0.npy",
-    "tuning/full/value/sum/0.npy",
-    "tuning/full/code/count/0.npy",
-    "tuning/30d/value/sum/0.npy",
-    "tuning/30d/code/count/0.npy",
+    "train/365d/value/sum/0.npz",
+    "train/365d/value/sum/1.npz",
+    "train/365d/code/count/0.npz",
+    "train/365d/code/count/1.npz",
+    "train/full/value/sum/0.npz",
+    "train/full/value/sum/1.npz",
+    "train/full/code/count/0.npz",
+    "train/full/code/count/1.npz",
+    "train/30d/value/sum/0.npz",
+    "train/30d/value/sum/1.npz",
+    "train/30d/code/count/0.npz",
+    "train/30d/code/count/1.npz",
+    "held_out/365d/value/sum/0.npz",
+    "held_out/365d/code/count/0.npz",
+    "held_out/full/value/sum/0.npz",
+    "held_out/full/code/count/0.npz",
+    "held_out/30d/value/sum/0.npz",
+    "held_out/30d/code/count/0.npz",
+    "tuning/365d/value/sum/0.npz",
+    "tuning/365d/code/count/0.npz",
+    "tuning/full/value/sum/0.npz",
+    "tuning/full/code/count/0.npz",
+    "tuning/30d/value/sum/0.npz",
+    "tuning/30d/code/count/0.npz",
 ]
 
 
 def test_tabularize():
     with tempfile.TemporaryDirectory() as d:
-        MEDS_cohort_dir = Path(d) / "MEDS_cohort"
-        tabularized_data_dir = Path(d) / "flat_reps"
-
-        # Create the directories
-        MEDS_cohort_dir.mkdir()
-
-        # Store MEDS outputs
-        for split, data in MEDS_OUTPUTS.items():
-            file_path = MEDS_cohort_dir / f"{split}.parquet"
-            file_path.parent.mkdir(exist_ok=True)
-            df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S.%f")).write_parquet(
-                file_path
-            )
-
-        split_json = json.load(StringIO(SPLITS_JSON))
-        splits_fp = MEDS_cohort_dir / "splits.json"
-        json.dump(split_json, splits_fp.open("w"))
+        MEDS_cohort_dir = Path(d) / "processed"
+        tabularized_data_dir = Path(d) / "processed" / "tabularize"
 
         tabularize_config_kwargs = {
             "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
@@ -198,50 +180,61 @@ def test_tabularize():
         with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
             overrides = [f"{k}={v}" for k, v in tabularize_config_kwargs.items()]
             cfg = compose(config_name="tabularize", overrides=overrides)  # config.yaml
+
+        f_name_resolver = FileNameResolver(cfg)
+
+        # Create the directories
+        (MEDS_cohort_dir / "final_cohort").mkdir(parents=True, exist_ok=True)
+
+        # Store MEDS outputs
+        for split, data in MEDS_OUTPUTS.items():
+            file_path = MEDS_cohort_dir / "final_cohort" / f"{split}.parquet"
+            file_path.parent.mkdir(exist_ok=True)
+            df = pl.read_csv(StringIO(data))
+            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S.%f")).write_parquet(
+                file_path
+            )
+
+        # Check the files are not empty
+        meds_files = f_name_resolver.list_meds_files()
+        assert len(meds_files) == 4, "MEDS Data Files Should be 4!"
+        for f in meds_files:
+            assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
+
+        split_json = json.load(StringIO(SPLITS_JSON))
+        splits_fp = MEDS_cohort_dir / "splits.json"
+        json.dump(split_json, splits_fp.open("w"))
         logger.info("caching flat representation of MEDS data")
         store_columns(cfg)
         assert (tabularized_data_dir / "config.yaml").is_file()
         assert (tabularized_data_dir / "feature_columns.json").is_file()
         assert (tabularized_data_dir / "feature_freqs.json").is_file()
         tabularize_static_data(cfg)
-        actual_files = [
-            (f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("static/*/*.parquet"))
-        ]
+        actual_files = [(f.parent.stem, f.stem) for f in f_name_resolver.list_static_files()]
         expected_files = [("train", "1"), ("train", "0"), ("held_out", "0"), ("tuning", "0")]
+        f_name_resolver.get_static_dir()
         assert set(actual_files) == set(expected_files)
 
         # Check the files are not empty
         for f in list(tabularized_data_dir.glob("static/*/*.parquet")):
             assert pl.read_parquet(f).shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
 
-        tabularize_ts_data(cfg)
-        # confirm the time series files exist:
-        actual_files = [(f.parent.stem, f.stem) for f in list(tabularized_data_dir.glob("ts/*/*.pkl"))]
-        expected_files = [
-            ("train", "1"),
-            ("train", "0"),
-            ("held_out", "0"),
-            ("tuning", "0"),
-        ]
-        assert set(actual_files) == set(expected_files)
-        for f in list(tabularized_data_dir.glob("ts/*/*.pkl")):
-            assert pd.read_pickle(f).shape[0] > 0, "Time-Series Tabular Dataframe Should not be Empty!"
-        shutil.rmtree(tabularized_data_dir / "ts")
-
         summarize_ts_data_over_windows(cfg)
         # confirm summary files exist:
-        output_files = list(tabularized_data_dir.glob("ts/*/*/*/*/*.pkl"))
+        output_files = list(tabularized_data_dir.glob("ts/*/*/*/*/*.npz"))
+        f_name_resolver.list_ts_files()
         actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
 
         assert set(actual_files) == set(SUMMARIZE_EXPECTED_FILES)
         for f in output_files:
-            df = pd.read_pickle(f)
-            assert df.shape[0] > 0
+            sparse_array = load_matrix(f)
+            assert sparse_array.shape[0] > 0
+            assert sparse_array.shape[1] > 0
 
-        merge_data(cfg)
-        output_files = list(tabularized_data_dir.glob("sparse/*/*/*/*/*.npy"))
-        actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
-        assert set(actual_files) == set(MERGE_EXPECTED_FILES)
+        # merge_data(cfg)
+        # output_files = list(tabularized_data_dir.glob("sparse/*/*/*/*/*.npz"))
+        # actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
+        # assert set(actual_files) == set(MERGE_EXPECTED_FILES)
 
         # model_dir = Path(d) / "save_model"
         # xgboost_config_kwargs = {

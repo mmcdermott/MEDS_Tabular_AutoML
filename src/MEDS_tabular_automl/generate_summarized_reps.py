@@ -127,8 +127,8 @@ def sparse_rolling(df, sparse_matrix, timedelta, agg):
 def get_rolling_window_indicies(index_df, window_size):
     """Get the indices for the rolling windows."""
     if window_size == "full":
-        newest_date = df.select(pl.col("timestamp")).max().collect().item()
-        oldest_date = df.select(pl.col("timestamp")).min().collect().item()
+        newest_date = index_df.select(pl.col("timestamp")).max().collect().item()
+        oldest_date = index_df.select(pl.col("timestamp")).min().collect().item()
         timedelta = newest_date - oldest_date + pd.Timedelta(days=1)
     else:
         timedelta = pd.Timedelta(window_size)
@@ -273,7 +273,7 @@ def _generate_summary(
     """
     if agg not in VALID_AGGREGATIONS:
         raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {VALID_AGGREGATIONS}")
-    out_matrix = compute_agg(index_df, sparse_matrix, window_size, agg, use_tqdm=use_tqdm)
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, use_tqdm=use_tqdm)
     return out_matrix
 
 

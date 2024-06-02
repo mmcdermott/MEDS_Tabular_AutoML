@@ -5,16 +5,14 @@ from collections import defaultdict
 from pathlib import Path
 
 import hydra
+import numpy as np
 import polars as pl
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
+from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import (
-    compute_feature_frequencies,
-    load_meds_data,
-    load_tqdm,
-)
+from MEDS_tabular_automl.utils import compute_feature_frequencies, load_tqdm
 
 
 def store_config_yaml(config_fp: Path, cfg: DictConfig):
@@ -73,14 +71,12 @@ def store_columns(
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
     # create output dir
-    flat_dir = Path(cfg.tabularized_data_dir)
+    f_name_resolver = FileNameResolver(cfg)
+    flat_dir = f_name_resolver.tabularize_dir
     flat_dir.mkdir(exist_ok=True, parents=True)
 
-    # load MEDS data
-    split_to_fps = load_meds_data(cfg.MEDS_cohort_dir, load_data=False)
-
     # store params in json file
-    config_fp = flat_dir / "config.yaml"
+    config_fp = f_name_resolver.get_config_path()
     store_config_yaml(config_fp, cfg)
 
     # 0. Identify Output Columns and Frequencies
@@ -96,11 +92,11 @@ def store_columns(
         return pl.scan_parquet(in_fp)
 
     # Map: Iterates through shards and caches feature frequencies
-    feature_freq_fp = flat_dir / "feature_freqs"
-    feature_freq_fp.mkdir(exist_ok=True)
-    for shard_fp in iter_wrapper(split_to_fps["train"]):
-        name = shard_fp.stem
-        out_fp = feature_freq_fp / f"{name}.json"
+    train_shards = f_name_resolver.list_meds_files(split="train")
+    np.random.shuffle(train_shards)
+    feature_dir = f_name_resolver.tabularize_dir
+    for shard_fp in iter_wrapper(train_shards):
+        out_fp = feature_dir / "identify_train_columns" / f"{shard_fp.stem}.json"
         rwlock_wrap(
             shard_fp,
             out_fp,
@@ -123,16 +119,16 @@ def store_columns(
 
     def write_fn(data, out_fp):
         feature_freqs, feature_columns = data
-        json.dump(feature_columns, open(out_fp / "feature_columns.json", "w"))
-        json.dump(feature_freqs, open(flat_dir / "feature_freqs.json", "w"))
+        json.dump(feature_columns, open(f_name_resolver.get_feature_columns_fp(), "w"))
+        json.dump(feature_freqs, open(f_name_resolver.get_feature_freqs_fp(), "w"))
 
-    def read_fn(in_fp):
-        files = list(in_fp.glob("*.json"))
+    def read_fn(feature_dir):
+        files = list(feature_dir.glob("*.json"))
         return [json.load(open(fp)) for fp in files]
 
     rwlock_wrap(
-        feature_freq_fp,
-        flat_dir,
+        feature_dir / "identify_train_columns",
+        feature_dir,
         read_fn,
         write_fn,
         compute_fn,

@@ -6,20 +6,31 @@ Attributes:
     DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
 import json
+import os
 from collections.abc import Mapping
 from pathlib import Path
 
+import hydra
 import numpy as np
-import pandas as pd
 import polars as pl
 import polars.selectors as cs
 import yaml
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
+
+
+def hydra_loguru_init() -> None:
+    """Adds loguru output to the logs that hydra scrapes.
+
+    Must be called from a hydra main!
+    """
+    hydra_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+    logger.add(os.path.join(hydra_path, "main.log"))
 
 
 def load_tqdm(use_tqdm):
@@ -42,7 +53,28 @@ def parse_static_feature_column(c: str) -> tuple[str, str, str, str]:
     return ("/".join(parts[:-2]), parts[-2], parts[-1])
 
 
-def write_df(df: DF_T, fp: Path, **kwargs):
+def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
+    assert array.shape[0] == 3
+    data, row, col = array
+    return coo_array((data, (row, col)), shape=shape)
+
+
+def sparse_matrix_to_array(coo_matrix: coo_array):
+    return np.array([coo_matrix.data, coo_matrix.row, coo_matrix.col]), coo_matrix.shape
+
+
+def store_matrix(coo_matrix: coo_array, fp_path: Path):
+    array, shape = sparse_matrix_to_array(coo_matrix)
+    np.savez(fp_path, array=array, shape=shape)
+
+
+def load_matrix(fp_path: Path):
+    npzfile = np.load(fp_path)
+    array, shape = npzfile["array"], npzfile["shape"]
+    return array_to_sparse_matrix(array, shape)
+
+
+def write_df(df: coo_array, fp: Path, **kwargs):
     """Write shard to disk."""
     do_overwrite = kwargs.get("do_overwrite", False)
 
@@ -55,16 +87,10 @@ def write_df(df: DF_T, fp: Path, **kwargs):
         df.collect().write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
     elif isinstance(df, pl.DataFrame):
         df.write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
-    elif isinstance(df, pd.DataFrame):
-        if not all(df.columns[:2] == ["patient_id", "timestamp"]):
-            raise ValueError(
-                f"Expected DataFrame to have columns ['patient_id', 'timestamp'], got {df.columns[:2]}"
-            )
-        df.to_pickle(fp)
-    elif isinstance(df, np.matrix):
-        np.save(fp, df)
+    elif isinstance(df, coo_array):
+        store_matrix(df, fp)
     else:
-        raise ValueError(f"Unsupported type for df: {type(df)}")
+        raise TypeError(f"Unsupported type for df: {type(df)}")
 
 
 def get_static_col_dtype(col: str) -> pl.DataType:

@@ -1,15 +1,19 @@
 #!/usr/bin/env python
 """Tabularizes static data in MEDS format into tabular representations."""
 
+import json
+from itertools import product
 from pathlib import Path
 
 import hydra
+import numpy as np
 import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
+from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import setup_environment, write_df
+from MEDS_tabular_automl.utils import hydra_loguru_init, load_tqdm, write_df
 
 pl.enable_string_cache()
 
@@ -96,43 +100,45 @@ def tabularize_static_data(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
-    flat_dir, split_to_fp, feature_columns = setup_environment(cfg, load_data=False)
+    iter_wrapper = load_tqdm(cfg.tqdm)
+    if not cfg.test:
+        hydra_loguru_init()
+    f_name_resolver = FileNameResolver(cfg)
+    # Produce ts representation
+    meds_shard_fps = f_name_resolver.list_meds_files()
+    # f_name_resolver.get_meds_dir()
+    feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
 
-    # Produce static representation
-    static_subdir = flat_dir / "static"
+    # shuffle tasks
+    tabularization_tasks = list(product(meds_shard_fps, cfg.window_sizes, cfg.aggs))
+    np.random.shuffle(tabularization_tasks)
 
-    static_dfs = {}
-    for sp, shard_fps in split_to_fp.items():
-        static_dfs[sp] = []
-        sp_dir = static_subdir / sp
+    for shard_fp in iter_wrapper(meds_shard_fps):
+        static_fp = f_name_resolver.get_flat_static_rep(shard_fp.parent.stem, shard_fp.stem)
+        if static_fp.exists() and not cfg.do_overwrite:
+            raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {static_fp} exists!")
 
-        for i, shard_fp in enumerate(shard_fps):
-            fp = sp_dir / f"{i}.parquet"
-            static_dfs[sp].append(fp)
-            if fp.exists() and not cfg.do_overwrite:
-                raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {fp} exists!")
+        def read_fn(in_fp):
+            return pl.scan_parquet(in_fp)
 
-            def read_fn(in_fp):
-                return pl.scan_parquet(in_fp)
-
-            def compute_fn(shard_df):
-                return get_flat_static_rep(
-                    feature_columns=feature_columns,
-                    shard_df=shard_df,
-                )
-
-            def write_fn(data, out_df):
-                write_df(data, out_df, do_overwrite=cfg.do_overwrite)
-
-            rwlock_wrap(
-                shard_fp,
-                fp,
-                read_fn,
-                write_fn,
-                compute_fn,
-                do_overwrite=cfg.do_overwrite,
-                do_return=False,
+        def compute_fn(shard_df):
+            return get_flat_static_rep(
+                feature_columns=feature_columns,
+                shard_df=shard_df,
             )
+
+        def write_fn(data, out_df):
+            write_df(data, out_df, do_overwrite=cfg.do_overwrite)
+
+        rwlock_wrap(
+            shard_fp,
+            static_fp,
+            read_fn,
+            write_fn,
+            compute_fn,
+            do_overwrite=cfg.do_overwrite,
+            do_return=False,
+        )
 
 
 if __name__ == "__main__":
