@@ -29,9 +29,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         self.file_name_resolver = FileNameResolver(cfg)
         self.split = split
 
-        self._data_shards = sorted(
-            [shard.stem for shard in self.file_name_resolver.list_label_files(split)]
-        )  
+        self._data_shards = sorted([shard.stem for shard in self.file_name_resolver.list_label_files(split)])
         self.valid_event_ids, self.labels = self.load_labels()
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
         feature_columns = json.load(open(self.file_name_resolver.get_feature_columns_fp()))
@@ -42,9 +40,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
         # XGBoost will generate some cache files under current directory with the prefix
         # "cache"
-        super().__init__(
-            cache_prefix=os.path.join(self.file_name_resolver.get_cache_dir())
-        )  
+        super().__init__(cache_prefix=os.path.join(self.file_name_resolver.get_cache_dir()))
 
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns, codes_set):
@@ -54,7 +50,6 @@ class Iterator(xgb.DataIter, TimeableMixin):
             code_mask = [True if idx in codes_set else False for idx in feature_ids]
             code_masks[agg] = code_mask
         return code_masks
-        
 
     @TimeableMixin.TimeAs
     def _load_matrix(self, path: Path) -> sp.csr_matrix:
@@ -212,7 +207,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
             return df
         # key = f"_filter_shard_on_codes_and_freqs/{agg}"
         # self._register_start(key=key)
-        
+
         # feature_ids = self.agg_to_feature_ids[agg]
         # code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
         # filtered_df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
@@ -223,10 +218,10 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
         # if not np.array_equal(code_mask, self.code_masks[agg]):
         #     raise ValueError("code_mask and another_mask are not the same")
-        ckey = f"precomputed_filter_shard_on_codes_and_freqs/{agg}"
+        ckey = f"_filter_shard_on_codes_and_freqs/{agg}"
         self._register_start(key=ckey)
-    
-        df = df[:, self.code_masks[agg]] 
+
+        df = df[:, self.code_masks[agg]]
 
         self._register_end(key=ckey)
 
