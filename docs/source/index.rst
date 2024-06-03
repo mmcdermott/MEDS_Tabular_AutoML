@@ -5,6 +5,9 @@
 
 Welcome to MEDS-TAB's documentation!
 ====================================
+.. image:: https://readthedocs.org/projects/meds-tabular-automl/badge/?version=latest
+    :target: https://meds-tabular-automl.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
 
 .. toctree::
    :maxdepth: 1
