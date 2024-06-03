@@ -393,7 +393,7 @@ class XGBoostModel(TimeableMixin):
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
-def xgboost(cfg: DictConfig) -> float:
+def launch_xgboost(cfg: DictConfig) -> float:
     """Optimize the model based on the provided configuration.
 
     Args:
@@ -425,4 +425,4 @@ def xgboost(cfg: DictConfig) -> float:
 
 
 if __name__ == "__main__":
-    xgboost()
+    launch_xgboost()

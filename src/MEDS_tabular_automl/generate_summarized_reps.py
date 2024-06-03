@@ -1,28 +1,11 @@
-from collections.abc import Callable
-
-import pandas as pd
-
-pd.set_option("compute.use_numba", True)
 import numpy as np
+import pandas as pd
 import polars as pl
 from loguru import logger
-from scipy.sparse import coo_array, csr_array, sparray, vstack
+from scipy.sparse import coo_array, csr_array, sparray
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
 from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm
-
-
-def time_aggd_col_alias_fntr(window_size: str, agg: str) -> Callable[[str], str]:
-    if agg is None:
-        raise ValueError("Aggregation type 'agg' must be provided")
-
-    def f(c: str) -> str:
-        if c in ["patient_id", "timestamp"]:
-            return c
-        else:
-            return "/".join([window_size] + c.split("/") + [agg])
-
-    return f
 
 
 def sparse_aggregate(sparse_matrix, agg):
@@ -39,74 +22,6 @@ def sparse_aggregate(sparse_matrix, agg):
     else:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
     return merged_matrix
-
-
-def sum_merge_timestamps(df, sparse_matrix, agg):
-    """Groups by timestamp and combines rows that are on the same date.
-
-    The combining is done by summing the rows in the sparse matrix that correspond to the same date.
-
-    Args:
-        df (DataFrame): The DataFrame with 'timestamp' and 'patient_id'.
-        sparse_matrix (csr_matrix): The corresponding sparse matrix with data.
-        agg (str): Aggregation method, currently only 'sum' is implemented.
-
-    Returns:
-        DataFrame, csr_matrix: Tuple containing the DataFrame with aggregated timestamps and the corresponding
-            sparse matrix.
-    """
-    # Assuming 'timestamp' is already sorted; if not, uncomment the next line:
-    # df = df.sort_values(by='timestamp')
-
-    # Group by timestamp and sum the data
-    grouped = df.groupby("timestamp")
-    indices = grouped.indices
-
-    # Create a new sparse matrix with summed rows per unique timestamp
-    patient_id = df["patient_id"].iloc[0]
-    timestamps = []
-    output_matrix = csr_array((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
-
-    # Loop through each group and sum
-    for timestamp, rows in indices.items():
-        # Combine the rows in the sparse matrix for the current group (respecting the aggregation being used)
-        merged_matrix = sparse_aggregate(sparse_matrix[rows], agg)
-        # Save the non-zero elements
-        output_matrix = vstack([output_matrix, merged_matrix])
-        timestamps.extend([timestamp])
-
-    # Create output DataFrame
-    out_df = pd.DataFrame({"patient_id": [patient_id] * len(timestamps), "timestamp": timestamps})
-    return out_df, output_matrix
-
-
-def sparse_rolling(df, sparse_matrix, timedelta, agg):
-    """Iterates through rolling windows while maintaining sparsity.
-
-    Example:
-
-    >>> df = pd.DataFrame({'patient_id': {0: 1, 1: 1, 2: 1},
-    ...  'timestamp': {0: pd.Timestamp('2021-01-01 00:00:00'),
-    ...  1: pd.Timestamp('2021-01-01 00:00:00'), 2: pd.Timestamp('2020-01-01 00:00:00')},
-    ...  'A/code': {0: 1, 1: 1, 2: 0}, 'B/code': {0: 0, 1: 0, 2: 1}, 'C/code': {0: 0, 1: 0, 2: 0}})
-    >>> for col in ["A/code", "B/code", "C/code"]: df[col] = pd.arrays.SparseArray(df[col])
-    >>> sparse_rolling(df, pd.Timedelta("1d"), "sum").dtypes
-    A/code       Sparse[int64, 0]
-    B/code       Sparse[int64, 0]
-    C/code       Sparse[int64, 0]
-    timestamp      datetime64[ns]
-    dtype: object
-    """
-    patient_id = df.iloc[0].patient_id
-    df = df.drop(columns="patient_id").reset_index(drop=True).reset_index()
-    timestamps = []
-    out_sparse_matrix = coo_array((0, sparse_matrix.shape[1]), dtype=sparse_matrix.dtype)
-    for each in df[["index", "timestamp"]].rolling(on="timestamp", window=timedelta):
-        timestamps.append(each.index.max())
-        agg_subset_matrix = sparse_aggregate(sparse_matrix[each["index"]], agg)
-        out_sparse_matrix = vstack([out_sparse_matrix, agg_subset_matrix])
-    out_df = pd.DataFrame({"patient_id": [patient_id] * len(timestamps), "timestamp": timestamps})
-    return out_df, out_sparse_matrix
 
 
 def get_rolling_window_indicies(index_df, window_size):

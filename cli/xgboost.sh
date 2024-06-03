@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-echo "Running Task Specific Caching"
-python scripts/task_specific_caching.py "$@"
+echo "Running XGBoost"
+python scripts/launch_xgboost.py "$@"

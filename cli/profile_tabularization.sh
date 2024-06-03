@@ -10,7 +10,7 @@ SCRIPT_NAME=$(basename "$0")
 mkdir -p "$PROFILE_LOG_DIR"
 { time \
     mprof run --include-children --exit-code --output "${PROFILE_LOG_DIR}/mprofile.dat" \
-    bash "${SCRIPT_DIR}/tabularization.sh" "@" \
+    bash "${SCRIPT_DIR}/tabularization.sh" "$@" \
     2> "${PROFILE_LOG_DIR}/cmd.stderr"
 } 2> "${PROFILE_LOG_DIR}/timings.txt"
 

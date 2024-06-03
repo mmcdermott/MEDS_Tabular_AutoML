@@ -122,7 +122,7 @@ class FileNameResolver:
 
     def parse_ts_file_path(self, data_fp):
         agg = f"{data_fp.parent.stem}/{data_fp.stem}"
-        if not agg in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
+        if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
             raise ValueError(f"Invalid aggregation: {agg}")
         window_size = data_fp.parts[-3]
         shard_num = data_fp.parts[-4]
@@ -132,7 +132,7 @@ class FileNameResolver:
     def parse_static_file_path(self, data_fp):
         # parse as static agg
         agg = f"{data_fp.parent.parent.parent.stem}/{data_fp.stem}"
-        if not agg in [STATIC_VALUE_AGGREGATION, STATIC_CODE_AGGREGATION]:
+        if agg not in [STATIC_VALUE_AGGREGATION, STATIC_CODE_AGGREGATION]:
             raise ValueError(f"Invalid aggregation: {agg}")
         shard_num = data_fp.parent.stem
         split = data_fp.parts[-3]

@@ -19,10 +19,10 @@ from MEDS_tabular_automl.utils import (
     load_matrix,
 )
 from scripts.identify_columns import store_columns
+from scripts.launch_xgboost import launch_xgboost
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
 from scripts.task_specific_caching import task_specific_cache
-from scripts.xgboost import xgboost
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -317,7 +317,7 @@ def test_tabularize():
             "hydra.mode": "MULTIRUN",
         }
         xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
-        xgboost(cfg)
+        launch_xgboost(cfg)
         output_files = list(Path(cfg.model_dir).glob("*.json"))
         assert len(output_files) == 1
         assert output_files[0] == Path(cfg.model_dir) / "model.json"
