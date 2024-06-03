@@ -7,8 +7,10 @@ name = "MEDS_tabularization"
 version = "0.0.1"
 authors = [
   { name="Matthew McDermott", email="mattmcdermott8@gmail.com" },
+  { name="Nassim Oufattole", email="noufattole@gmail.com" },
+  { name="Teya Bergamaschi", email="teyabergamaschi@gmail.com" },
 ]
-description = "TODO"
+description = "Scalable Tabularization of MEDS format Time-Series data"
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
@@ -18,11 +20,15 @@ classifiers = [
 ]
 dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas", "numba", "tqdm", "xgboost", "scikit-learn", "hydra-optuna-sweeper"]
 
+[project.scripts]
+meds_tab = "MEDS_tabular_automl.__main__:main"
+
 [project.optional-dependencies]
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
 local_parallelism = ["hydra-joblib-launcher"]
+profiling = ["mprofile", "matplotlib"]
 
 [project.urls]
-Homepage = "https://github.com/mmcdermott/MEDS_polars_functions"
-Issues = "https://github.com/mmcdermott/MEDS_polars_functions/issues"
+Homepage = "https://github.com/mmcdermott/MEDS_Tabular_AutoML"
+Issues = "https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues"
