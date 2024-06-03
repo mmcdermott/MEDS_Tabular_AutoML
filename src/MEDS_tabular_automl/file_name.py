@@ -33,7 +33,7 @@ class FileNameResolver:
         return self.tabularize_dir / "sparse"
 
     def get_label_dir(self):
-        return self.tabularize_dir / "task"
+        return Path(self.cfg.task_dir)
 
     def get_feature_columns_fp(self):
         return self.tabularize_dir / "feature_columns.json"

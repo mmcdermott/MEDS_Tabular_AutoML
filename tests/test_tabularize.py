@@ -21,7 +21,7 @@ from MEDS_tabular_automl.utils import (
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
-from scripts.xgboost_sweep import xgboost
+from scripts.xgboost import xgboost
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -200,6 +200,7 @@ def test_tabularize():
             "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
             "tabularized_data_dir": str(tabularized_data_dir.resolve()),
             "min_code_inclusion_frequency": 1,
+            "model_dir": str(Path(d) / "save_model"),
             "window_sizes": ["30d", "365d", "full"],
             "aggs": ["code/count", "value/sum", "static/present", "static/first"],
             "codes": "null",
@@ -314,9 +315,7 @@ def test_tabularize():
             "hydra.mode": "MULTIRUN",
         }
         xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
-        with initialize(version_base=None, config_path="../configs/"):  # path to config.yaml
-            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
-            cfg = compose(config_name="xgboost_sweep", overrides=overrides)  # config.yaml
         xgboost(cfg)
-        output_files = list(model_dir.glob("*/*/*_model.json"))
+        output_files = list(Path(cfg.model_dir).glob("*.json"))
         assert len(output_files) == 1
+        assert output_files[0] == Path(cfg.model_dir) / "model.json"
