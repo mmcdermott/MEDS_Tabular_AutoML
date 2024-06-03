@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
+# bash hf_cohort/hf_cohort_e2e.sh hf_cohort 80
 
 METHOD=meds
 
 MEDS_DIR=/storage/shared/meds_tabular_ml/ebcl_dataset/processed
 OUTPUT_DIR=/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize
-N_PARALLEL_WORKERS="$1"
+ID=$1
+N_PARALLEL_WORKERS="$2"
 WINDOW_SIZES="window_sizes=[1d,7d,30d,365d,full]"
 AGGS="aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
 # WINDOW_SIZES="window_sizes=[1d,7d,30d,365d,full]"
@@ -24,7 +26,6 @@ POLARS_MAX_THREADS=32 python scripts/tabularize_static.py \
     min_code_inclusion_frequency=1 "$WINDOW_SIZES" do_overwrite=False "$AGGS"
 
 
-ID=$RANDOM
 LOG_DIR="logs/$METHOD/$ID-logs"
 mkdir -p $LOG_DIR
 { time \
