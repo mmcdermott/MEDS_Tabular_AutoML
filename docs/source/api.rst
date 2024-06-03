@@ -5,6 +5,4 @@ API
    :toctree: generated
    :recursive:
 
-   scripts
    src
-   tests
