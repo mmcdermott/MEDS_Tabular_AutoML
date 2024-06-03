@@ -55,7 +55,7 @@ defaults:
 hydra:
   verbose: False
   sweep:
-    dir: ${tmodel_dir}/.logs/
+    dir: ${model_dir}/.logs/
   run:
     dir: ${model_dir}/.logs/
 
