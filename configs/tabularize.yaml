@@ -2,7 +2,7 @@
 MEDS_cohort_dir: ???
 tabularized_data_dir: ${MEDS_cohort_dir}/tabularize
 task_dir: ${tabularized_data_dir}/task
-model_dir: ${MEDS_cohort_dir}/model/${now:%Y-%m-%d_%H-%M-%S}
+model_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
 cache_dir: ${tabularized_data_dir}/.cache
 
 # Pre-processing
@@ -15,8 +15,8 @@ window_sizes:
   - "full"
 codes: null
 aggs:
-  - "static/present"
-  - "static/first"
+  # - "static/present"
+  # - "static/first"
   - "code/count"
   - "value/count"
   - "value/sum"
@@ -37,11 +37,13 @@ seed: 1
 tqdm: True
 test: False
 
+num_boost_round: 1000
+early_stopping_rounds: 5
 model:
   booster: gbtree
   device: cpu
   tree_method: hist
-  objective: reg:squarederror
+  objective: binary:logistic
 
 iterator:
   keep_data_in_memory: False
@@ -55,7 +57,7 @@ defaults:
 hydra:
   verbose: False
   sweep:
-    dir: ${tmodel_dir}/.logs/
+    dir: ${model_dir}/.logs/
   run:
     dir: ${model_dir}/.logs/
 
@@ -70,5 +72,7 @@ hydra:
 
     # Define search space for Optuna
     params:
-      window_sizes: choice([30d, 365d, full], [30d, full], [30d])
-      # iterator.keep_data_in_memory: choice([True], [False])
+      window_sizes:
+        _target_: hydra.utils.call(${hydra.utils.cross_product},
+          values=["1d", "7d", "30d", "365d", "full"]) # , max_options=5)
+      iterator.keep_data_in_memory: choice([True], [False])
