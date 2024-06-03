@@ -2,11 +2,11 @@
 MEDS_cohort_dir: ???
 tabularized_data_dir: ${MEDS_cohort_dir}/tabularize
 task_dir: ${tabularized_data_dir}/task
-model_dir: ${MEDS_cohort_dir}/model_${now:%Y-%m-%d_%H-%M-%S}/
+model_dir: ${MEDS_cohort_dir}/model/${now:%Y-%m-%d_%H-%M-%S}
 cache_dir: ${tabularized_data_dir}/.cache
 
 # Pre-processing
-min_code_inclusion_frequency: 10
+min_code_inclusion_frequency: 1
 window_sizes: [1d]
 codes: null
 aggs:
@@ -44,9 +44,9 @@ defaults:
 hydra:
   verbose: False
   sweep:
-    dir: ${tabularized_data_dir}/.logs/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${tmodel_dir}/.logs/
   run:
-    dir: ${tabularized_data_dir}/.logs/${now:%Y-%m-%d_%H-%M-%S}
+    dir: ${model_dir}/.logs/
 
   # Optuna Sweeper
   sweeper:
