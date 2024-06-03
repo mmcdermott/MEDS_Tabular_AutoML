@@ -3,6 +3,13 @@ from pathlib import Path
 
 from omegaconf import DictConfig
 
+from MEDS_tabular_automl.utils import (
+    CODE_AGGREGATIONS,
+    STATIC_CODE_AGGREGATION,
+    STATIC_VALUE_AGGREGATION,
+    VALUE_AGGREGATIONS,
+)
+
 
 class FileNameResolver:
     def __init__(self, cfg: DictConfig):
@@ -106,8 +113,33 @@ class FileNameResolver:
                 if agg.startswith("static"):
                     continue
                 else:
-                    model_files.append(self.get_flat_ts_rep(split, shard_num, window_size, agg))
+                    model_files.append(self.get_task_specific_path(split, shard_num, window_size, agg))
         for agg in aggs:
             if agg.startswith("static"):
-                model_files.append(self.get_flat_static_rep(split, shard_num, agg))
+                window_size = None
+                model_files.append(self.get_task_specific_path(split, shard_num, window_size, agg))
         return sorted(model_files)
+
+    def parse_ts_file_path(self, data_fp):
+        agg = f"{data_fp.parent.stem}/{data_fp.stem}"
+        if not agg in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
+            raise ValueError(f"Invalid aggregation: {agg}")
+        window_size = data_fp.parts[-3]
+        shard_num = data_fp.parts[-4]
+        split = data_fp.parts[-5]
+        return split, shard_num, window_size, agg
+
+    def parse_static_file_path(self, data_fp):
+        # parse as static agg
+        agg = f"{data_fp.parent.parent.parent.stem}/{data_fp.stem}"
+        if not agg in [STATIC_VALUE_AGGREGATION, STATIC_CODE_AGGREGATION]:
+            raise ValueError(f"Invalid aggregation: {agg}")
+        shard_num = data_fp.parent.stem
+        split = data_fp.parts[-3]
+        return split, shard_num, agg
+
+    def get_task_specific_path(self, split, shard_num, window_size, agg):
+        if window_size:
+            return self.get_label_dir() / split / f"{shard_num}" / f"{window_size}" / f"{agg}.npz"
+        else:
+            return self.get_label_dir() / split / f"{shard_num}" / f"{agg}.npz"
