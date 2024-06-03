@@ -73,8 +73,24 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
     return coo_array((data, (row, col)), shape=shape)
 
 
+def get_min_dtype(array):
+    return np.result_type(np.min_scalar_type(array.min()), array.max())
+
+
 def sparse_matrix_to_array(coo_matrix: coo_array):
-    return np.array([coo_matrix.data, coo_matrix.row, coo_matrix.col]), coo_matrix.shape
+    data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
+    # Remove invalid indices
+    valid_indices = (data == 0) | np.isnan(data)
+    data = data[~valid_indices]
+    row = row[~valid_indices]
+    col = col[~valid_indices]
+    # reduce dtypes
+    if len(data):
+        data = data.astype(get_min_dtype(data))
+        row = row.astype(get_min_dtype(row))
+        col = col.astype(get_min_dtype(col))
+
+    return np.array([data, row, col]), coo_matrix.shape
 
 
 def store_matrix(coo_matrix: coo_array, fp_path: Path):
