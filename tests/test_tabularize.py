@@ -21,6 +21,7 @@ from MEDS_tabular_automl.utils import (
 from scripts.identify_columns import store_columns
 from scripts.summarize_over_windows import summarize_ts_data_over_windows
 from scripts.tabularize_static import tabularize_static_data
+from scripts.task_specific_caching import task_specific_cache
 from scripts.xgboost import xgboost
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
@@ -309,9 +310,10 @@ def test_tabularize():
             out_f = f_name_resolver.get_label(split, shard_num)
             out_f.parent.mkdir(parents=True, exist_ok=True)
             df.write_parquet(out_f)
-        model_dir = Path(d) / "save_model"
+
+        task_specific_cache(cfg)
+
         xgboost_config_kwargs = {
-            "model_dir": str(model_dir.resolve()),
             "hydra.mode": "MULTIRUN",
         }
         xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
