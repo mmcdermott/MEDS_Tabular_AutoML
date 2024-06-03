@@ -8,17 +8,13 @@ import numpy as np
 import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
+from loguru import logger
 from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import roc_auc_score, mean_absolute_error
+from sklearn.metrics import mean_absolute_error
 
 from MEDS_tabular_automl.file_name import FileNameResolver
-from MEDS_tabular_automl.utils import get_feature_indices, load_matrix
-
-from loguru import logger
-
-from datetime import datetime
-
+from MEDS_tabular_automl.utils import get_feature_indices
 
 
 class Iterator(xgb.DataIter, TimeableMixin):
@@ -32,15 +28,14 @@ class Iterator(xgb.DataIter, TimeableMixin):
         self.cfg = cfg
         self.file_name_resolver = FileNameResolver(cfg)
         self.split = split
-        # self.data_path = Path(cfg.tabularized_data_dir)
-        # self.dynamic_data_path = self.data_path / "sparse" / split
-        # self.task_data_path = self.data_path / "task" / split
+
         self._data_shards = sorted(
-            ["0"]#[shard.stem for shard in self.file_name_resolver.list_label_files(split)]
-        )  # [2, 4, 5] #
+            [shard.stem for shard in self.file_name_resolver.list_label_files(split)]
+        )  
         self.valid_event_ids, self.labels = self.load_labels()
-        self.codes_set, self.num_features = self._get_code_set()
+        self.codes_set, self.code_masks, self.num_features = self._get_code_set()
         feature_columns = json.load(open(self.file_name_resolver.get_feature_columns_fp()))
+
         self.agg_to_feature_ids = {agg: get_feature_indices(agg, feature_columns) for agg in cfg.aggs}
 
         self._it = 0
@@ -49,8 +44,34 @@ class Iterator(xgb.DataIter, TimeableMixin):
         # "cache"
         super().__init__(
             cache_prefix=os.path.join(self.file_name_resolver.get_cache_dir())
-        )  # TODO: Change where this is!! it should be in the same directory it comes from!!
-        #  this is security issue!
+        )  
+
+    @TimeableMixin.TimeAs
+    def _get_code_masks(self, feature_columns, codes_set):
+        code_masks = {}
+        for agg in set(self.cfg.aggs):
+            feature_ids = get_feature_indices(agg, feature_columns)
+            code_mask = [True if idx in codes_set else False for idx in feature_ids]
+            code_masks[agg] = code_mask
+        return code_masks
+        
+
+    @TimeableMixin.TimeAs
+    def _load_matrix(self, path: Path) -> sp.csr_matrix:
+        """Load a sparse matrix from disk.
+
+        Args:
+        - path (Path): Path to the sparse matrix.
+
+        Returns:
+        - sp.csr_matrix: Sparse matrix.
+        """
+        npzfile = np.load(path)
+        array, shape = npzfile["array"], npzfile["shape"]
+        if array.shape[0] != 3:
+            raise ValueError(f"Expected array to have 3 rows, but got {array.shape[0]} rows")
+        data, row, col = array
+        return sp.csr_matrix((data, (row, col)), shape=shape)
 
     @TimeableMixin.TimeAs
     def load_labels(self) -> tuple[Mapping[int, list], Mapping[int, list]]:
@@ -70,11 +91,11 @@ class Iterator(xgb.DataIter, TimeableMixin):
             label_df = pl.scan_parquet(label_fp)
             cached_event_ids[shard] = label_df.select(pl.col("event_id")).collect().to_series()
 
-            # TODO: check this for Nan or any other case we need to worry about 
+            # TODO: check this for Nan or any other case we need to worry about
             cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
             # if self.cfg.iterator.binarize_task:
             #     cached_labels[shard] = cached_labels[shard].map_elements(lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8)
-        
+
         return cached_event_ids, cached_labels
 
     @TimeableMixin.TimeAs
@@ -102,8 +123,10 @@ class Iterator(xgb.DataIter, TimeableMixin):
             codes_set = frequency_set
         else:
             codes_set = None  # set(feature_columns)
+        if codes_set == set(feature_columns):
+            codes_set = None
         # TODO: make sure we aren't filtering out static columns!!!
-        return list(codes_set), len(feature_columns)
+        return codes_set, self._get_code_masks(feature_columns, codes_set), len(feature_columns)
 
     @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csr_matrix:
@@ -116,13 +139,13 @@ class Iterator(xgb.DataIter, TimeableMixin):
             - sp.coo_matrix: Data frame with the sparse shard.
         """
         # column_shard is of form event_idx, feature_idx, value
-        matrix = load_matrix(path)
+        matrix = self._load_matrix(path)
         if path.stem in ["first", "present"]:
             agg = f"static/{path.stem}"
         else:
             agg = f"{path.parent.stem}/{path.stem}"
 
-        return self._filter_shard_on_codes_and_freqs(agg, sp.csc_matrix(matrix))
+        return self._filter_shard_on_codes_and_freqs(agg, matrix)
 
     @TimeableMixin.TimeAs
     def _get_dynamic_shard_by_index(self, idx: int) -> sp.csr_matrix:
@@ -142,7 +165,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         )
         if not all(file.exists() for file in files):
             raise ValueError("Not all files exist")
-        
+
         shard_name = self._data_shards[idx]
         dynamic_csrs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
 
@@ -175,7 +198,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return dynamic_df, label_df
 
     @TimeableMixin.TimeAs
-    def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csr_matrix:
+    def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csr_matrix) -> sp.csr_matrix:
         """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
         frame to only include columns that are True in the mask.
 
@@ -187,13 +210,27 @@ class Iterator(xgb.DataIter, TimeableMixin):
         """
         if self.codes_set is None:
             return df
-        key=f"_filter_shard_on_codes_and_freqs/{agg}"
-        self._register_start(key=key)
-        feature_ids = self.agg_to_feature_ids[agg]
-        code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
-        df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
-        self._register_end(key=key)
-        return sp.csr_matrix(df)
+        # key = f"_filter_shard_on_codes_and_freqs/{agg}"
+        # self._register_start(key=key)
+        
+        # feature_ids = self.agg_to_feature_ids[agg]
+        # code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
+        # filtered_df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
+
+        # # df = df[:, self.code_masks[agg]]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
+
+        # self._register_end(key=key)
+
+        # if not np.array_equal(code_mask, self.code_masks[agg]):
+        #     raise ValueError("code_mask and another_mask are not the same")
+        ckey = f"precomputed_filter_shard_on_codes_and_freqs/{agg}"
+        self._register_start(key=ckey)
+    
+        df = df[:, self.code_masks[agg]] 
+
+        self._register_end(key=ckey)
+
+        return df
 
     @TimeableMixin.TimeAs
     def next(self, input_data: Callable):
@@ -262,14 +299,14 @@ class XGBoostModel(TimeableMixin):
         self.dheld_out = None
 
         self.model = None
+
     @TimeableMixin.TimeAs
     def _train(self):
         """Train the model."""
         # TODO: add in eval, early stopping, etc.
         # TODO: check for Nan and inf in labels!
-        self.model = xgb.train(
-            OmegaConf.to_container(self.cfg.model), self.dtrain
-        )   # TODO: fix eval etc. 
+        self.model = xgb.train(OmegaConf.to_container(self.cfg.model), self.dtrain)  # TODO: fix eval etc.
+
     @TimeableMixin.TimeAs
     def train(self):
         """Train the model."""
