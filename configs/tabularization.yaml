@@ -4,7 +4,5 @@ defaults:
   - _self_
 
 # Raw data
-MEDS_cohort_dir: ???
-
 input_directory: ${MEDS_cohort_dir}/final_cohort
 output_dir: ${MEDS_cohort_dir}/tabularize

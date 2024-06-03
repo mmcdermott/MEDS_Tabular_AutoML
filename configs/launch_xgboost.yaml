@@ -1,67 +1,33 @@
-# Raw data
-MEDS_cohort_dir: ???
-tabularized_data_dir: ${MEDS_cohort_dir}/tabularize
-task_dir: ${tabularized_data_dir}/task
-model_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
-cache_dir: ${tabularized_data_dir}/.cache
-
-# Pre-processing
-min_code_inclusion_frequency: 1
-window_sizes:
-  - "1d"
-  - "7d"
-  - "30d"
-  - "365d"
-  - "full"
-codes: null
-aggs:
-  # - "static/present"
-  # - "static/first"
-  - "code/count"
-  - "value/count"
-  - "value/sum"
-  - "value/sum_sqd"
-  - "value/min"
-  - "value/max"
-
-dynamic_threshold: 0.01
-numerical_value_threshold: 0.1
-
-# Sharding
-n_patients_per_sub_shard: null
-
-# Misc
-do_overwrite: False
-do_update: True
-seed: 1
-tqdm: True
-worker: 0
-test: False
-
-num_boost_round: 1000
-early_stopping_rounds: 5
-model:
-  booster: gbtree
-  device: cpu
-  tree_method: hist
-  objective: binary:logistic
-
-iterator:
-  keep_data_in_memory: False
-  binarize_task: True
-
-# Hydra settings for sweep
 defaults:
+  - default
+  - tabularization: default
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
+  - _self_
 
+# Raw data
+MEDS_cohort_dir: ???
+input_directory: ${MEDS_cohort_dir}/task
+# Where to output the model and cached data
+output_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
+output_filepath: ${output_dir}/model_metadata.parquet
+cache_dir: ${MEDS_cohort_dir}/.cache
+
+# Model parameters
+model_params:
+  num_boost_round: 1000
+  early_stopping_rounds: 5
+  model:
+    booster: gbtree
+    device: cpu
+    tree_method: hist
+    objective: binary:logistic
+  iterator:
+    keep_data_in_memory: False
+    binarize_task: True
+
+# Sweep parameters for Optuna
 hydra:
-  verbose: False
-  sweep:
-    dir: ${model_dir}/.logs/
-  run:
-    dir: ${model_dir}/.logs/
-
   # Optuna Sweeper
   sweeper:
     sampler:

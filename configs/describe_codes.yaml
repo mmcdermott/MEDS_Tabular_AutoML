@@ -3,9 +3,7 @@ defaults:
   - _self_
 
 # Raw data
-MEDS_cohort_dir: ???
-
 input_directory: ${MEDS_cohort_dir}/final_cohort
-
+# Where to store output code frequency data
 output_dir: ${MEDS_cohort_dir}
 output_filepath: ${output_dir}/code_metadata.parquet

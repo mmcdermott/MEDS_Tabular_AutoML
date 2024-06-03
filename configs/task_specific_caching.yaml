@@ -1,0 +1,11 @@
+defaults:
+  - default
+  - tabularization: default
+  - _self_
+
+# Tabularized Data
+input_directory: ${MEDS_cohort_dir}/tabularize
+# Where the labels are stored, with columns patient_id, timestamp, label
+input_label_directory: ${MEDS_cohort_dir}/labels
+# Where to output the task specific tabularized data
+output_dir: ${MEDS_cohort_dir}/task

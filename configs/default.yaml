@@ -1,3 +1,4 @@
+MEDS_cohort_dir: ???
 do_overwrite: False
 seed: 1
 tqdm: False
