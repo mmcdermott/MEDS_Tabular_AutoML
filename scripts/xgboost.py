@@ -11,7 +11,7 @@ import xgboost as xgb
 from loguru import logger
 from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import roc_auc_score
 
 from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.utils import get_feature_indices
@@ -88,8 +88,10 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
             # TODO: check this for Nan or any other case we need to worry about
             cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
-            # if self.cfg.iterator.binarize_task:
-            #     cached_labels[shard] = cached_labels[shard].map_elements(lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8)
+            if self.cfg.iterator.binarize_task:
+                cached_labels[shard] = cached_labels[shard].map_elements(
+                    lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8
+                )
 
         return cached_event_ids, cached_labels
 
@@ -131,7 +133,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
             - path (Path): Path to the sparse shard.
 
         Returns:
-            - sp.coo_matrix: Data frame with the sparse shard.
+            - sp.csr_matrix: Data frame with the sparse shard.
         """
         # column_shard is of form event_idx, feature_idx, value
         matrix = self._load_matrix(path)
@@ -198,26 +200,14 @@ class Iterator(xgb.DataIter, TimeableMixin):
         frame to only include columns that are True in the mask.
 
         Args:
-        - df (scipy.sparse.coo_matrix): Data frame to filter.
+        - df (scipy.sparse.csr_matrix): Data frame to filter.
 
         Returns:
         - df (scipy.sparse.sp.csr_matrix): Filtered data frame.
         """
         if self.codes_set is None:
             return df
-        # key = f"_filter_shard_on_codes_and_freqs/{agg}"
-        # self._register_start(key=key)
 
-        # feature_ids = self.agg_to_feature_ids[agg]
-        # code_mask = [True if idx in self.codes_set else False for idx in feature_ids]
-        # filtered_df = df[:, code_mask]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
-
-        # # df = df[:, self.code_masks[agg]]  # [:, list({index for index in self.codes_set if index < df.shape[1]})]
-
-        # self._register_end(key=key)
-
-        # if not np.array_equal(code_mask, self.code_masks[agg]):
-        #     raise ValueError("code_mask and another_mask are not the same")
         ckey = f"_filter_shard_on_codes_and_freqs/{agg}"
         self._register_start(key=ckey)
 
@@ -256,7 +246,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
         self._it = 0
 
     @TimeableMixin.TimeAs
-    def collect_in_memory(self) -> tuple[sp.coo_matrix, np.ndarray]:
+    def collect_in_memory(self) -> tuple[sp.csr_matrix, np.ndarray]:
         """Collect the data in memory.
 
         Returns:
@@ -295,12 +285,32 @@ class XGBoostModel(TimeableMixin):
 
         self.model = None
 
+    # @TimeableMixin.TimeAs
+    # def _get_callbacks(self):
+    #     """Get the callbacks for training."""
+    #     callbacks = []
+    #     if self.cfg.model.early_stopping_rounds is not None:
+    #         es = xgb.callback.EarlyStopping(
+    #             rounds=self.cfg.model.early_stopping_rounds,
+    #             min_delta=1e-3,
+    #             save_best=True,
+    #             maximize=True,
+    #             data_name="tuning",
+    #             metric_name="auc",
+    #         )
+    #         callbacks.append(es)
+    #     return callbacks
+
     @TimeableMixin.TimeAs
     def _train(self):
         """Train the model."""
-        # TODO: add in eval, early stopping, etc.
-        # TODO: check for Nan and inf in labels!
-        self.model = xgb.train(OmegaConf.to_container(self.cfg.model), self.dtrain)  # TODO: fix eval etc.
+        self.model = xgb.train(
+            OmegaConf.to_container(self.cfg.model),
+            self.dtrain,
+            num_boost_round=self.cfg.num_boost_round,
+            early_stopping_rounds=self.cfg.early_stopping_rounds,
+            evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
+        )
 
     @TimeableMixin.TimeAs
     def train(self):
@@ -353,7 +363,7 @@ class XGBoostModel(TimeableMixin):
 
         y_pred = self.model.predict(self.dheld_out)
         y_true = self.dheld_out.get_label()
-        return mean_absolute_error(y_true, y_pred)
+        return roc_auc_score(y_true, y_pred)
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="xgboost")
@@ -368,13 +378,11 @@ def xgboost(cfg: DictConfig) -> float:
     """
     model = XGBoostModel(cfg)
     model.train()
-    # logger.info("Time Profiling:")
-    # logger.info("Train Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model._profile_durations().items())))
-    # logger.info("Train Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.itrain._profile_durations().items())))
-    # logger.info("Tuning Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.ituning._profile_durations().items())))
-    # logger.info("Held Out Iterator Time:\n{}".format("\n".join(f"{key}: {value}" for key, value in model.iheld_out._profile_durations().items())))
 
-    print("Time Profiling:")
+    print(
+        "Time Profiling for window sizes ",
+        f"{cfg.window_sizes} and min code frequency of {cfg.min_code_inclusion_frequency}:",
+    )
     print("Train Time: \n", model._profile_durations())
     print("Train Iterator Time: \n", model.itrain._profile_durations())
     print("Tuning Iterator Time: \n", model.ituning._profile_durations())
