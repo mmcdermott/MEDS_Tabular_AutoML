@@ -268,17 +268,6 @@ def test_tabularize():
         ):  # path to config.yaml
             overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
             cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
-        allowed_codes = cfg.tabularization._resolved_codes
-        num_allowed_codes = len(allowed_codes)
-        # num_codes = (
-        #     pl.scan_parquet(list_subdir_files(Path(cfg.input_dir), "parquet"))
-        #     .select(pl.col("code"))
-        #     .collect()
-        #     .n_unique()
-        # )
-        assert num_allowed_codes == len(
-            feature_columns
-        ), f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
         tabularize_static.main(cfg)
         output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
         actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
@@ -304,6 +293,12 @@ def test_tabularize():
                 f"Static Data matrix Should have {expected_num_rows}"
                 f" rows but has {static_matrix.shape[0]}!"
             )
+        allowed_codes = cfg.tabularization._resolved_codes
+        num_allowed_codes = len(allowed_codes)
+        feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
+        assert num_allowed_codes == len(
+            feature_columns
+        ), f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
 
         tabularize_time_series.main(cfg)
 

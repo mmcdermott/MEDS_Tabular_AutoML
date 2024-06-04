@@ -102,20 +102,21 @@ def get_feature_freqs(fp):
 
 def filter_to_codes(
     allowed_codes: list[str] | None,
-    min_code_inclusion_frequency: Mapping[str, int],
+    min_code_inclusion_frequency: int,
     code_metadata_fp: Path,
 ):
     """Returns allowed codes if they are specified, otherwise filters to codes based on inclusion
     frequency."""
     if allowed_codes is None:
-        feature_freqs = get_feature_freqs(code_metadata_fp)
+        allowed_codes = get_feature_columns(code_metadata_fp)
+    feature_freqs = get_feature_freqs(code_metadata_fp)
 
-        code_freqs = {
-            code: freq for code, freq in feature_freqs.items() if freq >= min_code_inclusion_frequency
-        }
-        return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
-    else:
-        return allowed_codes
+    code_freqs = {
+        code: freq for code, freq in feature_freqs.items() if (
+            freq >= min_code_inclusion_frequency and code in allowed_codes
+            )
+    }
+    return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
 
 
 OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)

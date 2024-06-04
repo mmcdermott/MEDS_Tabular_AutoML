@@ -132,35 +132,16 @@ class Iterator(xgb.DataIter, TimeableMixin):
     @TimeableMixin.TimeAs
     def _get_code_set(self) -> tuple[set, Mapping[int, list], int]:
         """Get the set of codes to include in the data based on the configuration."""
-        feature_columns = get_feature_columns(self.cfg.input_code_metadata)
-        feature_freqs = get_feature_freqs(self.cfg.input_code_metadata)
+        feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
+        feature_freqs = get_feature_freqs(self.cfg.tabularization.filtered_code_metadata_fp)
         feature_columns = [
             col
             for col in feature_columns
             if feature_freqs[col] >= self.cfg.tabularization.min_code_inclusion_frequency
         ]
         feature_dict = {col: i for i, col in enumerate(feature_columns)}
-        allowed_codes = self.cfg.tabularization.allowed_codes
-        if self.cfg.tabularization.allowed_codes is not None:
-            codes_set = {feature_dict[code] for code in set(allowed_codes) if code in feature_dict}
-
-        if self.cfg.modeling_min_code_freq is not None:
-            feature_freqs = get_feature_freqs(self.cfg.input_code_metadata)
-            min_frequency_set = {
-                key for key, value in feature_freqs.items() if value >= self.cfg.modeling_min_code_freq
-            }
-            frequency_set = {feature_dict[code] for code in min_frequency_set if code in feature_dict}
-
-        if allowed_codes is not None and self.cfg.modeling_min_code_freq is not None:
-            codes_set = codes_set.intersection(frequency_set)
-        elif allowed_codes is not None:
-            codes_set = codes_set
-        elif self.cfg.modeling_min_code_freq is not None:
-            codes_set = frequency_set
-        else:
-            codes_set = None  # set(feature_columns)
-        if codes_set == set(feature_columns):
-            codes_set = None
+        allowed_codes = set(self.cfg.tabularization._resolved_codes)
+        codes_set = {feature_dict[code] for code in feature_dict if code in allowed_codes}
 
         return (
             codes_set,

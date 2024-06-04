@@ -9,7 +9,7 @@ import numpy as np
 import polars as pl
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns
+from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns, get_feature_freqs, convert_to_df, filter_to_codes
 from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
@@ -71,9 +71,36 @@ def main(
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
-    # Produce ts representation
+    
+    # Step 1: Cache the filtered features that will be used in the tabularization process and modeling
+    # import pdb; pdb.set_trace()
+    def read_fn(_):
+        return _
+    def compute_fn(_):
+        filtered_feature_columns = filter_to_codes(
+            cfg.tabularization.allowed_codes,
+            cfg.tabularization.min_code_inclusion_frequency,
+            cfg.input_code_metadata_fp,
+        )
+        feature_freqs = get_feature_freqs(cfg.input_code_metadata_fp)
+        filtered_feeature_freqs = {code: count for code, count in feature_freqs.items() if code in filtered_feature_columns}
+        return convert_to_df(filtered_feeature_freqs)
+    def write_fn(data, out_fp):
+        data.write_parquet(out_fp)
+    in_fp = Path(cfg.input_code_metadata_fp)
+    out_fp = Path(cfg.tabularization.filtered_code_metadata_fp)
+    rwlock_wrap(
+        in_fp,
+        out_fp,
+        read_fn,
+        write_fn,
+        compute_fn,
+        do_overwrite=cfg.do_overwrite,
+        do_return=False,
+    )
+    # Step 2: Produce static data representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
-    feature_columns = get_feature_columns(cfg.input_code_metadata)
+    feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
 
     # shuffle tasks
     aggs = cfg.tabularization.aggs

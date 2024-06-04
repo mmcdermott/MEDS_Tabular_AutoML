@@ -64,7 +64,7 @@ def main(
         hydra_loguru_init()
     # Produce ts representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
-    feature_columns = get_feature_columns(cfg.input_code_metadata)
+    feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
 
     # shuffle tasks
     aggs = [
