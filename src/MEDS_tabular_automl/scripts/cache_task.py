@@ -1,18 +1,22 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+from pathlib import Path
+
 import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
 from omegaconf import DictConfig
 
+from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     VALUE_AGGREGATIONS,
+    get_shard_prefix,
     hydra_loguru_init,
     load_matrix,
     load_tqdm,
@@ -48,23 +52,18 @@ def main(
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
-    f_name_resolver = cfg
     # Produce ts representation
 
     # shuffle tasks
-    tabularization_tasks = f_name_resolver.list_static_files() + f_name_resolver.list_ts_files()
+    tabularization_tasks = list_subdir_files(cfg.input_dir, "npz")
     np.random.shuffle(tabularization_tasks)
 
     # iterate through them
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
-        try:
-            split, shard_num, agg = f_name_resolver.parse_static_file_path(data_fp)
-            window_size = None
-        except ValueError:
-            split, shard_num, window_size, agg = f_name_resolver.parse_ts_file_path(data_fp)
-        label_fp = f_name_resolver.get_label(split, shard_num)
-        out_fp = f_name_resolver.get_task_specific_path(split, shard_num, window_size, agg)
+        split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
+        label_fp = Path(cfg.input_label_dir) / split / f"{shard_num}.parquet"
+        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
         assert label_fp.exists(), f"Output file {label_fp} does not exist."
 
         def read_fn(fps):

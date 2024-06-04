@@ -13,6 +13,7 @@ from hydra import compose, initialize
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.scripts import (
+    cache_task,
     describe_codes,
     tabularize_static,
     tabularize_time_series,
@@ -331,27 +332,54 @@ def test_tabularize():
                 f" rows but has {ts_matrix.shape[0]}!"
             )
 
-        # # Create fake labels
-        # for f in f_name_resolver.list_meds_files():
-        #     df = pl.read_parquet(f)
-        #     df = get_events_df(df, feature_columns)
-        #     pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
-        #     df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
-        #     df = df.select(pl.col(["patient_id", "timestamp", "label"]))
-        #     df = df.unique(subset=["patient_id", "timestamp"])
-        #     df = df.with_row_index("event_id")
+        # Step 3: Cache Task data
+        cache_config = {
+            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
+            "do_overwrite": False,
+            "seed": 1,
+            "hydra.verbose": True,
+            "tqdm": False,
+            "loguru_init": True,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
+            "tabularization.window_sizes": "[30d,365d,full]",
+        }
 
-        #     split = f.parent.stem
-        #     shard_num = f.stem
-        #     out_f = f_name_resolver.get_label(split, shard_num)
-        #     out_f.parent.mkdir(parents=True, exist_ok=True)
-        #     df.write_parquet(out_f)
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in cache_config.items()]
+            cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
 
-        # cache_task(cfg)
+        # Create fake labels
+        for f in list_subdir_files(Path(cfg.MEDS_cohort_dir) / "final_cohort", "parquet"):
+            df = pl.scan_parquet(f)
+            df = get_unique_time_events_df(get_events_df(df, feature_columns)).collect()
+            pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
+            df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
+            df = df.select(pl.col(["patient_id", "timestamp", "label"]))
+            df = df.with_row_index("event_id")
+
+            split = f.parent.stem
+            shard_num = f.stem
+            out_f = Path(cfg.input_label_dir) / Path(
+                get_shard_prefix(Path(cfg.MEDS_cohort_dir) / "final_cohort", f)
+            ).with_suffix(".parquet")
+            out_f.parent.mkdir(parents=True, exist_ok=True)
+            df.write_parquet(out_f)
+
+        cache_task.main(cfg)
 
         # xgboost_config_kwargs = {
         #     "hydra.mode": "MULTIRUN",
         # }
+
+        # with initialize(
+        #     version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        # ):  # path to config.yaml
+        #     overrides = [f"{k}={v}" for k, v in cache_config.items()]
+        #     cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
+
         # xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
         # launch_xgboost(cfg)
         # output_files = list(Path(cfg.model_dir).glob("*.json"))
