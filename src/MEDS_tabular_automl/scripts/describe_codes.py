@@ -14,21 +14,29 @@ from MEDS_tabular_automl.describe_codes import (
     convert_to_df,
     convert_to_freq_dict,
 )
-from MEDS_tabular_automl.file_name import list_subdir_parquets
+from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import load_tqdm, store_config_yaml, write_df
+from MEDS_tabular_automl.utils import (
+    get_shard_prefix,
+    hydra_loguru_init,
+    load_tqdm,
+    store_config_yaml,
+    write_df,
+)
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="describe_codes")
 def main(
     cfg: DictConfig,
 ):
-    """Stores the configuration parameters and feature columns tabularized data we will be generated for.
+    """Computes the feature frequencies so we can filter out infrequent events.
 
     Args:
         cfg: The configuration object for the tabularization process.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
+    if not cfg.loguru_init:
+        hydra_loguru_init()
 
     # Store Config
     output_dir = Path(cfg.output_dir)
@@ -52,10 +60,12 @@ def main(
         return pl.scan_parquet(in_fp)
 
     # Map: Iterates through shards and caches feature frequencies
-    train_shards = list_subdir_parquets(cfg.input_dir)
+    train_shards = list_subdir_files(cfg.input_dir, "parquet")
     np.random.shuffle(train_shards)
     for shard_fp in iter_wrapper(train_shards):
-        out_fp = Path(cfg.cache_dir) / shard_fp.name
+        out_fp = (Path(cfg.cache_dir) / get_shard_prefix(cfg.input_dir, shard_fp)).with_suffix(
+            shard_fp.suffix
+        )
         rwlock_wrap(
             shard_fp,
             out_fp,
@@ -82,7 +92,7 @@ def main(
         write_df(df, out_fp)
 
     def read_fn(feature_dir):
-        files = list_subdir_parquets(feature_dir)
+        files = list_subdir_files(feature_dir, "parquet")
         return [pl.scan_parquet(fp) for fp in files]
 
     rwlock_wrap(

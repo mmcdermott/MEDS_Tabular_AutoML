@@ -19,4 +19,4 @@ aggs:
   - "value/max"
 
 # Resolved inputs
-_resolved_codes: ${filter_to_codes:${allowed_codes},${min_code_inclusion_frequency},${code_metadata_fp}}
+_resolved_codes: ${filter_to_codes:${tabularization.allowed_codes},${tabularization.min_code_inclusion_frequency},${tabularization.code_metadata_fp}}

@@ -9,12 +9,22 @@ from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
-from loguru import logger
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
-from MEDS_tabular_automl.file_name import list_subdir_parquets
-from MEDS_tabular_automl.scripts import describe_codes
-from MEDS_tabular_automl.utils import VALUE_AGGREGATIONS, get_feature_names
+from MEDS_tabular_automl.file_name import list_subdir_files
+from MEDS_tabular_automl.scripts import (
+    describe_codes,
+    tabularize_static,
+    tabularize_time_series,
+)
+from MEDS_tabular_automl.utils import (
+    VALUE_AGGREGATIONS,
+    get_events_df,
+    get_feature_names,
+    get_shard_prefix,
+    get_unique_time_events_df,
+    load_matrix,
+)
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
@@ -119,14 +129,14 @@ STATIC_PRESENT_COLS = [
 STATIC_FIRST_COLS = ["HEIGHT/static/first"]
 
 EXPECTED_STATIC_FILES = [
-    "tabularize/static/held_out/0/first.npz",
-    "tabularize/static/held_out/0/present.npz",
-    "tabularize/static/train/0/first.npz",
-    "tabularize/static/train/0/present.npz",
-    "tabularize/static/train/1/first.npz",
-    "tabularize/static/train/1/present.npz",
-    "tabularize/static/tuning/0/first.npz",
-    "tabularize/static/tuning/0/present.npz",
+    "held_out/0/none/static/first.npz",
+    "held_out/0/none/static/present.npz",
+    "train/0/none/static/first.npz",
+    "train/0/none/static/present.npz",
+    "train/1/none/static/first.npz",
+    "train/1/none/static/present.npz",
+    "tuning/0/none/static/first.npz",
+    "tuning/0/none/static/present.npz",
 ]
 
 SUMMARIZE_EXPECTED_FILES = [
@@ -216,16 +226,16 @@ def test_tabularize():
             )
 
         # Check the files are not empty
-        meds_files = list_subdir_parquets(Path(cfg.input_dir))
+        meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
         assert (
-            len(list_subdir_parquets(Path(cfg.input_dir).parent)) == 4
+            len(list_subdir_files(Path(cfg.input_dir).parent, "parquet")) == 4
         ), "MEDS train split Data Files Should be 4!"
         for f in meds_files:
             assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
         split_json = json.load(StringIO(SPLITS_JSON))
         splits_fp = MEDS_cohort_dir / "splits.json"
         json.dump(split_json, splits_fp.open("w"))
-        logger.info("caching flat representation of MEDS data")
+        # Step 1: Describe Codes - compute code frequencies
         describe_codes.main(cfg)
 
         assert (Path(cfg.output_dir) / "config.yaml").is_file()
@@ -238,46 +248,88 @@ def test_tabularize():
         for value_agg in VALUE_AGGREGATIONS:
             assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
 
-        # # Check Static File Generation
-        # tabularize_static(cfg)
-        # actual_files = [str(Path(*f.parts[-5:])) for f in f_name_resolver.list_static_files()]
-        # assert set(actual_files) == set(EXPECTED_STATIC_FILES)
-        # # Check the files are not empty
-        # for f in f_name_resolver.list_static_files():
-        #     static_matrix = load_matrix(f)
-        #     assert static_matrix.shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
-        #     expected_num_cols = len(get_feature_names(f"static/{f.stem}", feature_columns))
-        #     logger.info((static_matrix.shape[1], expected_num_cols))
-        #     logger.info(f_name_resolver.list_static_files())
-        #     assert static_matrix.shape[1] == expected_num_cols, (
-        #         f"Static Data Tabular Dataframe Should have {expected_num_cols}"
-        #         f"Columns but has {static_matrix.shape[1]}!"
-        #     )
-        # static_first_fp = f_name_resolver.get_flat_static_rep("tuning", "0", "static/first")
-        # static_present_fp = f_name_resolver.get_flat_static_rep("tuning", "0", "static/present")
-        # assert (
-        #     load_matrix(static_first_fp).shape[0] == load_matrix(static_present_fp).shape[0]
-        # ), "static data first and present aggregations have different numbers of rows"
+        # Step 2: Tabularization
+        tabularize_static_config = {
+            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
+            "do_overwrite": False,
+            "seed": 1,
+            "hydra.verbose": True,
+            "tqdm": False,
+            "loguru_init": True,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
+            "tabularization.window_sizes": "[30d,365d,full]",
+        }
 
-        # tabularize_time_series(cfg)
-        # # confirm summary files exist:
-        # output_files = f_name_resolver.list_ts_files()
-        # f_name_resolver.list_ts_files()
-        # actual_files = [str(Path(*f.parts[-5:])) for f in output_files]
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
+            cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
+        num_allowed_codes = len(cfg.tabularization._resolved_codes)
+        num_codes = (
+            pl.scan_parquet(list_subdir_files(Path(cfg.input_dir), "parquet"))
+            .select(pl.col("code"))
+            .collect()
+            .n_unique()
+        )
+        assert num_allowed_codes == num_codes, f"Should have {num_codes} codes but has {num_allowed_codes}"
+        tabularize_static.main(cfg)
+        output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
+        actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
+        assert set(actual_files) == set(EXPECTED_STATIC_FILES)
+        # Check the files are not empty
+        for f in output_files:
+            static_matrix = load_matrix(f)
+            assert static_matrix.shape[0] > 0, "Static Data Tabular Dataframe Should not be Empty!"
+            expected_num_cols = len(get_feature_names(f"static/{f.stem}", feature_columns))
+            assert static_matrix.shape[1] == expected_num_cols, (
+                f"Static Data Tabular Dataframe Should have {expected_num_cols}"
+                f"Columns but has {static_matrix.shape[1]}!"
+            )
+            split = f.parts[-5]
+            shard_num = f.parts[-4]
+            med_shard_fp = (Path(cfg.input_dir) / split / shard_num).with_suffix(".parquet")
+            expected_num_rows = (
+                get_unique_time_events_df(get_events_df(pl.scan_parquet(med_shard_fp), feature_columns))
+                .collect()
+                .shape[0]
+            )
+            assert static_matrix.shape[0] == expected_num_rows, (
+                f"Static Data matrix Should have {expected_num_rows}"
+                f" rows but has {static_matrix.shape[0]}!"
+            )
 
-        # assert set(actual_files) == set(SUMMARIZE_EXPECTED_FILES)
-        # for f in output_files:
-        #     sparse_array = load_matrix(f)
-        #     assert sparse_array.shape[0] > 0
-        #     assert sparse_array.shape[1] > 0
-        # ts_code_fp = f_name_resolver.get_flat_ts_rep("tuning", "0", "365d", "code/count")
-        # ts_value_fp = f_name_resolver.get_flat_ts_rep("tuning", "0", "365d", "value/sum")
-        # assert (
-        #     load_matrix(ts_code_fp).shape[0] == load_matrix(ts_value_fp).shape[0]
-        # ), "time series code and value have different numbers of rows"
-        # assert (
-        #     load_matrix(static_first_fp).shape[0] == load_matrix(ts_value_fp).shape[0]
-        # ), "static data and time series have different numbers of rows"
+        tabularize_time_series.main(cfg)
+
+        # confirm summary files exist:
+        output_files = list_subdir_files(cfg.output_dir, "npz")
+        actual_files = [
+            get_shard_prefix(Path(cfg.output_dir), each) + ".npz"
+            for each in output_files
+            if "none/static" not in str(each)
+        ]
+        assert set(actual_files) == set(SUMMARIZE_EXPECTED_FILES)
+        for f in output_files:
+            ts_matrix = load_matrix(f)
+            assert ts_matrix.shape[0] > 0, "Time-Series Tabular Dataframe Should not be Empty!"
+            expected_num_cols = len(get_feature_names(f"{f.parent.stem}/{f.stem}", feature_columns))
+            assert ts_matrix.shape[1] == expected_num_cols, (
+                f"Time-Series Tabular Dataframe Should have {expected_num_cols}"
+                f"Columns but has {ts_matrix.shape[1]}!"
+            )
+            split = f.parts[-5]
+            shard_num = f.parts[-4]
+            med_shard_fp = (Path(cfg.input_dir) / split / shard_num).with_suffix(".parquet")
+            expected_num_rows = (
+                get_unique_time_events_df(get_events_df(pl.scan_parquet(med_shard_fp), feature_columns))
+                .collect()
+                .shape[0]
+            )
+            assert ts_matrix.shape[0] == expected_num_rows, (
+                f"Time-Series Data matrix Should have {expected_num_rows}"
+                f" rows but has {ts_matrix.shape[0]}!"
+            )
 
         # # Create fake labels
         # for f in f_name_resolver.list_meds_files():

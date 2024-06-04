@@ -13,7 +13,7 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
-from MEDS_tabular_automl.utils import get_feature_indices
+from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
 
 
 class Iterator(xgb.DataIter, TimeableMixin):
@@ -401,6 +401,9 @@ def main(cfg: DictConfig) -> float:
     Returns:
     - float: Evaluation result.
     """
+    if not cfg.loguru_init:
+        hydra_loguru_init()
+
     model = XGBoostModel(cfg)
     model.train()
 

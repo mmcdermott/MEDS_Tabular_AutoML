@@ -74,8 +74,8 @@ def list_meds_files(meds_dir: Path, split=None):
     return sorted(list(meds_dir.glob("**/*.parquet")))
 
 
-def list_subdir_parquets(dir: [Path | str]):
-    return sorted(list(Path(dir).glob("**/*.parquet")))
+def list_subdir_files(dir: [Path | str], fmt: str):
+    return sorted(list(Path(dir).glob(f"**/*.{fmt}")))
 
 
 def list_static_files(cfg, split=None):

@@ -1,5 +1,9 @@
+from collections import defaultdict
+from collections.abc import Mapping
+from pathlib import Path
+
 import polars as pl
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.utils import DF_T
 
@@ -90,8 +94,45 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict:
 
 
 def get_feature_columns(fp):
-    return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp))))
+    return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp)).keys()))
 
 
 def get_feature_freqs(fp):
     return convert_to_freq_dict(pl.scan_parquet(fp))
+
+
+def filter_to_codes(
+    allowed_codes: list[str] | None,
+    min_code_inclusion_frequency: Mapping[str, int],
+    code_metadata_fp: Path,
+):
+    """Returns allowed codes if they are specified, otherwise filters to codes based on inclusion
+    frequency."""
+    if allowed_codes is None:
+        feature_freqs = get_feature_freqs(code_metadata_fp)
+
+        def clear_code_aggregation_suffix(code):
+            if code.endswith("/code"):
+                return code[:-5]
+            elif code.endswith("/value"):
+                return code[:-6]
+            elif code.endswith("/static/present"):
+                return code[:-15]
+            elif code.endswith("/static/first"):
+                return code[:-13]
+
+        code_freqs_agg = defaultdict(list)
+
+        for code, freq in feature_freqs.items():
+            code_freqs_agg[clear_code_aggregation_suffix(code)].append(freq)
+        code_freqs = {code: sum(freqs) for code, freqs in code_freqs_agg.items()}
+        return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
+    else:
+        return allowed_codes
+
+
+OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
+
+
+def filter_parquet(fp, allowed_codes: list[str]):
+    return pl.scan_parquet(fp).filter(pl.col("code").is_in(allowed_codes))

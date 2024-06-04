@@ -421,3 +421,27 @@ def store_config_yaml(config_fp: Path, cfg: DictConfig):
         if not cfg.do_overwrite:
             raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {config_fp} exists!")
     OmegaConf.save(cfg, config_fp)
+
+
+def get_shard_prefix(base_path: Path, fp: Path) -> str:
+    """Extracts the shard prefix from a file path by removing the raw_cohort_dir.
+
+    Args:
+        base_path: The base path to remove.
+        fp: The file path to extract the shard prefix from.
+
+    Returns:
+        The shard prefix (the file path relative to the base path with the suffix removed).
+
+    Examples:
+        >>> get_shard_prefix(Path("/a/b/c"), Path("/a/b/c/d.parquet"))
+        'd'
+        >>> get_shard_prefix(Path("/a/b/c"), Path("/a/b/c/d/e.csv.gz"))
+        'd/e'
+    """
+
+    relative_path = fp.relative_to(base_path)
+    relative_parent = relative_path.parent
+    file_name = relative_path.name.split(".")[0]
+
+    return str(relative_parent / file_name)

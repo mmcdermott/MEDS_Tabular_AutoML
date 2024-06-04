@@ -1,21 +1,23 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-import json
 from itertools import product
+from pathlib import Path
 
 import hydra
 import numpy as np
-import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
 
+from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns
+from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
+    get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
     write_df,
@@ -55,25 +57,27 @@ def main(
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
-    f_name_resolver = cfg
     # Produce ts representation
-    meds_shard_fps = f_name_resolver.list_meds_files()
-    feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
+    meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
+    feature_columns = get_feature_columns(cfg.input_code_metadata)
 
     # shuffle tasks
-    aggs = [agg for agg in cfg.aggs if agg not in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]]
-    tabularization_tasks = list(product(meds_shard_fps, cfg.window_sizes, aggs))
+    aggs = [
+        agg
+        for agg in cfg.tabularization.aggs
+        if agg not in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]
+    ]
+    tabularization_tasks = list(product(meds_shard_fps, cfg.tabularization.window_sizes, aggs))
     np.random.shuffle(tabularization_tasks)
 
     # iterate through them
     for shard_fp, window_size, agg in iter_wrapper(tabularization_tasks):
-        shard_num = shard_fp.stem
-        split = shard_fp.parent.stem
-        assert split in ["train", "held_out", "tuning"], f"Invalid split {split}"
-        ts_fp = f_name_resolver.get_flat_ts_rep(split, shard_num, window_size, agg)
+        out_fp = (
+            Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / window_size / agg
+        ).with_suffix(".npz")
 
-        def read_fn(fp):
-            return pl.scan_parquet(fp)
+        def read_fn(in_fp):
+            return filter_parquet(in_fp, cfg.tabularization._resolved_codes)
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
@@ -98,7 +102,7 @@ def main(
 
         rwlock_wrap(
             shard_fp,
-            ts_fp,
+            out_fp,
             read_fn,
             write_fn,
             compute_fn,
