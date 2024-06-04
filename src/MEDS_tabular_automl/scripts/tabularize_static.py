@@ -10,7 +10,6 @@ import numpy as np
 import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
-from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import (
@@ -64,7 +63,7 @@ def store_config_yaml(config_fp: Path, cfg: DictConfig):
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
-def tabularize_static_data(
+def main(
     cfg: DictConfig,
 ):
     """Writes a flat (historically summarized) representation of the dataset to disk.
@@ -107,9 +106,9 @@ def tabularize_static_data(
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.test:
+    if not cfg.loguru_init:
         hydra_loguru_init()
-    f_name_resolver = FileNameResolver(cfg)
+    f_name_resolver = cfg
     # Produce ts representation
     meds_shard_fps = f_name_resolver.list_meds_files()
     # f_name_resolver.get_meds_dir()
@@ -150,4 +149,4 @@ def tabularize_static_data(
 
 
 if __name__ == "__main__":
-    tabularize_static_data()
+    main()

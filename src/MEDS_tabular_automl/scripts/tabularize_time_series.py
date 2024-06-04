@@ -10,7 +10,6 @@ import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
@@ -24,7 +23,7 @@ from MEDS_tabular_automl.utils import (
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
-def summarize_ts_data_over_windows(
+def main(
     cfg: DictConfig,
 ):
     """Processes time-series data by summarizing it across different windows, creating a flat, summarized
@@ -54,9 +53,9 @@ def summarize_ts_data_over_windows(
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.test:
+    if not cfg.loguru_init:
         hydra_loguru_init()
-    f_name_resolver = FileNameResolver(cfg)
+    f_name_resolver = cfg
     # Produce ts representation
     meds_shard_fps = f_name_resolver.list_meds_files()
     feature_columns = json.load(open(f_name_resolver.get_feature_columns_fp()))
@@ -109,4 +108,4 @@ def summarize_ts_data_over_windows(
 
 
 if __name__ == "__main__":
-    summarize_ts_data_over_windows()
+    main()

@@ -13,7 +13,6 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
-from MEDS_tabular_automl.file_name import FileNameResolver
 from MEDS_tabular_automl.utils import get_feature_indices
 
 
@@ -52,7 +51,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
         self.cfg = cfg
-        self.file_name_resolver = FileNameResolver(cfg)
+        self.file_name_resolver = cfg
         self.split = split
 
         self._data_shards = sorted([shard.stem for shard in self.file_name_resolver.list_label_files(split)])
@@ -393,7 +392,7 @@ class XGBoostModel(TimeableMixin):
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
-def launch_xgboost(cfg: DictConfig) -> float:
+def main(cfg: DictConfig) -> float:
     """Optimize the model based on the provided configuration.
 
     Args:
@@ -425,4 +424,4 @@ def launch_xgboost(cfg: DictConfig) -> float:
 
 
 if __name__ == "__main__":
-    launch_xgboost()
+    main()

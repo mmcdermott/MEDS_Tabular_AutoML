@@ -5,9 +5,11 @@ defaults:
   - override hydra/sweeper/sampler: tpe
   - _self_
 
+task_name: task
+
 # Raw data
-MEDS_cohort_dir: ???
-input_directory: ${MEDS_cohort_dir}/task
+input_dir: ${MEDS_cohort_dir}/${task_name}
+input_code_metadata: ${MEDS_cohort_dir}/code_metadata.parquet
 # Where to output the model and cached data
 output_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
 output_filepath: ${output_dir}/model_metadata.parquet
@@ -20,10 +22,11 @@ model_params:
   model:
     booster: gbtree
     device: cpu
+    nthread: 1
     tree_method: hist
     objective: binary:logistic
   iterator:
-    keep_data_in_memory: False
+    keep_data_in_memory: True
     binarize_task: True
 
 # Sweep parameters for Optuna
@@ -31,7 +34,7 @@ hydra:
   # Optuna Sweeper
   sweeper:
     sampler:
-      seed: 1
+      seed: ${seed}
     storage: null
     study_name: tabularize_study_${now:%Y-%m-%d_%H-%M-%S}
     direction: minimize
@@ -41,5 +44,4 @@ hydra:
     params:
       window_sizes:
         _target_: hydra.utils.call(${hydra.utils.cross_product},
-          values=["1d", "7d", "30d", "365d", "full"]) # , max_options=5)
-      iterator.keep_data_in_memory: choice([True], [False])
+          values=["1d", "7d", "30d", "365d", "full"], min_options=1)

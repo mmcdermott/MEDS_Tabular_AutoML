@@ -1,8 +1,0 @@
-defaults:
-  - default
-  - tabularization: default
-  - _self_
-
-# Raw data
-input_directory: ${MEDS_cohort_dir}/final_cohort
-output_dir: ${MEDS_cohort_dir}/tabularize

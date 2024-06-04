@@ -14,7 +14,7 @@ import numpy as np
 import polars as pl
 import polars.selectors as cs
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
@@ -248,60 +248,6 @@ def get_ts_feature_cols(shard_df: DF_T) -> list[str]:
     return sorted(feature_columns)
 
 
-def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> list[str]:
-    """Generates a list of feature column names from the data within each shard based on specified
-    configurations.
-
-    Parameters:
-    - cfg (DictConfig): Configuration dictionary specifying how features should be evaluated and aggregated.
-    - split_to_shard_df (dict): A dictionary of DataFrames, divided by data split (e.g., 'train', 'test').
-
-    Returns:
-    - tuple[list[str], dict]: A tuple containing a list of feature columns and a dictionary of code properties
-        identified during the evaluation.
-
-    This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of feature columns for modeling purposes.
-    Examples:
-    >>> import polars as pl
-    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
-    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-    >>> df = pl.DataFrame(data).lazy()
-    >>> aggs = ['value/sum', 'code/count']
-    >>> get_ts_feature_cols(aggs, df)
-    ['A/code', 'A/value', 'C/code', 'C/value']
-    """
-    static_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
-    )
-    static_code_freqs_df = static_df.group_by("code").agg(pl.count("code").alias("count")).collect()
-    static_code_freqs = {
-        row["code"] + "/static/present": row["count"] for row in static_code_freqs_df.iter_rows(named=True)
-    }
-
-    static_value_df = static_df.filter(pl.col("numerical_value").is_not_null())
-    static_value_freqs_df = (
-        static_value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
-    )
-    static_value_freqs = {
-        row["code"] + "/static/first": row["count"] for row in static_value_freqs_df.iter_rows(named=True)
-    }
-
-    ts_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_not_null()
-    )
-    code_freqs_df = ts_df.group_by("code").agg(pl.count("code").alias("count")).collect()
-    code_freqs = {row["code"] + "/code": row["count"] for row in code_freqs_df.iter_rows(named=True)}
-
-    value_df = ts_df.filter(pl.col("numerical_value").is_not_null())
-    value_freqs_df = value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
-    value_freqs = {row["code"] + "/value": row["count"] for row in value_freqs_df.iter_rows(named=True)}
-
-    combined_freqs = {**static_code_freqs, **static_value_freqs, **code_freqs, **value_freqs}
-    return combined_freqs
-
-
 def get_prediction_ts_cols(
     aggregations: list[str], ts_feature_cols: DF_T, window_sizes: list[str] | None = None
 ) -> list[str]:
@@ -430,3 +376,48 @@ def get_feature_indices(agg, feature_columns) -> str:
     feature_to_index = {c: i for i, c in enumerate(feature_columns)}
     agg_features = get_feature_names(agg, feature_columns)
     return [feature_to_index[c] for c in agg_features]
+
+
+def store_config_yaml(config_fp: Path, cfg: DictConfig):
+    """Stores configuration parameters into a JSON file.
+
+    This function writes a dictionary of parameters, which includes patient partitioning
+    information and configuration details, to a specified JSON file.
+
+    Args:
+    - config_fp (Path): The file path for the JSON file where config should be stored.
+    - cfg (DictConfig): A configuration object containing settings like the number of patients
+      per sub-shard, minimum code inclusion frequency, and flags for updating or overwriting existing files.
+
+    Behavior:
+    - If config_fp exists and cfg.do_overwrite is False (without do_update being True), a
+      FileExistsError is raised to prevent unintentional data loss.
+
+    Raises:
+    - ValueError: If there are discrepancies between old and new parameters during an update.
+    - FileExistsError: If the file exists and overwriting is not allowed.
+
+    Example:
+    >>> cfg = DictConfig({
+    ...     "n_patients_per_sub_shard": 100,
+    ...     "min_code_inclusion_frequency": 5,
+    ...     "do_overwrite": True,
+    ... })
+    >>> import tempfile
+    >>> from pathlib import Path
+    >>> with tempfile.NamedTemporaryFile() as temp_f:
+    ...     config_fp = Path(temp_f.name)
+    ...     store_config_yaml(config_fp, cfg)
+    ...     assert config_fp.exists()
+    ...     store_config_yaml(config_fp, cfg)
+    ...     cfg.do_overwrite = False
+    ...     try:
+    ...         store_config_yaml(config_fp, cfg)
+    ...     except FileExistsError as e:
+    ...         print("FileExistsError Error Triggered")
+    FileExistsError Error Triggered
+    """
+    if config_fp.exists():
+        if not cfg.do_overwrite:
+            raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {config_fp} exists!")
+    OmegaConf.save(cfg, config_fp)

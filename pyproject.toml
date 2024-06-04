@@ -18,15 +18,18 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas", "numba", "tqdm", "xgboost", "scikit-learn", "hydra-optuna-sweeper"]
+dependencies = ["polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy", "pandas", "tqdm", "xgboost", "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher"]
 
 [project.scripts]
-meds_tab = "MEDS_tabular_automl.__main__:main"
+meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
+meds_tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"
+meds_tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_series:main"
+meds_tab-cache-task = "MEDS_tabular_automl.scripts.cache_task:main"
+meds_tab-xgboost = "MEDS_tabular_automl.scripts.launch_xgboost:main"
 
 [project.optional-dependencies]
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
-local_parallelism = ["hydra-joblib-launcher"]
 profiling = ["mprofile", "matplotlib"]
 
 [project.urls]

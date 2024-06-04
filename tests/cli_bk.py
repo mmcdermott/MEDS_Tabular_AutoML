@@ -11,6 +11,8 @@ from pathlib import Path
 import polars as pl
 from loguru import logger
 from omegaconf import DictConfig
+from scripts.identify_columns import store_columns
+from scripts.tabularize_static import tabularize_static_data
 from test_tabularize import (
     CODE_COLS,
     EXPECTED_STATIC_FILES,
@@ -29,8 +31,6 @@ from MEDS_tabular_automl.utils import (
     get_feature_names,
     load_matrix,
 )
-from scripts.identify_columns import store_columns
-from scripts.tabularize_static import tabularize_static_data
 
 
 def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
