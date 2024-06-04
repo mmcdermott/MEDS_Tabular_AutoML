@@ -1,5 +1,3 @@
-import json
-import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -13,6 +11,8 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
+from MEDS_tabular_automl.describe_codes import get_feature_columns, get_feature_freqs
+from MEDS_tabular_automl.file_name import get_model_files, list_subdir_files
 from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
 
 
@@ -51,15 +51,16 @@ class Iterator(xgb.DataIter, TimeableMixin):
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
         self.cfg = cfg
-        self.file_name_resolver = cfg
         self.split = split
-
-        self._data_shards = sorted([shard.stem for shard in self.file_name_resolver.list_label_files(split)])
+        # Load shards for this split
+        self._data_shards = sorted(
+            [shard.stem for shard in list_subdir_files(Path(cfg.input_label_dir) / split, "parquet")]
+        )
         self.valid_event_ids, self.labels = self.load_labels()
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
         self._it = 0
 
-        super().__init__(cache_prefix=os.path.join(self.file_name_resolver.get_cache_dir()))
+        super().__init__(cache_prefix=Path(cfg.cache_dir))
 
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
@@ -76,7 +77,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
             Dictionary of code masks for each aggregation.
         """
         code_masks = {}
-        for agg in set(self.cfg.aggs):
+        for agg in set(self.cfg.tabularization.aggs):
             feature_ids = get_feature_indices(agg, feature_columns)
             code_mask = [True if idx in codes_set else False for idx in feature_ids]
             code_masks[agg] = code_mask
@@ -110,7 +111,9 @@ class Iterator(xgb.DataIter, TimeableMixin):
             dictionary from shard number to list of labels for these valid event ids
         """
         label_fps = {
-            shard: self.file_name_resolver.get_label(self.split, shard) for shard in self._data_shards
+            shard: (Path(self.cfg.input_label_dir) / self.split / shard).with_suffix(".parquet")
+            for shard in self._data_shards
+            for shard in self._data_shards
         }
         cached_labels, cached_event_ids = dict(), dict()
         for shard, label_fp in label_fps.items():
@@ -119,7 +122,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
             # TODO: check this for Nan or any other case we need to worry about
             cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
-            if self.cfg.iterator.binarize_task:
+            if self.cfg.model_params.iterator.binarize_task:
                 cached_labels[shard] = cached_labels[shard].map_elements(
                     lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8
                 )
@@ -129,25 +132,30 @@ class Iterator(xgb.DataIter, TimeableMixin):
     @TimeableMixin.TimeAs
     def _get_code_set(self) -> tuple[set, Mapping[int, list], int]:
         """Get the set of codes to include in the data based on the configuration."""
-        with open(self.file_name_resolver.get_feature_columns_fp()) as f:
-            feature_columns = json.load(f)
+        feature_columns = get_feature_columns(self.cfg.input_code_metadata)
+        feature_freqs = get_feature_freqs(self.cfg.input_code_metadata)
+        feature_columns = [
+            col
+            for col in feature_columns
+            if feature_freqs[col] >= self.cfg.tabularization.min_code_inclusion_frequency
+        ]
         feature_dict = {col: i for i, col in enumerate(feature_columns)}
-        if self.cfg.codes is not None:
-            codes_set = {feature_dict[code] for code in set(self.cfg.codes) if code in feature_dict}
+        allowed_codes = self.cfg.tabularization.allowed_codes
+        if self.cfg.tabularization.allowed_codes is not None:
+            codes_set = {feature_dict[code] for code in set(allowed_codes) if code in feature_dict}
 
-        if self.cfg.min_code_inclusion_frequency is not None:
-            with open(self.file_name_resolver.get_feature_freqs_fp()) as f:
-                feature_freqs = json.load(f)
+        if self.cfg.modeling_min_code_freq is not None:
+            feature_freqs = get_feature_freqs(self.cfg.input_code_metadata)
             min_frequency_set = {
-                key for key, value in feature_freqs.items() if value >= self.cfg.min_code_inclusion_frequency
+                key for key, value in feature_freqs.items() if value >= self.cfg.modeling_min_code_freq
             }
             frequency_set = {feature_dict[code] for code in min_frequency_set if code in feature_dict}
 
-        if self.cfg.codes is not None and self.cfg.min_code_inclusion_frequency is not None:
+        if allowed_codes is not None and self.cfg.modeling_min_code_freq is not None:
             codes_set = codes_set.intersection(frequency_set)
-        elif self.cfg.codes is not None:
+        elif allowed_codes is not None:
             codes_set = codes_set
-        elif self.cfg.min_code_inclusion_frequency is not None:
+        elif self.cfg.modeling_min_code_freq is not None:
             codes_set = frequency_set
         else:
             codes_set = None  # set(feature_columns)
@@ -190,11 +198,8 @@ class Iterator(xgb.DataIter, TimeableMixin):
         Returns:
         - sp.csc_matrix: Filtered sparse matrix.
         """
-        # TODO Nassim Fix this guy
         # get all window_size x aggreagation files using the file resolver
-        files = self.file_name_resolver.get_model_files(
-            self.cfg.window_sizes, self.cfg.aggs, self.split, self._data_shards[idx]
-        )
+        files = get_model_files(self.cfg, self.split, self._data_shards[idx])
 
         if not all(file.exists() for file in files):
             raise ValueError(f"Not all files exist for shard {self._data_shards[idx]}")
@@ -315,7 +320,7 @@ class XGBoostModel(TimeableMixin):
         """
 
         self.cfg = cfg
-        self.keep_data_in_memory = getattr(getattr(cfg, "iterator", {}), "keep_data_in_memory", True)
+        self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
 
         self.itrain = None
         self.ituning = None
@@ -331,10 +336,10 @@ class XGBoostModel(TimeableMixin):
     def _train(self):
         """Train the model."""
         self.model = xgb.train(
-            OmegaConf.to_container(self.cfg.model),
+            OmegaConf.to_container(self.cfg.model_params.model),
             self.dtrain,
-            num_boost_round=self.cfg.num_boost_round,
-            early_stopping_rounds=self.cfg.early_stopping_rounds,
+            num_boost_round=self.cfg.model_params.num_boost_round,
+            early_stopping_rounds=self.cfg.model_params.early_stopping_rounds,
             # nthreads=self.cfg.nthreads,
             evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
         )
@@ -409,7 +414,8 @@ def main(cfg: DictConfig) -> float:
 
     print(
         "Time Profiling for window sizes ",
-        f"{cfg.window_sizes} and min code frequency of {cfg.min_code_inclusion_frequency}:",
+        f"{cfg.tabularization.window_sizes} and min ",
+        "code frequency of {cfg.tabularization.min_code_inclusion_frequency}:",
     )
     print("Train Time: \n", model._profile_durations())
     print("Train Iterator Time: \n", model.itrain._profile_durations())
@@ -417,7 +423,7 @@ def main(cfg: DictConfig) -> float:
     print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
 
     # save model
-    save_dir = Path(cfg.model_dir)
+    save_dir = Path(cfg.output_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     model.model.save_model(save_dir / "model.json")

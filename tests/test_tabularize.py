@@ -15,6 +15,7 @@ from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.scripts import (
     cache_task,
     describe_codes,
+    launch_xgboost,
     tabularize_static,
     tabularize_time_series,
 )
@@ -267,14 +268,17 @@ def test_tabularize():
         ):  # path to config.yaml
             overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
             cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
-        num_allowed_codes = len(cfg.tabularization._resolved_codes)
-        num_codes = (
-            pl.scan_parquet(list_subdir_files(Path(cfg.input_dir), "parquet"))
-            .select(pl.col("code"))
-            .collect()
-            .n_unique()
-        )
-        assert num_allowed_codes == num_codes, f"Should have {num_codes} codes but has {num_allowed_codes}"
+        allowed_codes = cfg.tabularization._resolved_codes
+        num_allowed_codes = len(allowed_codes)
+        # num_codes = (
+        #     pl.scan_parquet(list_subdir_files(Path(cfg.input_dir), "parquet"))
+        #     .select(pl.col("code"))
+        #     .collect()
+        #     .n_unique()
+        # )
+        assert num_allowed_codes == len(
+            feature_columns
+        ), f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
         tabularize_static.main(cfg)
         output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
         actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
@@ -370,18 +374,25 @@ def test_tabularize():
 
         cache_task.main(cfg)
 
-        # xgboost_config_kwargs = {
-        #     "hydra.mode": "MULTIRUN",
-        # }
+        xgboost_config_kwargs = {
+            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
+            "do_overwrite": False,
+            "seed": 1,
+            "hydra.verbose": True,
+            "tqdm": False,
+            "loguru_init": True,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
+            "tabularization.window_sizes": "[30d,365d,full]",
+        }
 
-        # with initialize(
-        #     version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-        # ):  # path to config.yaml
-        #     overrides = [f"{k}={v}" for k, v in cache_config.items()]
-        #     cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+            cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
 
-        # xgboost_config_kwargs = {**tabularize_config_kwargs, **xgboost_config_kwargs}
-        # launch_xgboost(cfg)
-        # output_files = list(Path(cfg.model_dir).glob("*.json"))
-        # assert len(output_files) == 1
-        # assert output_files[0] == Path(cfg.model_dir) / "model.json"
+        launch_xgboost.main(cfg)
+        output_files = list(Path(cfg.output_dir).glob("*.json"))
+        assert len(output_files) == 1
+        assert output_files[0] == Path(cfg.output_dir) / "model.json"
