@@ -50,3 +50,5 @@ hydra:
       window_sizes:
         _target_: hydra.utils.call(${hydra.utils.cross_product},
           values=["1d", "7d", "30d", "365d", "full"], min_options=1)
+
+name: launch_xgboost

@@ -8,6 +8,7 @@ import hydra
 import numpy as np
 from loguru import logger
 from omegaconf import DictConfig
+import polars as pl
 
 from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -23,8 +24,10 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
+pl.enable_string_cache()
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
+
+@hydra.main(version_base=None, config_path="../configs", config_name="tabularization")
 def main(
     cfg: DictConfig,
 ):

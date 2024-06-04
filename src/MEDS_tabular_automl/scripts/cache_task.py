@@ -44,7 +44,7 @@ def generate_row_cached_matrix(matrix, label_df):
     return sp.coo_array(csr)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
+@hydra.main(version_base=None, config_path="../configs", config_name="task_specific_caching")
 def main(
     cfg: DictConfig,
 ):

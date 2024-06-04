@@ -396,7 +396,7 @@ class XGBoostModel(TimeableMixin):
         return roc_auc_score(y_true, y_pred)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
+@hydra.main(version_base=None, config_path="../configs", config_name="launch_xgboost")
 def main(cfg: DictConfig) -> float:
     """Optimize the model based on the provided configuration.
 

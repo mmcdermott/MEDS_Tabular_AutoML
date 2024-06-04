@@ -10,3 +10,5 @@ input_dir: ${MEDS_cohort_dir}/final_cohort/${split}
 cache_dir: ${MEDS_cohort_dir}/.cache
 output_dir: ${MEDS_cohort_dir}
 output_filepath: ${output_dir}/code_metadata.parquet
+
+name: describe_codes

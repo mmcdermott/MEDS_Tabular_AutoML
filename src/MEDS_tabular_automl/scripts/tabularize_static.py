@@ -25,7 +25,7 @@ from MEDS_tabular_automl.utils import (
 pl.enable_string_cache()
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularize")
+@hydra.main(version_base=None, config_path="../configs", config_name="tabularization")
 def main(
     cfg: DictConfig,
 ):

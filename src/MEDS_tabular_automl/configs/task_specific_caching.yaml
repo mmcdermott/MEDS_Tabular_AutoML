@@ -10,3 +10,5 @@ input_dir: ${MEDS_cohort_dir}/tabularize
 input_label_dir: ${MEDS_cohort_dir}/${task_name}/labels
 # Where to output the task specific tabularized data
 output_dir: ${MEDS_cohort_dir}/${task_name}/task_cache
+
+name: task_specific_caching
