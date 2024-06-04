@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import polars as pl
+pl.enable_string_cache()
 from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
