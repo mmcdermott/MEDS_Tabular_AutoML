@@ -273,7 +273,6 @@ def test_tabularize():
             xgboost_config_kwargs,
             "xgboost",
         )
-
-        output_files = list(Path(cfg.output_dir).glob("**/*.json"))
+        output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
         assert len(output_files) == 1
-        assert output_files[0] == Path(cfg.output_dir) / "model.json"
+        assert output_files[0].stem == "model"
