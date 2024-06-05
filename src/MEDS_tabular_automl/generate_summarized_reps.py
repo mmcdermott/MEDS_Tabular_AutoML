@@ -7,6 +7,7 @@ from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
+from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm
 
 
@@ -249,16 +250,13 @@ if __name__ == "__main__":
     import json
     from pathlib import Path
 
-    feature_columns = json.load(
-        open(
-            Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize") / "feature_columns.json"
-        )
+
+    feature_columns = get_feature_columns(
+        Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS") / "tabularized_code_metadata.parquet"
     )
+
     df = pl.scan_parquet(
-        Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed")
-        / "final_cohort"
-        / "train"
-        / "2.parquet"
+        Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS/final_cohort/train/0.parquet")
     )
     agg = "code/count"
     index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, df)
