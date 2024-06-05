@@ -22,6 +22,7 @@ meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main
 meds-tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_series:main"
 meds-tab-cache-task = "MEDS_tabular_automl.scripts.cache_task:main"
 meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_xgboost:main"
+meds-tab-xgboost-sweep = "MEDS_tabular_automl.scripts.sweep_xgboost:main"
 
 [project.optional-dependencies]
 dev = ["pre-commit"]

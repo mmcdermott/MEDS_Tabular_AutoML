@@ -3,6 +3,7 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
+import os
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -16,6 +17,7 @@ from MEDS_tabular_automl.scripts import (
     cache_task,
     describe_codes,
     launch_xgboost,
+    sweep_xgboost,
     tabularize_static,
     tabularize_time_series,
 )
@@ -388,6 +390,30 @@ def test_tabularize():
             cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
 
         launch_xgboost.main(cfg)
+        output_files = list(Path(cfg.output_dir).glob("**/*.json"))
+        assert len(output_files) == 1
+        assert output_files[0] == Path(cfg.output_dir) / "model.json"
+        os.remove(Path(cfg.output_dir) / "model.json")
+
+        xgboost_config_kwargs = {
+            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
+            "do_overwrite": False,
+            "seed": 1,
+            "hydra.verbose": True,
+            "tqdm": False,
+            "loguru_init": True,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
+            "tabularization.window_sizes": "[30d,365d,full]",
+        }
+
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+            cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
+
+        sweep_xgboost.main(cfg)
         output_files = list(Path(cfg.output_dir).glob("**/*.json"))
         assert len(output_files) == 1
         assert output_files[0] == Path(cfg.output_dir) / "model.json"

@@ -43,7 +43,7 @@ def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test
     return stderr, stdout
 
 
-def test_tabularize():
+def test_integration():
     # Step 0: Setup Environment
     with tempfile.TemporaryDirectory() as d:
         MEDS_cohort_dir = Path(d) / "processed"
@@ -275,4 +275,14 @@ def test_tabularize():
         )
         output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
         assert len(output_files) == 1
+        assert output_files[0].stem == "model"
+
+        stderr, stdout = run_command(
+            "meds-tab-xgboost-sweep",
+            [],
+            xgboost_config_kwargs,
+            "xgboost-sweep",
+        )
+        output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
+        assert len(output_files) == 2
         assert output_files[0].stem == "model"

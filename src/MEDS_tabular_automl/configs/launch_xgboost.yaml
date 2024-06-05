@@ -1,8 +1,6 @@
 defaults:
   - default
   - tabularization: default
-  - override hydra/sweeper: optuna
-  - override hydra/sweeper/sampler: tpe
   - _self_
 
 task_name: task
@@ -32,29 +30,52 @@ model_params:
     keep_data_in_memory: True
     binarize_task: True
 
-# Sweep parameters for Optuna
-hydra:
-  # Optuna Sweeper
-  sweeper:
-    sampler:
-      seed: ${seed}
-    storage: null
-    study_name: tabularize_study_${now:%Y-%m-%d_%H-%M-%S}
-    direction: minimize
-    n_trials: 10
+# Define search space for Optuna
+optuna:
+  study_name: xgboost_sweep_${now:%Y-%m-%d_%H-%M-%S}
+  storage: null
+  load_if_exists: False
+  direction: minimize
+  sampler: null
+  pruner: null
 
-    # Define search space for Optuna
-    params:
+  n_trials: 10
+  n_jobs: 1
+  show_progress_bar: False
+
+  params:
+    suggest_categorical:
       window_sizes: ${generate_permutations:${tabularization.window_sizes}}
       aggs: ${generate_permutations:${tabularization.aggs}}
-      min_code_freq: tag(log,range(10,1_000_000))
-      model_params:
-        model:
-          +num_boost_round: range(10, 1000)
-          +max_depth: range(2, 16)
-          +eta: tag(log,interval(.001,1))
-          +lambda: tag(log,interval(.001,1))
-          +alpha: tag(log,interval(.001,1))
-          +subsample: interval(0.5,1)
-          +min_child_weight: uniform(1e-2, 100)
+    suggest_float:
+      eta:
+        low: .001
+        high: 1
+        log: True
+      lambda:
+        low: .001
+        high: 1
+        log: True
+      alpha:
+        low: .001
+        high: 1
+        log: True
+      subsample:
+        low: 0.5
+        high: 1
+      min_child_weight:
+        low: 1e-2
+        high: 100
+    suggest_int:
+      num_boost_round:
+        low: 10
+        high: 1000
+      max_depth:
+        low: 2
+        high: 16
+      min_code_inclusion_frequency:
+        low: 10
+        high: 1_000_000
+        log: True
+
 name: launch_xgboost

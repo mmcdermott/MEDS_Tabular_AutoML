@@ -1,6 +1,5 @@
 from collections.abc import Callable, Mapping
 from importlib.resources import files
-from itertools import combinations
 from pathlib import Path
 
 import hydra
@@ -20,21 +19,6 @@ from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
-
-
-def generate_permutations(list_of_options):
-    """Generate all possible permutations of a list of options.
-
-    Args:
-    - list_of_options (list): List of options.
-
-    Returns:
-    - list: List of all possible permutations of length > 1
-    """
-    permutations = []
-    for i in range(1, len(list_of_options) + 1):
-        permutations.extend(list(combinations(list_of_options, r=i)))
-    return permutations
 
 
 class Iterator(xgb.DataIter, TimeableMixin):

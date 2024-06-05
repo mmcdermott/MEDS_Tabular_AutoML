@@ -1,0 +1,89 @@
+# Raw data
+MEDS_cohort_dir: /storage/shared/meds_tabular_ml/ebcl_dataset/processed
+tabularized_data_dir: ${MEDS_cohort_dir}/tabularize
+task_dir: ${tabularized_data_dir}/task
+model_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
+cache_dir: ${tabularized_data_dir}/.cache
+
+# Pre-processing
+min_code_inclusion_frequency: 10
+window_sizes: [1d]
+codes: null
+aggs:
+  - "static/present"
+  # - "static/first"
+  - "code/count"
+  - "value/count"
+  - "value/sum"
+  - "value/sum_sqd"
+  - "value/min"
+  - "value/max"
+
+dynamic_threshold: 0.01
+numerical_value_threshold: 0.1
+
+# Sharding
+n_patients_per_sub_shard: null
+
+# Misc
+do_overwrite: False
+do_update: True
+seed: 1
+tqdm: True
+worker: 0
+test: False
+
+num_boost_round: 1000
+early_stopping_rounds: 5
+model:
+  booster: gbtree
+  device: cpu
+  tree_method: hist
+  objective: binary:logistic
+
+iterator:
+  keep_data_in_memory: True
+  binarize_task: True
+
+hydra:
+  verbose: False
+  run:
+    dir: ${model_dir}/.logs/
+
+optuna:
+  storage: null
+  sampler: null
+  pruner: null
+  study_name: /home/teya/xgboost/tmp/xgboost_study_${now:%Y-%m-%d_%H-%M-%S}
+  direction: minimize
+  load_if_exists: True
+  show_progress_bar: False
+  n_trials: 10
+  n_jobs: 3
+
+  params:
+    categorical: # choose single item from a list
+      window_sizes:
+        [
+          [1d],
+          [7d],
+          [30d],
+          [365d],
+          [full],
+          [1d, 7d],
+          [1d, 7d, 30d],
+          [1d, 7d, 30d, 365d],
+        ]
+    # set: # choose any subset from a list
+    #   window_sizes: [1d, 7d, 30d, 365d, full] # TODO: teya implement
+    # aggs:
+    #   - "static/present"
+    #   - "static/first"
+    #   - "code/count"
+    #   - "value/count"
+    #   - "value/sum"
+    #   - "value/sum_sqd"
+    #   - "value/min"
+    #   - "value/max"
+    integer: # choose integer value from a range [start, end, step]
+      min_code_inclusion_frequency: [10, 100, 10]
