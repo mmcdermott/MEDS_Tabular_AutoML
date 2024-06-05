@@ -3,30 +3,13 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
+import subprocess
 import tempfile
 from io import StringIO
 from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
-
-from MEDS_tabular_automl.describe_codes import get_feature_columns
-from MEDS_tabular_automl.file_name import list_subdir_files
-from MEDS_tabular_automl.scripts import (
-    cache_task,
-    describe_codes,
-    launch_xgboost,
-    tabularize_static,
-    tabularize_time_series,
-)
-from MEDS_tabular_automl.utils import (
-    VALUE_AGGREGATIONS,
-    get_events_df,
-    get_feature_names,
-    get_shard_prefix,
-    get_unique_time_events_df,
-    load_matrix,
-)
 from test_tabularize import (
     CODE_COLS,
     EXPECTED_STATIC_FILES,
@@ -37,8 +20,17 @@ from test_tabularize import (
     SUMMARIZE_EXPECTED_FILES,
     VALUE_COLS,
 )
-import subprocess
-from loguru import logger
+
+from MEDS_tabular_automl.describe_codes import get_feature_columns
+from MEDS_tabular_automl.file_name import list_subdir_files
+from MEDS_tabular_automl.utils import (
+    VALUE_AGGREGATIONS,
+    get_events_df,
+    get_feature_names,
+    get_shard_prefix,
+    get_unique_time_events_df,
+    load_matrix,
+)
 
 
 def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
@@ -93,7 +85,6 @@ def test_tabularize():
         split_json = json.load(StringIO(SPLITS_JSON))
         splits_fp = MEDS_cohort_dir / "splits.json"
         json.dump(split_json, splits_fp.open("w"))
-
 
         # Step 1: Run the describe_codes script
         stderr, stdout = run_command(
@@ -179,7 +170,6 @@ def test_tabularize():
             "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
             "tabularization.window_sizes": "[30d,365d,full]",
         }
-
 
         stderr, stdout = run_command(
             "meds-tab-tabularize-time-series",
