@@ -9,6 +9,7 @@ ID=$1
 N_PARALLEL_WORKERS="$2"
 WINDOW_SIZES="tabularization.window_sizes=[1d,7d,30d,365d,full]"
 AGGS="tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+MIN_CODE_FREQ=10
 
 echo "Running identify_columns.py: Caching feature names and frequencies."
 rm -rf $OUTPUT_DIR
@@ -17,7 +18,7 @@ meds-tab-describe MEDS_cohort_dir=$MEDS_DIR
 echo "Running tabularize_static.py: tabularizing static data"
 meds_tab-tabularize-static \
     MEDS_cohort_dir=$MEDS_DIR \
-    tabularization.min_code_inclusion_frequency=10 "$WINDOW_SIZES" do_overwrite=False "$AGGS"
+    tabularization.min_code_inclusion_frequency="$MIN_CODE_FREQ" "$WINDOW_SIZES" do_overwrite=False "$AGGS"
 
 
 POLARS_MAX_THREADS=1
@@ -30,7 +31,7 @@ mkdir -p $LOG_DIR
             worker="range(0,$N_PARALLEL_WORKERS)" \
             hydra/launcher=joblib \
             MEDS_cohort_dir=$MEDS_DIR \
-            tabularization.min_code_inclusion_frequency=10 do_overwrite=False \
+            tabularization.min_code_inclusion_frequency="$MIN_CODE_FREQ" do_overwrite=False \
             "$WINDOW_SIZES" "$AGGS" \
     2> $LOG_DIR/cmd.stderr
 } 2> $LOG_DIR/timings.txt
@@ -50,13 +51,12 @@ mprof peak $LOG_DIR/mprofile.dat > $LOG_DIR/peak_memory_usage.txt
 echo "Running task_specific_caching.py: tabularizing static data"
 meds_tab-cache-task \
     MEDS_cohort_dir=$MEDS_DIR \
-    tabularization.min_code_inclusion_frequency=10 "$WINDOW_SIZES" do_overwrite=False "$AGGS"
+    tabularization.min_code_inclusion_frequency="$MIN_CODE_FREQ" "$WINDOW_SIZES" do_overwrite=False "$AGGS"
 
 echo "Running xgboost: tabularizing static data"
 meds_tab-xgboost \
     MEDS_cohort_dir=$MEDS_DIR \
-    modeling_min_code_freq=10
-    tabularization.min_code_inclusion_frequency=10 "$WINDOW_SIZES" do_overwrite=False "$AGGS"
+    tabularization.min_code_inclusion_frequency="$MIN_CODE_FREQ" "$WINDOW_SIZES" do_overwrite=False "$AGGS"
 
 
 

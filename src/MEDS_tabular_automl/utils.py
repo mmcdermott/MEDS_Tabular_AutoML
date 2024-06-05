@@ -417,9 +417,6 @@ def store_config_yaml(config_fp: Path, cfg: DictConfig):
     ...         print("FileExistsError Error Triggered")
     FileExistsError Error Triggered
     """
-    if config_fp.exists():
-        if not cfg.do_overwrite:
-            raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {config_fp} exists!")
     OmegaConf.save(cfg, config_fp)
 
 

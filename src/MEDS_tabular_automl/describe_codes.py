@@ -105,7 +105,7 @@ def filter_to_codes(
     min_code_inclusion_frequency: int,
     code_metadata_fp: Path,
 ):
-    """Returns allowed codes if they are specified, otherwise filters to codes based on inclusion
+    """Returns intersection of allowed codes if they are specified, and filters to codes based on inclusion
     frequency."""
     if allowed_codes is None:
         allowed_codes = get_feature_columns(code_metadata_fp)
@@ -113,7 +113,7 @@ def filter_to_codes(
 
     code_freqs = {
         code: freq for code, freq in feature_freqs.items() if (
-            freq >= min_code_inclusion_frequency and code in allowed_codes
+            freq >= min_code_inclusion_frequency and code in set(allowed_codes)
             )
     }
     return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
