@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "MEDS_tabularization"
 version = "0.0.1"
@@ -31,6 +27,10 @@ meds_tab-xgboost = "MEDS_tabular_automl.scripts.launch_xgboost:main"
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
 profiling = ["mprofile", "matplotlib"]
+
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project.urls]
 Homepage = "https://github.com/mmcdermott/MEDS_Tabular_AutoML"
