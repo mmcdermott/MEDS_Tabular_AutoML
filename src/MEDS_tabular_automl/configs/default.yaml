@@ -1,0 +1,17 @@
+MEDS_cohort_dir: ???
+do_overwrite: False
+seed: 1
+tqdm: False
+worker: 0
+loguru_init: False
+
+log_dir: ${output_dir}/.logs/
+
+hydra:
+  verbose: False
+  job:
+    name: MEDS_TAB_${name}_${worker}_{now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${log_dir}
+  run:
+    dir: ${log_dir}

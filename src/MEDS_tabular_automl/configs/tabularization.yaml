@@ -1,0 +1,12 @@
+defaults:
+  - default
+  - tabularization: default
+  - _self_
+
+# Raw data
+# Where the code metadata is stored
+input_code_metadata_fp: ${MEDS_cohort_dir}/code_metadata.parquet
+input_dir: ${MEDS_cohort_dir}/final_cohort
+output_dir: ${MEDS_cohort_dir}/tabularize
+
+name: tabularization

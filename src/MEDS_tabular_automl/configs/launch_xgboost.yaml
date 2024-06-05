@@ -1,0 +1,81 @@
+defaults:
+  - default
+  - tabularization: default
+  - _self_
+
+task_name: task
+# min code frequency used for modeling, can potentially sweep over different values.
+modeling_min_code_freq: 10
+
+# Task cached data dir
+input_dir: ${MEDS_cohort_dir}/${task_name}/task_cache
+# Directory with task labels
+input_label_dir: ${MEDS_cohort_dir}/${task_name}/labels
+# Where to output the model and cached data
+output_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
+output_filepath: ${output_dir}/model_metadata.parquet
+cache_dir: ${MEDS_cohort_dir}/.cache
+
+# Model parameters
+model_params:
+  num_boost_round: 1000
+  early_stopping_rounds: 5
+  model:
+    booster: gbtree
+    device: cpu
+    nthread: 1
+    tree_method: hist
+    objective: binary:logistic
+  iterator:
+    keep_data_in_memory: True
+    binarize_task: True
+
+# Define search space for Optuna
+optuna:
+  study_name: xgboost_sweep_${now:%Y-%m-%d_%H-%M-%S}
+  storage: null
+  load_if_exists: False
+  direction: minimize
+  sampler: null
+  pruner: null
+
+  n_trials: 10
+  n_jobs: 1
+  show_progress_bar: False
+
+  params:
+    suggest_categorical:
+      window_sizes: ${generate_permutations:${tabularization.window_sizes}}
+      aggs: ${generate_permutations:${tabularization.aggs}}
+    suggest_float:
+      eta:
+        low: .001
+        high: 1
+        log: True
+      lambda:
+        low: .001
+        high: 1
+        log: True
+      alpha:
+        low: .001
+        high: 1
+        log: True
+      subsample:
+        low: 0.5
+        high: 1
+      min_child_weight:
+        low: 1e-2
+        high: 100
+    suggest_int:
+      num_boost_round:
+        low: 10
+        high: 1000
+      max_depth:
+        low: 2
+        high: 16
+      min_code_inclusion_frequency:
+        low: 10
+        high: 1_000_000
+        log: True
+
+name: launch_xgboost

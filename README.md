@@ -42,6 +42,36 @@ This repository consists of two key pieces:
    what is more advanced is the efficient construction, storage, and loading of tabular features for the
    candidate AutoML models, enabling a far more extensive search over different featurization strategies.
 
+### Scripts and Examples
+
+See `tests/test_tabularize_integration.py` for an example of the end-to-end pipeline being run on synthetic data. This
+script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
+
+#### Core Scripts:
+
+1. `scripts/identify_columns.py` loads all training shard to identify which feature columns
+   to generate tabular data for.
+2. `scripts/tabularize_static.py` Iterates through shards and generates tabular vectors for
+   each patient. There is a single row per patient for each shard.
+3. `scripts/summarize_over_windows.py` For each shard, iterates through window sizes and aggregations to and
+   horizontally concatenates the outputs to generate the final tabular representations at every event time for
+   every patient.
+4. `scripts/tabularize_merge` Aligns the time-series window aggregations (generated in the previous step) with
+   the static tabular vectors and caches them for training.
+5. `scripts/hf_cohort/aces_task_extraction.py` Generates the task labels and caches them with the event_id
+   indexes which align them with the nearest prior event in the tabular data.
+6. `scripts/xgboost_sweep.py` Tunes XGboost on methods. Iterates through the labels and corresponding tabular data.
+
+We run this on an example dataset using the following bash scripts in sequence:
+
+```bash
+bash hf_cohort_shard.sh  # processes the dataset into meds format
+bash hf_cohort_e2e.sh  # performs (steps 1-4 above)
+bash hf_cohort/aces_task.sh  # generates labels (step 5)
+bash xgboost.sh  # trains xgboos (step 6)
+```
+
+
 ## Feature Construction, Storage, and Loading
 
 Tabularization of a (raw) MEDS dataset is done by running the `scripts/data/tabularize.py` script. This script

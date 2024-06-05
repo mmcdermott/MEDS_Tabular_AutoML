@@ -1,0 +1,22 @@
+# User inputs
+allowed_codes: null
+min_code_inclusion_frequency: 10
+filtered_code_metadata_fp: ${MEDS_cohort_dir}/tabularized_code_metadata.parquet
+window_sizes:
+  - "1d"
+  - "7d"
+  - "30d"
+  - "365d"
+  - "full"
+aggs:
+  - "static/present"
+  - "static/first"
+  - "code/count"
+  - "value/count"
+  - "value/sum"
+  - "value/sum_sqd"
+  - "value/min"
+  - "value/max"
+
+# Resolved inputs
+_resolved_codes: ${filter_to_codes:${tabularization.allowed_codes},${tabularization.min_code_inclusion_frequency},${tabularization.filtered_code_metadata_fp}}
