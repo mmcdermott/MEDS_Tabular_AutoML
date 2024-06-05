@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
 from collections import defaultdict
+from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -24,8 +25,12 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
 
-@hydra.main(version_base=None, config_path="../configs", config_name="describe_codes")
+
+@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(
     cfg: DictConfig,
 ):

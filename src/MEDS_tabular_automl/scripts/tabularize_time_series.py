@@ -2,16 +2,17 @@
 
 """Aggregates time-series data for feature columns across different window sizes."""
 import polars as pl
+
 pl.enable_string_cache()
 
+from importlib.resources import files
 from itertools import product
 from pathlib import Path
+
 import hydra
 import numpy as np
 from loguru import logger
 from omegaconf import DictConfig
-
-
 
 from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -27,9 +28,12 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularization")
+@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(
     cfg: DictConfig,
 ):

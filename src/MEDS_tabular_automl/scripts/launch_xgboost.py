@@ -1,4 +1,6 @@
 from collections.abc import Callable, Mapping
+from importlib.resources import files
+from itertools import combinations
 from pathlib import Path
 
 import hydra
@@ -14,6 +16,25 @@ from sklearn.metrics import roc_auc_score
 from MEDS_tabular_automl.describe_codes import get_feature_columns, get_feature_freqs
 from MEDS_tabular_automl.file_name import get_model_files, list_subdir_files
 from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
+
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
+
+
+def generate_permutations(list_of_options):
+    """Generate all possible permutations of a list of options.
+
+    Args:
+    - list_of_options (list): List of options.
+
+    Returns:
+    - list: List of all possible permutations of length > 1
+    """
+    permutations = []
+    for i in range(1, len(list_of_options) + 1):
+        permutations.extend(list(combinations(list_of_options, r=i)))
+    return permutations
 
 
 class Iterator(xgb.DataIter, TimeableMixin):
@@ -50,6 +71,8 @@ class Iterator(xgb.DataIter, TimeableMixin):
             split: The data split to use, which can be one of "train", "tuning",
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
+        # generate_permutations(cfg.tabularization.window_sizes)
+        # generate_permutations(cfg.tabularization.aggs)
         self.cfg = cfg
         self.split = split
         # Load shards for this split
@@ -377,7 +400,7 @@ class XGBoostModel(TimeableMixin):
         return roc_auc_score(y_true, y_pred)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="launch_xgboost")
+@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(cfg: DictConfig) -> float:
     """Optimize the model based on the provided configuration.
 

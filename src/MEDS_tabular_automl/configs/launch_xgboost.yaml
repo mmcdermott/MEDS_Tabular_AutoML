@@ -45,8 +45,16 @@ hydra:
 
     # Define search space for Optuna
     params:
-      window_sizes:
-        _target_: hydra.utils.call(${hydra.utils.cross_product},
-          values=["1d", "7d", "30d", "365d", "full"], min_options=1)
-
+      window_sizes: ${generate_permutations:${tabularization.window_sizes}}
+      aggs: ${generate_permutations:${tabularization.aggs}}
+      min_code_freq: tag(log,range(10,1_000_000))
+      model_params:
+        model:
+          +num_boost_round: range(10, 1000)
+          +max_depth: range(2, 16)
+          +eta: tag(log,interval(.001,1))
+          +lambda: tag(log,interval(.001,1))
+          +alpha: tag(log,interval(.001,1))
+          +subsample: interval(0.5,1)
+          +min_child_weight: uniform(1e-2, 100)
 name: launch_xgboost

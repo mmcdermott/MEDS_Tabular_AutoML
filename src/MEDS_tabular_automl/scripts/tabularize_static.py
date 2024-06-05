@@ -7,9 +7,20 @@ from pathlib import Path
 import hydra
 import numpy as np
 import polars as pl
+
+pl.enable_string_cache()
+
+from importlib.resources import files
+
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns, get_feature_freqs, convert_to_df, filter_to_codes
+from MEDS_tabular_automl.describe_codes import (
+    convert_to_df,
+    filter_parquet,
+    filter_to_codes,
+    get_feature_columns,
+    get_feature_freqs,
+)
 from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
 from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
@@ -22,10 +33,12 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
-pl.enable_string_cache()
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="tabularization")
+@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(
     cfg: DictConfig,
 ):
@@ -71,11 +84,12 @@ def main(
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
-    
+
     # Step 1: Cache the filtered features that will be used in the tabularization process and modeling
     # import pdb; pdb.set_trace()
     def read_fn(_):
         return _
+
     def compute_fn(_):
         filtered_feature_columns = filter_to_codes(
             cfg.tabularization.allowed_codes,
@@ -83,10 +97,14 @@ def main(
             cfg.input_code_metadata_fp,
         )
         feature_freqs = get_feature_freqs(cfg.input_code_metadata_fp)
-        filtered_feeature_freqs = {code: count for code, count in feature_freqs.items() if code in filtered_feature_columns}
+        filtered_feeature_freqs = {
+            code: count for code, count in feature_freqs.items() if code in filtered_feature_columns
+        }
         return convert_to_df(filtered_feeature_freqs)
+
     def write_fn(data, out_fp):
         data.write_parquet(out_fp)
+
     in_fp = Path(cfg.input_code_metadata_fp)
     out_fp = Path(cfg.tabularization.filtered_code_metadata_fp)
     rwlock_wrap(

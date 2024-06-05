@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -23,6 +24,11 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
+
+
 VALID_AGGREGATIONS = [
     *VALUE_AGGREGATIONS,
     *CODE_AGGREGATIONS,
@@ -44,7 +50,7 @@ def generate_row_cached_matrix(matrix, label_df):
     return sp.coo_array(csr)
 
 
-@hydra.main(version_base=None, config_path="../configs", config_name="task_specific_caching")
+@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(
     cfg: DictConfig,
 ):
