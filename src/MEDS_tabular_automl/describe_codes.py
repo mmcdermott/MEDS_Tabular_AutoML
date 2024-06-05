@@ -1,4 +1,3 @@
-from collections.abc import Mapping
 from pathlib import Path
 
 import polars as pl
@@ -112,9 +111,9 @@ def filter_to_codes(
     feature_freqs = get_feature_freqs(code_metadata_fp)
 
     code_freqs = {
-        code: freq for code, freq in feature_freqs.items() if (
-            freq >= min_code_inclusion_frequency and code in set(allowed_codes)
-            )
+        code: freq
+        for code, freq in feature_freqs.items()
+        if (freq >= min_code_inclusion_frequency and code in set(allowed_codes))
     }
     return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
 
