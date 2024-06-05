@@ -4,8 +4,6 @@ defaults:
   - _self_
 
 task_name: task
-# min code frequency used for modeling, can potentially sweep over different values.
-modeling_min_code_freq: 10
 
 # Task cached data dir
 input_dir: ${MEDS_cohort_dir}/${task_name}/task_cache

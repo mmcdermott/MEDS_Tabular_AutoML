@@ -1,5 +1,5 @@
 [project]
-name = "MEDS_tabularization"
+name = "meds-tab"
 version = "0.0.1"
 authors = [
   { name="Matthew McDermott", email="mattmcdermott8@gmail.com" },

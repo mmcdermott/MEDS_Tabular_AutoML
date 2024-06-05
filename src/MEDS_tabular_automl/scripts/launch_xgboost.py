@@ -140,12 +140,6 @@ class Iterator(xgb.DataIter, TimeableMixin):
     def _get_code_set(self) -> tuple[set, Mapping[int, list], int]:
         """Get the set of codes to include in the data based on the configuration."""
         feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
-        feature_freqs = get_feature_freqs(self.cfg.tabularization.filtered_code_metadata_fp)
-        feature_columns = [
-            col
-            for col in feature_columns
-            if feature_freqs[col] >= self.cfg.tabularization.min_code_inclusion_frequency
-        ]
         feature_dict = {col: i for i, col in enumerate(feature_columns)}
         allowed_codes = set(self.cfg.tabularization._resolved_codes)
         codes_set = {feature_dict[code] for code in feature_dict if code in allowed_codes}
