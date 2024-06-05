@@ -388,6 +388,6 @@ def test_tabularize():
             cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
 
         launch_xgboost.main(cfg)
-        output_files = list(Path(cfg.output_dir).glob("*.json"))
+        output_files = list(Path(cfg.output_dir).glob("**/*.json"))
         assert len(output_files) == 1
         assert output_files[0] == Path(cfg.output_dir) / "model.json"

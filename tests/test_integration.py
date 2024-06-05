@@ -173,7 +173,7 @@ def test_tabularize():
 
         stderr, stdout = run_command(
             "meds-tab-tabularize-time-series",
-            ["--multirun", "worker=range(0,1)", "hydra/launcher=joblib"],
+            ["--multirun", 'worker="range(0,1)"', "hydra/launcher=joblib"],
             tabularize_config,
             "tabularization",
         )
@@ -274,6 +274,6 @@ def test_tabularize():
             "xgboost",
         )
 
-        output_files = list(Path(cfg.output_dir).glob("*.json"))
+        output_files = list(Path(cfg.output_dir).glob("**/*.json"))
         assert len(output_files) == 1
         assert output_files[0] == Path(cfg.output_dir) / "model.json"

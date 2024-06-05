@@ -28,7 +28,7 @@ from MEDS_tabular_automl.utils import (
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
 

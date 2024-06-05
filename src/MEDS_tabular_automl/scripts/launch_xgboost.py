@@ -17,7 +17,7 @@ from MEDS_tabular_automl.describe_codes import get_feature_columns, get_feature_
 from MEDS_tabular_automl.file_name import get_model_files, list_subdir_files
 from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
 
@@ -430,6 +430,7 @@ def main(cfg: DictConfig) -> float:
     save_dir = Path(cfg.output_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
+    logger.info(f"Saving the model to directory: {save_dir}")
     model.model.save_model(save_dir / "model.json")
     auc = model.evaluate()
     logger.info(f"AUC: {auc}")
