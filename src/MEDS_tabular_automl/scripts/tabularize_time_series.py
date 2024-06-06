@@ -27,6 +27,7 @@ from MEDS_tabular_automl.utils import (
     load_tqdm,
     write_df,
 )
+import gc
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
 if not config_yaml.is_file():
@@ -101,6 +102,9 @@ def main(
                 agg,
             )
             assert summary_df.shape[1] > 0, "No data found in the summarized dataframe"
+            del index_df
+            del sparse_matrix
+            gc.collect()
 
             logger.info("Writing pivot file")
             return summary_df
@@ -108,6 +112,9 @@ def main(
         def write_fn(out_matrix, out_fp):
             coo_matrix = out_matrix.tocoo()
             write_df(coo_matrix, out_fp, do_overwrite=cfg.do_overwrite)
+            del coo_matrix
+            del out_matrix
+            gc.collect()
 
         rwlock_wrap(
             shard_fp,
