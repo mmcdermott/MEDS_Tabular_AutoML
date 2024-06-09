@@ -74,7 +74,10 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
 
 
 def get_min_dtype(array):
-    return np.result_type(np.min_scalar_type(array.min()), array.max())
+    try:
+        return np.result_type(np.min_scalar_type(array.min()), array.max())
+    except:
+        return array.dtype
 
 
 def sparse_matrix_to_array(coo_matrix: coo_array):
