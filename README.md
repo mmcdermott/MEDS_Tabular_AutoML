@@ -3,14 +3,16 @@
 This repository provides utilities and scripts to run limited automatic tabular ML pipelines for generic MEDS
 datasets.
 
-
 # Installation
 
 **Pip Install**
+
 ```bash
 pip install meds-tab
 ```
+
 **Local Install**
+
 ```
 # clone the git repo
 pip install .
@@ -39,7 +41,8 @@ For an end to end example over MIMIC-IV, see the [companion repository](https://
 ### Core CLI Scripts Overview
 
 1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code-types
-	- time-series codes (codes with timestamps)
+
+   - time-series codes (codes with timestamps)
    - time-series numerical values (codes with timestamps and numerical values)
    - static codes (codes without timestamps)
    - static numerical codes (codes without timestamps but with numerical values).
@@ -54,6 +57,7 @@ For an end to end example over MIMIC-IV, see the [companion repository](https://
 
 6. **`meds-tab-xgboost-sweep`**: Conducts an Optuna hyperparameter sweep to optimize over `window_sizes`, `aggregations`, and `min_code_inclusion_frequency`, aiming to enhance model performance and adaptability.
 
+# How does MEDS-Tab Work?
 
 #### What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
 
@@ -67,3 +71,13 @@ Thus, in this pipeline, when we say we will produce a "tabular" view of MEDS dat
 realize these constraints, which will explicitly involve summarizing the patient data over various historical
 or future windows in time to produce a single row per patient with a consistent, logical set of columns
 (though there may still be missingness).
+
+## Implementation Improvements
+
+# Computational Performance vs. Existing Pipelines
+
+# XGBoost Performance
+
+## XGBoost Model Performance on MIMIC-IV
+
+## XGBoost Model Performance on Philips eICU
