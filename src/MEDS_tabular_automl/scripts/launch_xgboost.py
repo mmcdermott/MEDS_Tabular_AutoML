@@ -1,4 +1,5 @@
 from collections.abc import Callable, Mapping
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
-from MEDS_tabular_automl.describe_codes import get_feature_columns, get_feature_freqs
+from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import get_model_files, list_subdir_files
 from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
 
@@ -188,18 +189,8 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
         dynamic_cscs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
 
-        fn_name = "_get_dynamic_shard_by_index"
-        hstack_key = f"{fn_name}/hstack"
-        self._register_start(key=hstack_key)
+        combined_csc = sp.hstack(dynamic_cscs, format="csc")
 
-        combined_csc = sp.hstack(dynamic_cscs, format="csc")  # TODO: check this
-        # self._register_end(key=hstack_key)
-        # # Filter Rows
-        # valid_indices = self.valid_event_ids[shard_name]
-        # filter_key = f"{fn_name}/filter"
-        # self._register_start(key=filter_key)
-        # out = combined_csc[valid_indices, :]
-        # self._register_end(key=filter_key)
         return combined_csc
 
     @TimeableMixin.TimeAs
@@ -388,30 +379,31 @@ def main(cfg: DictConfig) -> float:
     Returns:
     - float: Evaluation result.
     """
+
+    print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
 
     model = XGBoostModel(cfg)
     model.train()
+    auc = model.evaluate()
+    logger.info(f"AUC: {auc}")
 
     print(
         "Time Profiling for window sizes ",
         f"{cfg.tabularization.window_sizes} and min ",
-        "code frequency of {cfg.tabularization.min_code_inclusion_frequency}:",
+        f"code frequency of {cfg.tabularization.min_code_inclusion_frequency}:",
     )
     print("Train Time: \n", model._profile_durations())
-    print("Train Iterator Time: \n", model.itrain._profile_durations())
-    print("Tuning Iterator Time: \n", model.ituning._profile_durations())
-    print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
+    # print("Train Iterator Time: \n", model.itrain._profile_durations())
+    # print("Tuning Iterator Time: \n", model.ituning._profile_durations())
+    # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
 
     # save model
     save_dir = Path(cfg.output_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Saving the model to directory: {save_dir}")
-    model.model.save_model(save_dir / "model.json")
-    auc = model.evaluate()
-    logger.info(f"AUC: {auc}")
+    model_time = datetime.now().strftime("%H%M%S%f")
+    model.model.save_model(save_dir / f"{auc:.4f}_model_{model_time}.json")
     return auc
 
 

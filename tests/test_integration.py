@@ -275,14 +275,16 @@ def test_integration():
         )
         output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
         assert len(output_files) == 1
-        assert output_files[0].stem == "model"
+        # assert output_files[0].stem == '0.6667_model'
 
         stderr, stdout = run_command(
-            "meds-tab-xgboost-sweep",
-            [],
+            "meds-tab-xgboost",
+            [
+                "--multirun",
+            ],
             xgboost_config_kwargs,
             "xgboost-sweep",
         )
         output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
-        assert len(output_files) == 2
-        assert output_files[0].stem == "model"
+        assert len(output_files) == 11
+        # assert output_files[0].stem == "model"
