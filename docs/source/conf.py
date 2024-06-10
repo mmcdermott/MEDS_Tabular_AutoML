@@ -9,16 +9,17 @@ import sys
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "MEDS-TAB"
+project = "MEDS-Tab"
 copyright = "2024, Matthew McDermott, Nassim Oufattole, Teya Bergamaschi"
 author = "Matthew McDermott, Nassim Oufattole, Teya Bergamaschi"
-release = "0.1.0"
-version = "0.1.0"
+release = "0.0.1"
+version = "0.0.1"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 sys.path.insert(0, os.path.abspath("../.."))
+
 extensions = [
     "sphinx.ext.duration",
     "sphinx.ext.doctest",
@@ -60,8 +61,8 @@ html_theme = "piccolo_theme"
 html_static_path = ["_static"]
 
 
-html_title = f"NEDS-TAB v{version} Documentation"
-html_short_title = "MEDS-TAB Documentation"
+html_title = f"MEDS-Tab v{version} Documentation"
+html_short_title = "MEDS-Tab Documentation"
 
 # html_logo = "query-512.png"
 # html_favicon = "query-16.ico"
@@ -70,7 +71,7 @@ html_short_title = "MEDS-TAB Documentation"
 
 html_theme_options = {
     "dark_mode_code_blocks": False,
-    # "nav_title": "MEDS-TAB",
+    # "nav_title": "MEDS-Tab",
     # "palette": {"primary": "green", "accent": "green"},
     # "repo_url": "https://github.com/mmcdermott/MEDS_Tabular_AutoML",
     # "repo_name": "MEDS_Tabular_AutoML",

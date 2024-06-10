@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import polars as pl
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from MEDS_tabular_automl.utils import DF_T, get_feature_names
 
@@ -118,7 +118,7 @@ def filter_to_codes(
     return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
 
 
-OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
+# OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
 
 
 def clear_code_aggregation_suffix(code):
