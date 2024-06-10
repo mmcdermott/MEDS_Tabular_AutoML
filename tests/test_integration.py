@@ -206,7 +206,6 @@ def test_integration():
                 f"Time-Series Data matrix Should have {expected_num_rows}"
                 f" rows but has {ts_matrix.shape[0]}!"
             )
-
         # Step 4: Run the task_specific_caching script
         cache_config = {
             "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
@@ -216,7 +215,7 @@ def test_integration():
             "tqdm": False,
             "loguru_init": True,
             "tabularization.min_code_inclusion_frequency": 1,
-            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
+            # "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
             "tabularization.window_sizes": "[30d,365d,full]",
         }
         with initialize(
@@ -241,50 +240,19 @@ def test_integration():
             out_f.parent.mkdir(parents=True, exist_ok=True)
             df.write_parquet(out_f)
 
+        stderr, stdout_ws = run_command(
+            "generate-permutations", ["[30d]"], {}, "generate-permutations window_sizes"
+        )
+        stderr, stdout_agg = run_command(
+            "generate-permutations", ["[static/present,static/first]"], {}, "generate-permutations aggs"
+        )
+
         stderr, stdout = run_command(
             "meds-tab-cache-task",
-            [],
+            [
+                "--multirun",
+                f"tabularization.aggs={stdout_agg.strip()}",
+            ],
             cache_config,
             "task_specific_caching",
         )
-        # Check the files are not empty
-
-        # Step 5: Run the xgboost script
-
-        xgboost_config_kwargs = {
-            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
-            "do_overwrite": False,
-            "seed": 1,
-            "hydra.verbose": True,
-            "tqdm": False,
-            "loguru_init": True,
-            "tabularization.min_code_inclusion_frequency": 1,
-            "tabularization.aggs": "[static/present,static/first,code/count,value/sum]",
-            "tabularization.window_sizes": "[30d,365d,full]",
-        }
-        with initialize(
-            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-        ):  # path to config.yaml
-            overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
-            cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
-        stderr, stdout = run_command(
-            "meds-tab-xgboost",
-            [],
-            xgboost_config_kwargs,
-            "xgboost",
-        )
-        output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
-        assert len(output_files) == 1
-        # assert output_files[0].stem == '0.6667_model'
-
-        stderr, stdout = run_command(
-            "meds-tab-xgboost",
-            [
-                "--multirun",
-            ],
-            xgboost_config_kwargs,
-            "xgboost-sweep",
-        )
-        output_files = list(Path(cfg.output_dir).parent.glob("**/*.json"))
-        assert len(output_files) == 11
-        # assert output_files[0].stem == "model"

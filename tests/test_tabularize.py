@@ -3,7 +3,7 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
-import os
+import subprocess
 import tempfile
 from io import StringIO
 from pathlib import Path
@@ -391,3 +391,41 @@ def test_tabularize():
         launch_xgboost.main(cfg)
         output_files = list(Path(cfg.output_dir).glob("**/*.json"))
         assert len(output_files) == 1
+
+
+def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
+    command_parts = [script] + args + [f"{k}={v}" for k, v in hydra_kwargs.items()]
+    command_out = subprocess.run(" ".join(command_parts), shell=True, capture_output=True)
+    stderr = command_out.stderr.decode()
+    stdout = command_out.stdout.decode()
+    if command_out.returncode != 0:
+        raise AssertionError(f"{test_name} failed!\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    return stderr, stdout
+
+
+def test_xgboost_config():
+    MEDS_cohort_dir = "blah"
+    stderr, stdout_ws = run_command(
+        "generate-permutations", ["[30d]"], {}, "generate-permutations window_sizes"
+    )
+    stderr, stdout_agg = run_command(
+        "generate-permutations", ["[static/present]"], {}, "generate-permutations aggs"
+    )
+    xgboost_config_kwargs = {
+        "MEDS_cohort_dir": MEDS_cohort_dir,
+        "do_overwrite": False,
+        "seed": 1,
+        "hydra.verbose": True,
+        "tqdm": False,
+        "loguru_init": True,
+        "tabularization.min_code_inclusion_frequency": 1,
+        "tabularization.window_sizes": f"{stdout_ws.strip()}",
+    }
+
+    with initialize(
+        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+    ):  # path to config.yaml
+        overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+        cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
+    print(cfg.tabularization.window_sizes)
+    assert cfg.tabularization.window_sizes
