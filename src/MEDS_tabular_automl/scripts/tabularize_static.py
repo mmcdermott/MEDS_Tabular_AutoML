@@ -97,10 +97,11 @@ def main(
             cfg.input_code_metadata_fp,
         )
         feature_freqs = get_feature_freqs(cfg.input_code_metadata_fp)
-        filtered_feeature_freqs = {
-            code: count for code, count in feature_freqs.items() if code in filtered_feature_columns
+        filtered_feature_columns_set = set(filtered_feature_columns)
+        filtered_feature_freqs = {
+            code: count for code, count in feature_freqs.items() if code in filtered_feature_columns_set
         }
-        return convert_to_df(filtered_feeature_freqs)
+        return convert_to_df(filtered_feature_freqs)
 
     def write_fn(data, out_fp):
         data.write_parquet(out_fp)
@@ -116,6 +117,7 @@ def main(
         do_overwrite=cfg.do_overwrite,
         do_return=False,
     )
+
     # Step 2: Produce static data representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
@@ -125,7 +127,6 @@ def main(
     static_aggs = [agg for agg in aggs if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]]
     tabularization_tasks = list(product(meds_shard_fps, static_aggs))
     np.random.shuffle(tabularization_tasks)
-
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
         out_fp = (
             Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
