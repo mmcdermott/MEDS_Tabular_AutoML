@@ -3,18 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to MEDS-TAB's documentation!
+Welcome to MEDS-Tab's documentation!
 ====================================
-.. image:: https://readthedocs.org/projects/meds-tabular-automl/badge/?version=latest
-    :target: https://meds-tabular-automl.readthedocs.io/en/latest/?badge=latest
-    :alt: Documentation Status
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
    :caption: Contents:
 
    overview
    installation
    usage
+   implementation
+   computational-performance
+   xgboost-performance
    api
-   license

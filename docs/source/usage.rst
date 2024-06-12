@@ -4,4 +4,4 @@ Usage
 .. include:: ../../README.md
    :parser: markdown
    :start-after: Usage
-   :end-before: TODOs
+   :end-before: How does MEDS-Tab Work?
