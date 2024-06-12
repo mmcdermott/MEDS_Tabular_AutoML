@@ -44,8 +44,16 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> sparray:
     return merged_matrix
 
 
-def get_rolling_window_indicies(index_df, window_size):
-    """Get the indices for the rolling windows."""
+def get_rolling_window_indicies(index_df: pl.DataFrame, window_size: str) -> pl.DataFrame:
+    """Computes the start and end indices for rolling window operations on a DataFrame.
+
+    Args:
+        index_df: The DataFrame containing the indices.
+        window_size: The size of the window as a string denoting time, e.g., '7d' for 7 days.
+
+    Returns:
+        DataFrame with columns 'min_index' and 'max_index' representing the range of each window.
+    """
     if window_size == "full":
         timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
     else:
