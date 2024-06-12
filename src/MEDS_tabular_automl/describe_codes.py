@@ -6,7 +6,15 @@ from omegaconf import DictConfig
 from MEDS_tabular_automl.utils import DF_T, get_feature_names
 
 
-def convert_to_df(freq_dict):
+def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
+    """Converts a dictionary of code frequencies to a Polars DataFrame.
+
+    Args:
+        freq_dict: A dictionary with code features and their respective frequencies.
+
+    Returns:
+        A DataFrame with two columns, "code" and "count".
+    """
     return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
 
 
