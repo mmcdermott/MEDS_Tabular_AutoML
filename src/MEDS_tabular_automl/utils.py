@@ -167,12 +167,26 @@ def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int
     return np.array([data, row, col]), coo_matrix.shape
 
 
-def store_matrix(coo_matrix: coo_array, fp_path: Path):
+def store_matrix(coo_matrix: coo_array, fp_path: Path) -> None:
+    """Stores a sparse matrix to disk as a .npz file.
+
+    Args:
+        coo_matrix: The sparse matrix to store.
+        fp_path: The file path where the matrix will be stored.
+    """
     array, shape = sparse_matrix_to_array(coo_matrix)
     np.savez(fp_path, array=array, shape=shape)
 
 
-def load_matrix(fp_path: Path):
+def load_matrix(fp_path: Path) -> coo_array:
+    """Loads a sparse matrix from a .npz file.
+
+    Args:
+        fp_path: The path to the .npz file containing the sparse matrix data.
+
+    Returns:
+        The loaded sparse matrix.
+    """
     npzfile = np.load(fp_path)
     array, shape = npzfile["array"], npzfile["shape"]
     return array_to_sparse_matrix(array, shape)
@@ -216,19 +230,17 @@ def get_static_col_dtype(col: str) -> pl.DataType:
 def add_static_missing_cols(
     flat_df: DF_T, feature_columns: list[str], set_count_0_to_null: bool = False
 ) -> DF_T:
-    """Normalizes columns in a DataFrame so all expected columns are present and appropriately typed.
+    """Normalizes columns in a DataFrame so all expected columns are present and appropriately typed and
+    potentially modifies zero counts to nulls based on the configuration.
 
-    Parameters:
-    - flat_df (DF_T): The DataFrame to be normalized.
-    - feature_columns (list[str]): A list of feature column names that should exist in the DataFrame.
-    - set_count_0_to_null (bool): A flag indicating whether counts of zero should be converted to nulls.
+    Args:
+        flat_df: The dataframe to normalize.
+        feature_columns: A list of expected column names.
+        set_count_0_to_null: A flag of whether to convert zero counts to nulls.
 
     Returns:
-    - DF_T: The normalized DataFrame with all columns set to the correct type and zero-counts handled
-        if specified.
-
-    This function ensures that all necessary columns are added and typed correctly within
-    a DataFrame, potentially modifying zero counts to nulls based on the configuration.
+        The normalized dataframe with all specified columns present and correctly typed and with
+        zero-counts handled if specified.
     """
     cols_to_add = set(feature_columns) - set(flat_df.columns)
     cols_to_retype = set(feature_columns).intersection(set(flat_df.columns))
@@ -430,8 +442,8 @@ def store_config_yaml(config_fp: Path, cfg: DictConfig):
     information and configuration details, to a specified JSON file.
 
     Args:
-    - config_fp (Path): The file path for the JSON file where config should be stored.
-    - cfg (DictConfig): A configuration object containing settings like the number of patients
+        config_fp: The file path for the JSON file where config should be stored.
+        cfg: A configuration object containing settings like the number of patients
       per sub-shard, minimum code inclusion frequency, and flags for updating or overwriting existing files.
 
     Behavior:
