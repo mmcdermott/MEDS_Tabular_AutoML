@@ -47,7 +47,15 @@ def hydra_loguru_init() -> None:
     logger.add(os.path.join(hydra_path, "main.log"))
 
 
-def load_tqdm(use_tqdm):
+def load_tqdm(use_tqdm: bool):
+    """Conditionally loads and returns tqdm progress bar handler or a no-operation function.
+
+    Args:
+        use_tqdm: Flag indicating whether to use tqdm progress bar.
+
+    Returns:
+        A function that either encapsulates tqdm or simply returns the input it is given.
+    """
     if use_tqdm:
         from tqdm import tqdm
 
@@ -61,13 +69,36 @@ def load_tqdm(use_tqdm):
 
 
 def parse_static_feature_column(c: str) -> tuple[str, str, str, str]:
+    """Parses a flat feature column format into component parts.
+
+    Args:
+        c: The column string in 'category/subcategory/feature' format.
+
+    Returns:
+        A tuple containing separate strings of the feature column format.
+
+    Raises:
+        ValueError: If the column string format is incorrect.
+    """
     parts = c.split("/")
     if len(parts) < 3:
         raise ValueError(f"Column {c} is not a valid flat feature column!")
     return ("/".join(parts[:-2]), parts[-2], parts[-1])
 
 
-def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
+def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_array:
+    """Converts a numpy array representation into a sparse matrix.
+
+    Args:
+        array: The array containing data, rows, and columns.
+        shape: The shape of the resulting sparse matrix.
+
+    Returns:
+        The formatted sparse matrix.
+
+    Raises:
+        AssertionError: If the input array's first dimension is not 3.
+    """
     assert array.shape[0] == 3
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
@@ -112,7 +143,15 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
     return array.dtype
 
 
-def sparse_matrix_to_array(coo_matrix: coo_array):
+def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int, int]]:
+    """Converts a sparse matrix to a numpy array format with shape information.
+
+    Args:
+        coo_matrix: The sparse matrix to convert.
+
+    Returns:
+        A tuple of a numpy array ([data, row, col]) and the shape of the original matrix.
+    """
     data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
     # Remove invalid indices
     valid_indices = (data == 0) | np.isnan(data)
