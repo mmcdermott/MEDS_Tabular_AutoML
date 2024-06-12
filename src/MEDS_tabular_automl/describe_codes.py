@@ -18,29 +18,28 @@ def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
     return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
 
 
-def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> list[str]:
-    """Generates a list of feature column names from the data within each shard based on specified
-    configurations.
+def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame:
+    """Generates a DataFrame containing the frequencies of codes and numerical values under different
+    aggregations by computing frequency counts for certain attributes and organizing the results into specific
+    categories based on the dataset's features.
 
-    Parameters:
-    - cfg (DictConfig): Configuration dictionary specifying how features should be evaluated and aggregated.
-    - split_to_shard_df (dict): A dictionary of DataFrames, divided by data split (e.g., 'train', 'test').
+    Args:
+        cfg: Configuration dictionary specifying how features should be evaluated and aggregated.
+        shard_df: A DataFrame containing the data to be analyzed and split (e.g., 'train', 'test').
 
     Returns:
-    - tuple[list[str], dict]: A tuple containing a list of feature columns and a dictionary of code properties
-        identified during the evaluation.
+        A tuple containing a list of feature columns and a dictionary of code properties identified
+        during the evaluation.
 
-    This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of feature columns for modeling purposes.
     Examples:
-    # >>> import polars as pl
-    # >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    # ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
-    # ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-    # >>> df = pl.DataFrame(data).lazy()
-    # >>> aggs = ['value/sum', 'code/count']
-    # >>> compute_feature_frequencies(aggs, df)
-    # ['A/code', 'A/value', 'C/code', 'C/value']
+        # >>> import polars as pl
+        # >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+        # ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
+        # ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
+        # >>> df = pl.DataFrame(data).lazy()
+        # >>> aggs = ['value/sum', 'code/count']
+        # >>> compute_feature_frequencies(aggs, df)
+        # ['A/code', 'A/value', 'C/code', 'C/value']
     """
     static_df = shard_df.filter(
         pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
