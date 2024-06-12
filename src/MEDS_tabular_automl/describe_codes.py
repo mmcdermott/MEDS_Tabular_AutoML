@@ -98,11 +98,27 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
     return dict(df.collect().iter_rows())
 
 
-def get_feature_columns(fp):
+def get_feature_columns(fp: Path) -> list[str]:
+    """Retrieves feature column names from a parquet file.
+
+    Args:
+        fp: File path to the Parquet data.
+
+    Returns:
+        Sorted list of column names.
+    """
     return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp)).keys()))
 
 
-def get_feature_freqs(fp):
+def get_feature_freqs(fp: Path) -> dict[str, int]:
+    """Retrieves feature frequencies from a parquet file.
+
+    Args:
+        fp: File path to the Parquet data.
+
+    Returns:
+        Dictionary of feature frequencies.
+    """
     return convert_to_freq_dict(pl.scan_parquet(fp))
 
 
@@ -110,9 +126,18 @@ def filter_to_codes(
     allowed_codes: list[str] | None,
     min_code_inclusion_frequency: int,
     code_metadata_fp: Path,
-):
-    """Returns intersection of allowed codes if they are specified, and filters to codes based on inclusion
-    frequency."""
+) -> list[str]:
+    """Filters and returns codes based on allowed list and minimum frequency.
+
+    Args:
+        allowed_codes: List of allowed codes, None means all codes are allowed.
+        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
+        code_metadata_fp: Path to the metadata file containing code information.
+
+    Returns:
+        Sorted list of the intersection of allowed codes (if they are specified) and filters based on
+        inclusion frequency.
+    """
     if allowed_codes is None:
         allowed_codes = get_feature_columns(code_metadata_fp)
     feature_freqs = get_feature_freqs(code_metadata_fp)
