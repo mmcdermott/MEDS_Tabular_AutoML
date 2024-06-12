@@ -122,12 +122,30 @@ def aggregate_matrix(
     return out_matrix
 
 
-def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
-    """Applies aggreagtion to dataframe.
+def compute_agg(
+    index_df: pl.DataFrame,
+    matrix: sparray,
+    window_size: str,
+    agg: str,
+    num_features: int,
+    use_tqdm: bool = False,
+) -> sparray:
+    """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
 
-    Dataframe is expected to only have the relevant columns for aggregating It should have the patient_id and
+    Dataframe is expected to only have the relevant columns for aggregating. It should have the patient_id and
     timestamp columns, and then only code columns if agg is a code aggregation or only value columns if it is
     a value aggreagation.
+
+    Args:
+        index_df: DataFrame with 'patient_id' and 'timestamp' columns used for grouping.
+        matrix: Sparse matrix to be aggregated.
+        window_size: String defining the rolling window size.
+        agg: String specifying the aggregation method.
+        num_features: Number of features in the matrix.
+        use_tqdm: Flag to enable or disable tqdm progress bar.
+
+    Returns:
+        The aggregated sparse matrix.
     """
     group_df = (
         index_df.with_row_index("index")
