@@ -14,8 +14,56 @@ def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
 
     Returns:
         A DataFrame with two columns, "code" and "count".
+
+    TODOs:
+        - Eliminate this function and just use a DataFrame throughout. See #14
+        - Use categorical types for `code` instead of strings.
+
+    Examples:
+        >>> convert_to_df({"A": 1, "B": 2, "C": 3})
+        shape: (3, 2)
+        ┌──────┬───────┐
+        │ code ┆ count │
+        │ ---  ┆ ---   │
+        │ str  ┆ i64   │
+        ╞══════╪═══════╡
+        │ A    ┆ 1     │
+        │ B    ┆ 2     │
+        │ C    ┆ 3     │
+        └──────┴───────┘
     """
     return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
+
+
+def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
+    """Converts a DataFrame to a dictionary of frequencies.
+
+    Args:
+        df: The DataFrame to be converted.
+
+    Returns:
+        A dictionary where keys are column names and values are
+        dictionaries of code frequencies.
+
+    Raises:
+        ValueError: If the DataFrame does not have the expected columns "code" and "count".
+
+    TODOs:
+        - Eliminate this function and just use a DataFrame throughout. See #14
+
+    Example:
+        >>> import polars as pl
+        >>> data = pl.DataFrame({"code": [1, 2, 3, 4, 5], "count": [10, 20, 30, 40, 50]}).lazy()
+        >>> convert_to_freq_dict(data)
+        {1: 10, 2: 20, 3: 30, 4: 40, 5: 50}
+        >>> convert_to_freq_dict(pl.DataFrame({"code": ["A", "B", "C"], "value": [1, 2, 3]}).lazy())
+        Traceback (most recent call last):
+            ...
+        ValueError: DataFrame must have columns 'code' and 'count', but has columns ['code', 'value']!
+    """
+    if not df.columns == ["code", "count"]:
+        raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
+    return dict(df.collect().iter_rows())
 
 
 def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame:
@@ -69,33 +117,6 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame
 
     combined_freqs = {**static_code_freqs, **static_value_freqs, **code_freqs, **value_freqs}
     return convert_to_df(combined_freqs)
-
-
-def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
-    """Converts a DataFrame to a dictionary of frequencies.
-
-    Args:
-        df: The DataFrame to be converted.
-
-    Returns:
-        A dictionary where keys are column names and values are
-        dictionaries of code frequencies.
-
-    Raises:
-        ValueError: If the DataFrame does not have the expected columns "code" and "count".
-
-    Example:
-        # >>> import polars as pl
-        # >>> df = pl.DataFrame({
-        # ...     "code": [1, 2, 3, 4, 5],
-        # ...     "value": [10, 20, 30, 40, 50]
-        # ... })
-        # >>> convert_to_freq_dict(df)
-        # {'code': {1: 1, 2: 1, 3: 1, 4: 1, 5: 1}, 'value': {10: 1, 20: 1, 30: 1, 40: 1, 50: 1}}
-    """
-    if not df.columns == ["code", "count"]:
-        raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
-    return dict(df.collect().iter_rows())
 
 
 def get_feature_columns(fp: Path) -> list[str]:
