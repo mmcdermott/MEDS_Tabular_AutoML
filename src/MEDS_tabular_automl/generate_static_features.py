@@ -16,7 +16,6 @@ from loguru import logger
 from scipy.sparse import coo_array, csr_array
 
 from MEDS_tabular_automl.utils import (
-    DF_T,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     get_events_df,
@@ -97,7 +96,7 @@ def get_sparse_static_rep(
 def summarize_static_measurements(
     agg: str,
     feature_columns: list[str],
-    df: DF_T,
+    df: pl.LazyFrame,
 ) -> pl.LazyFrame:
     """Aggregates static measurements for feature columns that are marked as 'present' or 'first'.
 
@@ -108,7 +107,7 @@ def summarize_static_measurements(
     Args:
         agg: The type of aggregation ('present' or 'first').
         feature_columns: A list of feature column identifiers marked for static analysis.
-        df: DataFrame from which features will be extracted and summarized.
+        df: The DataFrame from which features will be extracted and summarized.
 
     Returns:
         A LazyFrame containing summarized data pivoted by 'patient_id' for each static feature.
@@ -168,9 +167,9 @@ def summarize_static_measurements(
 def get_flat_static_rep(
     agg: str,
     feature_columns: list[str],
-    shard_df: DF_T,
+    shard_df: pl.LazyFrame,
 ) -> coo_array:
-    """Produces a raw representation for static data from a specified shard DataFrame.
+    """Produces a sparse representation for static data from a specified shard DataFrame.
 
     This function selects the appropriate static features, summarizes them using
     summarize_static_measurements, and then normalizes the resulting data to ensure
@@ -182,7 +181,7 @@ def get_flat_static_rep(
         shard_df: The shard DataFrame containing the patient data.
 
     Returns:
-        A LazyFrame sparse array representing the static features for the provided shard of data.
+        A sparse array representing the static features for the provided shard of data.
     """
     static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
     static_measurements = summarize_static_measurements(agg, static_features, df=shard_df)
