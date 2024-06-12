@@ -1,8 +1,19 @@
-"""Help functions for getting file names and paths for MEDS tabular automl tasks."""
+"""Helper functions for getting file names and paths for MEDS tabular automl tasks."""
 from pathlib import Path
 
 
-def list_subdir_files(dir: [Path | str], fmt: str):
+def list_subdir_files(dir: Path | str, fmt: str) -> list[Path]:
+    """List files in subdirectories of a directory with a given extension.
+
+    Args:
+        dir: Path to the directory.
+        fmt: File extension to filter files.
+
+    Returns:
+        An alphabetically sorted list of Path objects to files matching the extension in any level of
+        subdirectories of the given directory.
+    """
+
     return sorted(list(Path(dir).glob(f"**/*.{fmt}")))
 
 
