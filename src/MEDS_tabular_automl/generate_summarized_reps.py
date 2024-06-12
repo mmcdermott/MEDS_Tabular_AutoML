@@ -164,17 +164,17 @@ def compute_agg(
     return matrix
 
 
-def _generate_summary(
+def generate_summary(
     index_df: pd.DataFrame,
     matrix: sparray,
     window_size: str,
     agg: str,
-    num_features: int,
     use_tqdm: bool = False,
 ) -> csr_array:
     """Generate a summary of the data frame for a given window size and aggregation.
 
     Args:
+        feature_columns: A list of all feature columns that must exist in the final output.
         index_df: The DataFrame with index and grouping information.
         matrix: The sparse matrix containing the data to aggregate.
         window_size: The size of the rolling window used for summary.
@@ -192,30 +192,6 @@ def _generate_summary(
         raise ValueError(
             f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
         )
-    out_matrix = compute_agg(index_df, matrix, window_size, agg, num_features, use_tqdm=use_tqdm)
-    return out_matrix
-
-
-def generate_summary(
-    feature_columns: list[str], index_df: pl.LazyFrame, matrix: sparray, window_size, agg: str, use_tqdm=False
-) -> pl.LazyFrame:
-    """Generate a summary of the data frame for given window sizes and aggregations.
-
-    This function processes a dataframe to apply specified aggregations over defined window sizes.
-    It then joins the resulting frames on 'patient_id' and 'timestamp', and ensures all specified
-    feature columns exist in the final output, adding missing ones with default values.
-
-    Args:
-        feature_columns (list[str]): List of all feature columns that must exist in the final output.
-        df (list[pl.LazyFrame]): The input dataframes to process, expected to be length 2 list with code_df
-            (pivoted shard with binary presence of codes) and value_df (pivoted shard with numerical values
-            for each code).
-        window_sizes (list[str]): List of window sizes to apply for summarization.
-        aggregations (list[str]): List of aggregations to perform within each window size.
-
-    Returns:
-        pl.LazyFrame: A LazyFrame containing the summarized data with all required features present.
-    """
     assert len(feature_columns), "feature_columns must be a non-empty list"
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
@@ -225,9 +201,7 @@ def generate_summary(
     logger.info(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
-    out_matrix = _generate_summary(
-        ts_columns, index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm
-    )
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm)
     return out_matrix
 
 
