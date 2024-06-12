@@ -4,7 +4,9 @@ transform them into a tabular format suitable for analysis. The module leverages
 efficient data manipulation.
 
 Functions:
-- _summarize_static_measurements: Summarizes static measurements from a given DataFrame.
+- convert_to_matrix: Converts a Polars DataFrame to a sparse matrix.
+- get_sparse_static_rep: Merges static and time-series dataframes into a sparse representation.
+- summarize_static_measurements: Summarizes static measurements from a given DataFrame.
 - get_flat_static_rep: Produces a tabular representation of static data features.
 """
 
@@ -170,16 +172,17 @@ def get_flat_static_rep(
 ) -> coo_array:
     """Produces a raw representation for static data from a specified shard DataFrame.
 
-    Parameters:
-    - feature_columns (list[str]): List of feature columns to include in the static representation.
-    - shard_df (DF_T): The shard DataFrame containing patient data.
+    This function selects the appropriate static features, summarizes them using
+    summarize_static_measurements, and then normalizes the resulting data to ensure
+    it is suitable for further analysis or machine learning tasks.
+
+    Args:
+        agg: The aggregation method for static data.
+        feature_columns: A list of feature columns to include.
+        shard_df: The shard DataFrame containing the patient data.
 
     Returns:
-    - pl.LazyFrame: A LazyFrame that includes all static features for the data provided.
-
-    This function selects the appropriate static features, summarizes them using
-    _summarize_static_measurements, and then normalizes the resulting data to ensure it is
-    suitable for further analysis or machine learning tasks.
+        A LazyFrame sparse array representing the static features for the provided shard of data.
     """
     static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
     static_measurements = summarize_static_measurements(agg, static_features, df=shard_df)
