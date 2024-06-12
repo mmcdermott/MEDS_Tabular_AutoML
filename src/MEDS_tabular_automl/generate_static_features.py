@@ -50,18 +50,19 @@ def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> c
     return matrix
 
 
-def get_sparse_static_rep(static_features, static_df, meds_df, feature_columns) -> coo_array:
-    """Merges static and time-series dataframes.
-
-    This function merges the static and time-series dataframes based on the patient_id column.
+def get_sparse_static_rep(
+    static_features: list[str], static_df: pl.DataFrame, meds_df: pl.DataFrame, feature_columns: list[str]
+) -> coo_array:
+    """Merges static and time-series dataframes into a sparse representation based on the patient_id column.
 
     Args:
-    - feature_columns (List[str]): A list of feature columns to include in the merged dataframe.
-    - static_df (pd.DataFrame): A dataframe containing static features.
-    - ts_df (pd.DataFrame): A dataframe containing time-series features.
+        static_features: A list of static feature names.
+        static_df: A DataFrame containing static features.
+        meds_df: A DataFrame containing time-series features.
+        feature_columns (list[str]): A list of feature columns to include in the merged DataFrame.
 
     Returns:
-    - pd.DataFrame: A merged dataframe containing static and time-series features.
+        A sparse array representation of the merged static and time-series features.
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
