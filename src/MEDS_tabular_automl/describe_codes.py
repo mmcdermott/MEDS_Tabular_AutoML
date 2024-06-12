@@ -161,7 +161,15 @@ def filter_to_codes(
 # OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
 
 
-def clear_code_aggregation_suffix(code):
+def clear_code_aggregation_suffix(code: str) -> str:
+    """Removes aggregation suffixes from code strings.
+
+    Args:
+        code: Code string to be cleared.
+
+    Returns:
+        Code string without aggregation suffixes.
+    """
     if code.endswith("/code"):
         return code[:-5]
     elif code.endswith("/value"):
@@ -172,36 +180,40 @@ def clear_code_aggregation_suffix(code):
         return code[:-13]
 
 
-def filter_parquet(fp, allowed_codes: list[str]):
-    """Loads Parquet with Polars and filters to allowed codes.
+def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
+    """Loads and filters a Parquet file with Polars to include only specified codes and removes rare
+    codes/values.
 
     Args:
-        fp: Path to the Meds cohort shard
-        allowed_codes: List of codes to filter to.
+        fp: Path to the Parquet file of a Meds cohort shard.
+        allowed_codes: List of codes to filter by.
 
-    Expect:
-    >>> from tempfile import NamedTemporaryFile
-    >>> fp = NamedTemporaryFile()
-    >>> pl.DataFrame({
-    ...     "code": ["A", "A", "A", "A", "D", "D", "E", "E"],
-    ...     "timestamp": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
-    ...     "numerical_value": [1, None, 2, 2, None, 5, None, 3]
-    ... }).write_parquet(fp.name)
-    >>> filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
-    shape: (6, 3)
-    ┌──────┬────────────┬─────────────────┐
-    │ code ┆ timestamp  ┆ numerical_value │
-    │ ---  ┆ ---        ┆ ---             │
-    │ str  ┆ str        ┆ i64             │
-    ╞══════╪════════════╪═════════════════╡
-    │ A    ┆ 2021-01-01 ┆ null            │
-    │ A    ┆ 2021-01-01 ┆ null            │
-    │ D    ┆ null       ┆ null            │
-    │ D    ┆ null       ┆ null            │
-    │ E    ┆ 2021-01-03 ┆ null            │
-    │ E    ┆ 2021-01-04 ┆ 3               │
-    └──────┴────────────┴─────────────────┘
-    >>> fp.close()
+    Returns:
+        pl.LazyFrame: A filtered LazyFrame containing only the allowed and not rare codes/values.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> fp = NamedTemporaryFile()
+        >>> pl.DataFrame({
+        ...     "code": ["A", "A", "A", "A", "D", "D", "E", "E"],
+        ...     "timestamp": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
+        ...     "numerical_value": [1, None, 2, 2, None, 5, None, 3]
+        ... }).write_parquet(fp.name)
+        >>> filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
+        shape: (6, 3)
+        ┌──────┬────────────┬─────────────────┐
+        │ code ┆ timestamp  ┆ numerical_value │
+        │ ---  ┆ ---        ┆ ---             │
+        │ str  ┆ str        ┆ i64             │
+        ╞══════╪════════════╪═════════════════╡
+        │ A    ┆ 2021-01-01 ┆ null            │
+        │ A    ┆ 2021-01-01 ┆ null            │
+        │ D    ┆ null       ┆ null            │
+        │ D    ┆ null       ┆ null            │
+        │ E    ┆ 2021-01-03 ┆ null            │
+        │ E    ┆ 2021-01-04 ┆ 3               │
+        └──────┴────────────┴─────────────────┘
+        >>> fp.close()
     """
     df = pl.scan_parquet(fp)
     # Drop values that are rare
