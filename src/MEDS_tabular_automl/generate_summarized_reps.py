@@ -6,9 +6,14 @@ pl.enable_string_cache()
 from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
-from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
 from MEDS_tabular_automl.describe_codes import get_feature_columns
-from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm, get_min_dtype
+from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
+from MEDS_tabular_automl.utils import (
+    CODE_AGGREGATIONS,
+    VALUE_AGGREGATIONS,
+    get_min_dtype,
+    load_tqdm,
+)
 
 
 def sparse_aggregate(sparse_matrix, agg):
@@ -40,6 +45,38 @@ def get_rolling_window_indicies(index_df, window_size):
         .select(pl.col("min_index", "max_index"))
         .collect()
     )
+
+
+def precompute_matrix(windows, matrix, agg, num_features, use_tqdm=False):
+    """Aggregate the matrix based on the windows."""
+    tqdm = load_tqdm(use_tqdm)
+    agg = agg.split("/")[-1]
+    matrix = csr_array(matrix)
+    # if agg.startswith("sum"):
+    #     out_dtype = np.float32
+    # else:
+    #     out_dtype = np.int32
+    data, row, col = [], [], []
+    min_data, max_data = 0, 0
+    num_vals = 0
+    for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
+        min_index = window["min_index"]
+        max_index = window["max_index"]
+        subset_matrix = matrix[min_index : max_index + 1, :]
+        agg_matrix = sparse_aggregate(subset_matrix, agg)
+        if isinstance(agg_matrix, np.ndarray):
+            num_vals += np.count_nonzero(agg_matrix)
+        elif isinstance(agg_matrix, coo_array):
+            num_vals += len(agg_matrix.data)
+        else:
+            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
+    import pdb
+
+    pdb.set_trace()
+    row = np.empty(shape=num_vals, dtype=get_min_dtype([0, matrix.shape[0]]))
+    col = np.empty(shape=num_vals, dtype=get_min_dtype([0, matrix.shape[1]]))
+    data = np.empty(shape=num_vals, dtype=get_min_dtype([min_data, max_data]))
+    return data, (row, col)
 
 
 def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
@@ -121,11 +158,15 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_featu
         .collect()
     )
     index_df = group_df.lazy().select(pl.col("patient_id", "timestamp"))
-    windows = group_df.select(pl.col("min_index", "max_index"))
-    logger.info("Step 1.5: Running sparse aggregation.")
-    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
-    logger.info("Step 2: computing rolling windows and aggregating.")
+    # windows = group_df.select(pl.col("min_index", "max_index"))
+    # import pdb; pdb.set_trace()
+    # logger.info("Step 1.5: Running sparse aggregation.")
     windows = get_rolling_window_indicies(index_df, window_size)
+    data, (row, col) = precompute_matrix(windows, matrix, agg, num_features, use_tqdm)
+    logger.info("Step 2: computing rolling windows and aggregating.")
+    import pdb
+
+    pdb.set_trace()
     logger.info("Starting final sparse aggregations.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     return matrix
@@ -250,13 +291,16 @@ def generate_summary(
 
 
 if __name__ == "__main__":
-    import json
     from pathlib import Path
 
-    # feature_columns_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS") / "tabularized_code_metadata.parquet"
-    # shard_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS/final_cohort/train/0.parquet")
+    # feature_columns_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS") \
+    #     / "tabularized_code_metadata.parquet"
+    # shard_fp = \
+    #     Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS/final_cohort/train/0.parquet")
 
-    feature_columns_fp = Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed") / "tabularized_code_metadata.parquet"
+    feature_columns_fp = (
+        Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed") / "tabularized_code_metadata.parquet"
+    )
     shard_fp = Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort/train/0.parquet")
 
     feature_columns = get_feature_columns(feature_columns_fp)

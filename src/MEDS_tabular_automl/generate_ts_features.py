@@ -25,16 +25,26 @@ def feature_name_to_code(feature_name: str) -> str:
 def get_long_code_df(df, ts_columns):
     """Pivots the codes data frame to a long format one-hot rep for time series data."""
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
-    rows = range(df.select(pl.len()).collect().item())
-    cols = (
-        df.with_columns(pl.col("code").cast(str).replace(column_to_int).cast(int).alias("code_index"))
-        .select("code_index")
+    x = df.with_columns(
+        pl.col("code").cast(str).replace(column_to_int).cast(int).alias("code_index"),
+        pl.lit(1).alias("count"),
+    ).drop("code")
+    # sum up counts for same patient_id, timestamp, code_index
+    x = x.group_by("patient_id", "timestamp", "code_index").sum()
+    # combine codes and counts for same patient_id, timestamp
+    x = x.group_by("patient_id", "timestamp", maintain_order=True).agg(pl.col("code_index", "count"))
+
+    # repeat row_index for each code_index on that row (i.e. 1 row == 1 unique patient_id x timestamp)
+    rows = (
+        x.with_row_index("row_index")
+        .select(pl.col("row_index").repeat_by(pl.col("code_index").list.len()))
+        .select(pl.col("row_index").explode())
         .collect()
-        .to_series()
         .to_numpy()
-    )
-    assert np.issubdtype(cols.dtype, np.number), "numerical_value must be a numerical type"
-    data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
+        .T
+    )[0]
+    cols = x.select(pl.col("code_index").explode()).collect().to_numpy().T[0]
+    data = x.select(pl.col("count").explode()).collect().to_numpy().T[0]
     return data, (rows, cols)
 
 
@@ -103,7 +113,7 @@ def summarize_dynamic_measurements(
 
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:
-        code_df = df.drop(*(id_cols + ["numerical_value"]))
+        code_df = df.drop(*(["numerical_value"]))
         data, (rows, cols) = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:
         value_df = df.drop(*id_cols)
