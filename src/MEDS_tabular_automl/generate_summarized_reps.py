@@ -16,7 +16,7 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def sparse_aggregate(sparse_matrix: sparray, agg: str) -> sparray:
+def sparse_aggregate(sparse_matrix: sparray, agg: str) -> csr_array:
     """Aggregates values in a sparse matrix according to the specified method.
 
     Args:
@@ -44,15 +44,15 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> sparray:
     return merged_matrix
 
 
-def get_rolling_window_indicies(index_df: pl.DataFrame, window_size: str) -> pl.DataFrame:
-    """Computes the start and end indices for rolling window operations on a DataFrame.
+def get_rolling_window_indicies(index_df: pl.LazyFrame, window_size: str) -> pl.LazyFrame:
+    """Computes the start and end indices for rolling window operations on a LazyFrame.
 
     Args:
-        index_df: The DataFrame containing the indices.
+        index_df: The LazyFrame containing the indices.
         window_size: The size of the window as a string denoting time, e.g., '7d' for 7 days.
 
     Returns:
-        DataFrame with columns 'min_index' and 'max_index' representing the range of each window.
+        A LazyFrame with columns 'min_index' and 'max_index' representing the range of each window.
     """
     if window_size == "full":
         timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
@@ -68,12 +68,12 @@ def get_rolling_window_indicies(index_df: pl.DataFrame, window_size: str) -> pl.
 
 
 def aggregate_matrix(
-    windows: pl.DataFrame, matrix: sparray, agg: str, num_features: int, use_tqdm: bool = False
+    windows: pl.LazyFrame, matrix: sparray, agg: str, num_features: int, use_tqdm: bool = False
 ) -> csr_array:
     """Aggregates a matrix according to defined windows and specified aggregation method.
 
     Args:
-        windows: The DataFrame containing 'min_index' and 'max_index' for each window.
+        windows: The LazyFrame containing 'min_index' and 'max_index' for each window.
         matrix: The matrix to aggregate.
         agg: The aggregation method to apply.
         num_features: The number of features in the matrix.
@@ -123,7 +123,7 @@ def aggregate_matrix(
 
 
 def compute_agg(
-    index_df: pl.DataFrame,
+    index_df: pl.LazyFrame,
     matrix: sparray,
     window_size: str,
     agg: str,
@@ -165,7 +165,7 @@ def compute_agg(
 
 
 def generate_summary(
-    index_df: pd.DataFrame,
+    index_df: pl.LazyFrame,
     matrix: sparray,
     window_size: str,
     agg: str,
