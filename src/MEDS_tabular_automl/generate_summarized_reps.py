@@ -24,7 +24,7 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> sparray:
         agg: The aggregation method to apply, such as 'sum', 'min', 'max', 'sum_sqd', or 'count'.
 
     Returns:
-        sparray: The aggregated sparse matrix.
+        The aggregated sparse matrix.
 
     Raises:
         ValueError: If the aggregation method is not implemented.
@@ -73,11 +73,11 @@ def aggregate_matrix(
     """Aggregates a matrix according to defined windows and specified aggregation method.
 
     Args:
-        windows: DataFrame containing 'min_index' and 'max_index' for each window.
+        windows: The DataFrame containing 'min_index' and 'max_index' for each window.
         matrix: The matrix to aggregate.
         agg: The aggregation method to apply.
-        num_features: Number of features in the matrix.
-        use_tqdm: Flag to enable progress display.
+        num_features: The number of features in the matrix.
+        use_tqdm: The flag to enable progress display.
 
     Returns:
         Aggregated sparse matrix.
@@ -129,7 +129,7 @@ def compute_agg(
     agg: str,
     num_features: int,
     use_tqdm: bool = False,
-) -> sparray:
+) -> csr_array:
     """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
 
     Dataframe is expected to only have the relevant columns for aggregating. It should have the patient_id and
@@ -137,12 +137,12 @@ def compute_agg(
     a value aggreagation.
 
     Args:
-        index_df: DataFrame with 'patient_id' and 'timestamp' columns used for grouping.
-        matrix: Sparse matrix to be aggregated.
-        window_size: String defining the rolling window size.
-        agg: String specifying the aggregation method.
-        num_features: Number of features in the matrix.
-        use_tqdm: Flag to enable or disable tqdm progress bar.
+        index_df: The DataFrame with 'patient_id' and 'timestamp' columns used for grouping.
+        matrix: The sparse matrix to be aggregated.
+        window_size: The string defining the rolling window size.
+        agg: The string specifying the aggregation method.
+        num_features: The number of features in the matrix.
+        use_tqdm: The flag to enable or disable tqdm progress bar.
 
     Returns:
         The aggregated sparse matrix.
@@ -165,23 +165,28 @@ def compute_agg(
 
 
 def _generate_summary(
-    ts_columns: list[str],
     index_df: pd.DataFrame,
     matrix: sparray,
     window_size: str,
     agg: str,
-    num_features,
-    use_tqdm=False,
-) -> pl.LazyFrame:
+    num_features: int,
+    use_tqdm: bool = False,
+) -> csr_array:
     """Generate a summary of the data frame for a given window size and aggregation.
 
     Args:
-    - df (DF_T): The data frame to summarize.
-    - window_size (str): The window size to use for the summary.
-    - agg (str): The aggregation to apply to the data frame.
+        index_df: The DataFrame with index and grouping information.
+        matrix: The sparse matrix containing the data to aggregate.
+        window_size: The size of the rolling window used for summary.
+        agg: The aggregation function to apply.
+        num_features: The total number of features to handle.
+        use_tqdm: The flag to enable or disable progress display.
 
     Returns:
-    - pl.LazyFrame: The summarized data frame.
+        The summary of data as a sparse matrix.
+
+    Raises:
+        ValueError: If the aggregation type is not supported.
     """
     if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
         raise ValueError(
