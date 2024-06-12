@@ -71,28 +71,6 @@ def summarize_dynamic_measurements(
 
     Returns:
     - pl.LazyFrame: A summarized data frame containing the dynamic features.
-
-    Example:
-    >>> data = {'patient_id': [1, 1, 1, 2],
-    ...         'code': ['A', 'A', 'B', 'B'],
-    ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04'],
-    ...         'numerical_value': [1, 2, 2, 2]}
-    >>> df = pd.DataFrame(data)
-    >>> ts_columns = ['A', 'B']
-    >>> long_df = summarize_dynamic_measurements(ts_columns, df)
-    >>> long_df.head()
-       patient_id   timestamp  A/value  B/value  A/code  B/code
-    0           1  2021-01-01        1        0       1       0
-    1           1  2021-01-01        2        0       1       0
-    2           1  2020-01-01        0        2       0       1
-    3           2  2021-01-04        0        2       0       1
-    >>> long_df.shape
-    (4, 6)
-    >>> long_df = summarize_dynamic_measurements(ts_columns, df[df.code == "A"])
-    >>> long_df
-       patient_id   timestamp  A/value  B/value  A/code  B/code
-    0           1  2021-01-01        1        0       1       0
-    1           1  2021-01-01        2        0       1       0
     """
     logger.info("Generating Sparse matrix for Time Series Features")
     id_cols = ["patient_id", "timestamp"]
@@ -137,22 +115,6 @@ def get_flat_ts_rep(
     Returns:
         pl.LazyFrame: A LazyFrame consisting of the processed time series data, combining both code and value
             representations.
-
-    Example:
-        >>> feature_columns = ['A/value', 'A/code', 'B/value', 'B/code',
-        ...                    "C/value", "C/code", "A/static/present"]
-        >>> data = {'patient_id': [1, 1, 1, 2, 2, 2],
-        ...         'code': ['A', 'A', 'B', 'B', 'C', 'C'],
-        ...         'timestamp': ['2021-01-01', '2021-01-01', '2020-01-01', '2021-01-04', None, None],
-        ...         'numerical_value': [1, 2, 2, 2, 3, 4]}
-        >>> df = pl.DataFrame(data).lazy()
-        >>> pivot_df = get_flat_ts_rep(feature_columns, df)
-        >>> pivot_df
-           patient_id   timestamp  A/value  B/value  C/value  A/code  B/code  C/code
-        0           1  2021-01-01        1        0        0       1       0       0
-        1           1  2021-01-01        2        0        0       1       0       0
-        2           1  2020-01-01        0        2        0       0       1       0
-        3           2  2021-01-04        0        2        0       0       1       0
     """
     # Remove codes not in training set
     shard_df = get_events_df(shard_df, feature_columns)

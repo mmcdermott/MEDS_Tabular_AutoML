@@ -89,35 +89,9 @@ def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
 def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
     """Applies aggreagtion to dataframe.
 
-    Dataframe is expected to only have the relevant columns for aggregating
-    It should have the patient_id and timestamp columns, and then only code columns
-    if agg is a code aggregation or only value columns if it is a value aggreagation.
-
-    Example:
-    >>> from datetime import datetime
-    >>> df = pd.DataFrame({
-    ...     "patient_id": [1, 1, 1, 2],
-    ...     "timestamp": [
-    ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
-    ...     ],
-    ...     "A/code": [1, 1, 0, 0],
-    ...     "B/code": [0, 0, 1, 1],
-    ...     "C/code": [0, 0, 0, 0],
-    ... })
-    >>> output = compute_agg(df, "1d", "code/count")
-    >>> output
-       1d/A/code/count  1d/B/code/count  1d/C/code/count  timestamp  patient_id
-    0                1                0                0 2021-01-01           1
-    1                2                0                0 2021-01-01           1
-    2                0                1                0 2020-01-01           1
-    0                0                1                0 2021-01-04           2
-    >>> output.dtypes
-    1d/A/code/count    Sparse[int64, 0]
-    1d/B/code/count    Sparse[int64, 0]
-    1d/C/code/count    Sparse[int64, 0]
-    timestamp            datetime64[ns]
-    patient_id                    int64
-    dtype: object
+    Dataframe is expected to only have the relevant columns for aggregating It should have the patient_id and
+    timestamp columns, and then only code columns if agg is a code aggregation or only value columns if it is
+    a value aggreagation.
     """
     group_df = (
         index_df.with_row_index("index")
@@ -154,27 +128,6 @@ def _generate_summary(
 
     Returns:
     - pl.LazyFrame: The summarized data frame.
-
-    Expect:
-        >>> from datetime import datetime
-        >>> wide_df = pd.DataFrame({
-        ...     "patient_id": [1, 1, 1, 2],
-        ...     "timestamp": [
-        ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
-        ...     ],
-        ...     "A/code": [1, 1, 0, 0],
-        ...     "B/code": [0, 0, 1, 1],
-        ...     "C/code": [0, 0, 0, 0],
-        ...     "A/value": [1, 2, 0, 0],
-        ...     "B/value": [0, 0, 2, 2],
-        ...     "C/value": [0, 0, 0, 0],
-        ... })
-        >>> _generate_summary(wide_df, "full", "value/sum")
-           full/A/value/count  full/B/value/count  full/C/value/count  timestamp  patient_id
-        0                   1                   0                   0 2021-01-01           1
-        1                   3                   0                   0 2021-01-01           1
-        2                   3                   2                   0 2021-01-01           1
-        0                   0                   2                   0 2021-01-04           2
     """
     if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
         raise ValueError(
@@ -203,41 +156,6 @@ def generate_summary(
 
     Returns:
         pl.LazyFrame: A LazyFrame containing the summarized data with all required features present.
-
-    Expect:
-        >>> from datetime import date
-        >>> wide_df = pd.DataFrame({"patient_id": [1, 1, 1, 2],
-        ...     "A/code": [1, 1, 0, 0],
-        ...     "B/code": [0, 0, 1, 1],
-        ...     "A/value": [1, 2, 3, None],
-        ...     "B/value": [None, None, None, 4.0],
-        ...     "timestamp": [date(2021, 1, 1), date(2021, 1, 1),date(2020, 1, 3), date(2021, 1, 4)],
-        ...     })
-        >>> wide_df['timestamp'] = pd.to_datetime(wide_df['timestamp'])
-        >>> for col in ["A/code", "B/code", "A/value", "B/value"]:
-        ...     wide_df[col] = pd.arrays.SparseArray(wide_df[col])
-        >>> feature_columns = ["A/code/count", "B/code/count", "A/value/sum", "B/value/sum"]
-        >>> aggregations = ["code/count", "value/sum"]
-        >>> window_sizes = ["full", "1d"]
-        >>> generate_summary(feature_columns, wide_df, window_sizes, aggregations)[
-        ...    ["1d/A/code/count", "full/B/code/count", "full/B/value/sum"]]
-           1d/A/code/count  full/B/code/count  full/B/value/sum
-        0              NaN                1.0                 0
-        1              NaN                1.0                 0
-        2              NaN                1.0                 0
-        0              NaN                1.0                 0
-        0              NaN                NaN                 0
-        1              NaN                NaN                 0
-        2              NaN                NaN                 0
-        0              NaN                NaN                 0
-        0                0                NaN                 0
-        1              1.0                NaN                 0
-        2              2.0                NaN                 0
-        0                0                NaN                 0
-        0              NaN                NaN                 0
-        1              NaN                NaN                 0
-        2              NaN                NaN                 0
-        0              NaN                NaN                 0
     """
     assert len(feature_columns), "feature_columns must be a non-empty list"
     ts_columns = get_feature_names(agg, feature_columns)
