@@ -20,13 +20,13 @@ def sparse_aggregate(sparse_matrix, agg, dtype):
     if agg == "sum":
         merged_matrix = sparse_matrix.sum(axis=0, dtype=dtype)
     elif agg == "min":
-        merged_matrix = sparse_matrix.min(axis=0).astype(dtype)
+        merged_matrix = sparse_matrix.min(axis=0)
     elif agg == "max":
-        merged_matrix = sparse_matrix.max(axis=0).astype(dtype)
+        merged_matrix = sparse_matrix.max(axis=0)
     elif agg == "sum_sqd":
         merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=dtype)
     elif agg == "count":
-        merged_matrix = sparse_matrix.getnnz(axis=0).astype(dtype)
+        merged_matrix = sparse_matrix.getnnz(axis=0)
     else:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
     return merged_matrix

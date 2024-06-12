@@ -45,7 +45,8 @@ def get_long_code_df(df, ts_columns):
     )[0]
     cols = x.select(pl.col("code_index").explode()).collect().to_numpy().T[0]
     data = x.select(pl.col("count").explode()).collect().to_numpy().T[0]
-    return data, (rows, cols)
+    shape = (x.select(pl.len()).collect().item(), len(ts_columns))
+    return data, (rows, cols), shape
 
 
 def get_long_value_df(df, ts_columns):
@@ -114,14 +115,15 @@ def summarize_dynamic_measurements(
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:
         code_df = df.drop(*(["numerical_value"]))
-        data, (rows, cols) = get_long_code_df(code_df, ts_columns)
+        data, (rows, cols), shape = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:
         value_df = df.drop(*id_cols)
         data, (rows, cols) = get_long_value_df(value_df, ts_columns)
+        shape = (df.select(pl.len()).collect().item(), len(ts_columns))
 
     sp_matrix = csr_array(
         (data, (rows, cols)),
-        shape=(df.select(pl.len()).collect().item(), len(ts_columns)),
+        shape=shape,
     )
     return df.select(pl.col(id_cols)), sp_matrix
 
