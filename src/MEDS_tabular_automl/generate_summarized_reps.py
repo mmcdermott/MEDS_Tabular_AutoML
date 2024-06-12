@@ -67,8 +67,24 @@ def get_rolling_window_indicies(index_df: pl.DataFrame, window_size: str) -> pl.
     )
 
 
-def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
-    """Aggregate the matrix based on the windows."""
+def aggregate_matrix(
+    windows: pl.DataFrame, matrix: sparray, agg: str, num_features: int, use_tqdm: bool = False
+) -> csr_array:
+    """Aggregates a matrix according to defined windows and specified aggregation method.
+
+    Args:
+        windows: DataFrame containing 'min_index' and 'max_index' for each window.
+        matrix: The matrix to aggregate.
+        agg: The aggregation method to apply.
+        num_features: Number of features in the matrix.
+        use_tqdm: Flag to enable progress display.
+
+    Returns:
+        Aggregated sparse matrix.
+
+    Raises:
+        TypeError: If the type of the aggregated matrix is not compatible for further operations.
+    """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
     matrix = csr_array(matrix)
