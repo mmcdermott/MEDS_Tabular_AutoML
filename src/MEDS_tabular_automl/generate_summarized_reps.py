@@ -4,7 +4,7 @@ import polars as pl
 
 pl.enable_string_cache()
 from loguru import logger
-from scipy.sparse import coo_array, csr_array, sparray
+from scipy.sparse import coo_array, csr_array, sparray, coo_matrix
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
@@ -16,20 +16,38 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def sparse_aggregate(sparse_matrix, agg):
+def sparse_aggregate(sparse_matrix, agg, dtype):
     if agg == "sum":
-        merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
+        merged_matrix = sparse_matrix.sum(axis=0, dtype=dtype)
     elif agg == "min":
-        merged_matrix = sparse_matrix.min(axis=0)
+        merged_matrix = sparse_matrix.min(axis=0).astype(dtype)
     elif agg == "max":
-        merged_matrix = sparse_matrix.max(axis=0)
+        merged_matrix = sparse_matrix.max(axis=0).astype(dtype)
     elif agg == "sum_sqd":
-        merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=sparse_matrix.dtype)
+        merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=dtype)
     elif agg == "count":
-        merged_matrix = sparse_matrix.getnnz(axis=0)
+        merged_matrix = sparse_matrix.getnnz(axis=0).astype(dtype)
     else:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
     return merged_matrix
+
+
+def sparse_assign(row_index, index, data, row, col, sparse_matrix, value, dtype):
+    agg_matrix = sparse_aggregate(sparse_matrix, value, dtype)
+    if isinstance(agg_matrix, np.ndarray):
+        nozero_ind = agg_matrix.nonzero()[0]
+        len_data = len(nozero_ind)
+        col[index: index+len_data] = nozero_ind
+        data[index: index+len_data] = agg_matrix[nozero_ind]
+        row[index: index+len_data] = row_index
+    elif isinstance(agg_matrix, coo_array):
+        len_data = len(agg_matrix.data)
+        col[index: index+len_data] = agg_matrix.col
+        data[index: index+len_data] = agg_matrix.data
+        row[index: index+len_data] = row_index
+    else:
+        raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
+    return len_data
 
 
 def get_rolling_window_indicies(index_df, window_size):
@@ -52,69 +70,41 @@ def precompute_matrix(windows, matrix, agg, num_features, use_tqdm=False):
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
     matrix = csr_array(matrix)
-    # if agg.startswith("sum"):
-    #     out_dtype = np.float32
-    # else:
-    #     out_dtype = np.int32
-    data, row, col = [], [], []
     min_data, max_data = 0, 0
     num_vals = 0
-    for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
+    for window in tqdm(windows.iter_rows(named=True), total=len(windows)):
         min_index = window["min_index"]
         max_index = window["max_index"]
         subset_matrix = matrix[min_index : max_index + 1, :]
-        agg_matrix = sparse_aggregate(subset_matrix, agg)
+        agg_matrix = sparse_aggregate(subset_matrix, agg, subset_matrix.dtype)
         if isinstance(agg_matrix, np.ndarray):
             num_vals += np.count_nonzero(agg_matrix)
         elif isinstance(agg_matrix, coo_array):
             num_vals += len(agg_matrix.data)
         else:
             raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
-    import pdb
-
-    pdb.set_trace()
-    row = np.empty(shape=num_vals, dtype=get_min_dtype([0, matrix.shape[0]]))
-    col = np.empty(shape=num_vals, dtype=get_min_dtype([0, matrix.shape[1]]))
-    data = np.empty(shape=num_vals, dtype=get_min_dtype([min_data, max_data]))
+    row = np.empty(shape=num_vals, dtype=get_min_dtype(np.array([0, matrix.shape[0]])))
+    col = np.empty(shape=num_vals, dtype=get_min_dtype(np.array([0, matrix.shape[1]])))
+    data = np.empty(shape=num_vals, dtype=get_min_dtype(np.array([min_data, max_data])))
+    row.fill(0)
+    col.fill(0)
+    data.fill(0)
     return data, (row, col)
 
 
-def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
+def aggregate_matrix(data, row, col, windows, matrix, agg, num_features, use_tqdm=False):
     """Aggregate the matrix based on the windows."""
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
     matrix = csr_array(matrix)
-    # if agg.startswith("sum"):
-    #     out_dtype = np.float32
-    # else:
-    #     out_dtype = np.int32
-    data, row, col = [], [], []
-    for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
+    index = 0
+    for row_index, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
         min_index = window["min_index"]
         max_index = window["max_index"]
         subset_matrix = matrix[min_index : max_index + 1, :]
-        agg_matrix = sparse_aggregate(subset_matrix, agg)
-        if isinstance(agg_matrix, np.ndarray):
-            nozero_ind = np.nonzero(agg_matrix)[0]
-            col.append(nozero_ind)
-            data.append(agg_matrix[nozero_ind])
-            row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
-        elif isinstance(agg_matrix, coo_array):
-            col.append(agg_matrix.col)
-            data.append(agg_matrix.data)
-            row.append(agg_matrix.row)
-        else:
-            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
-    row = np.concatenate(row)
-    data = np.concatenate(data)
-    col = np.concatenate(col)
-    row = row.astype(get_min_dtype(row), copy=False)
-    col = col.astype(get_min_dtype(col), copy=False)
-    data = data.astype(get_min_dtype(data), copy=False)
-    out_matrix = csr_array(
-        (data, (row, col)),
-        shape=(windows.shape[0], num_features),
-    )
+        len_data = sparse_assign(row_index, index, data, row, col, subset_matrix, agg, matrix.dtype)
+        index += len_data
+    out_matrix = dict(data=data, row=row, col=col, shape=(windows.shape[0], num_features))
     return out_matrix
 
 
@@ -160,15 +150,12 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_featu
     index_df = group_df.lazy().select(pl.col("patient_id", "timestamp"))
     # windows = group_df.select(pl.col("min_index", "max_index"))
     # import pdb; pdb.set_trace()
-    # logger.info("Step 1.5: Running sparse aggregation.")
+    logger.info("Step 1: computing rolling windows and aggregating.")
     windows = get_rolling_window_indicies(index_df, window_size)
+    logger.info("Step 2: Preallocating memory.")
     data, (row, col) = precompute_matrix(windows, matrix, agg, num_features, use_tqdm)
-    logger.info("Step 2: computing rolling windows and aggregating.")
-    import pdb
-
-    pdb.set_trace()
-    logger.info("Starting final sparse aggregations.")
-    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
+    logger.info("Step 3: Starting final sparse aggregations.")
+    matrix = aggregate_matrix(data, row, col, windows, matrix, agg, num_features, use_tqdm)
     return matrix
 
 
