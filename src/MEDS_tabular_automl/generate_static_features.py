@@ -24,8 +24,17 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def convert_to_matrix(df, num_events, num_features):
-    """Converts a Polars DataFrame to a sparse matrix."""
+def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> csr_array:
+    """Converts a Polars DataFrame to a sparse matrix.
+
+    Args:
+        df: The DataFrame to convert.
+        num_events: Number of events to set matrix dimension.
+        num_features: Number of features to set matrix dimension.
+
+    Returns:
+        A sparse matrix representation of the DataFrame.
+    """
     dense_matrix = df.drop("patient_id").collect().to_numpy()
     data_list = []
     rows = []
