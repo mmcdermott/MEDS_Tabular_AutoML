@@ -16,7 +16,19 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def sparse_aggregate(sparse_matrix, agg):
+def sparse_aggregate(sparse_matrix: sparray, agg: str) -> sparray:
+    """Aggregates values in a sparse matrix according to the specified method.
+
+    Args:
+        sparse_matrix: The sparse matrix to aggregate.
+        agg: The aggregation method to apply, such as 'sum', 'min', 'max', 'sum_sqd', or 'count'.
+
+    Returns:
+        sparray: The aggregated sparse matrix.
+
+    Raises:
+        ValueError: If the aggregation method is not implemented.
+    """
     if agg == "sum":
         merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "min":
