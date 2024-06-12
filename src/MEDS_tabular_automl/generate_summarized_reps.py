@@ -7,7 +7,8 @@ from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
-from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm
+from MEDS_tabular_automl.describe_codes import get_feature_columns
+from MEDS_tabular_automl.utils import CODE_AGGREGATIONS, VALUE_AGGREGATIONS, load_tqdm, get_min_dtype
 
 
 def sparse_aggregate(sparse_matrix, agg):
@@ -45,18 +46,17 @@ def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
     """Aggregate the matrix based on the windows."""
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
-    dtype = np.float32
-    matrix = csr_array(matrix.astype(dtype))
-    if agg.startswith("sum"):
-        out_dtype = np.float32
-    else:
-        out_dtype = np.int32
+    matrix = csr_array(matrix)
+    # if agg.startswith("sum"):
+    #     out_dtype = np.float32
+    # else:
+    #     out_dtype = np.int32
     data, row, col = [], [], []
     for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
         min_index = window["min_index"]
         max_index = window["max_index"]
         subset_matrix = matrix[min_index : max_index + 1, :]
-        agg_matrix = sparse_aggregate(subset_matrix, agg).astype(out_dtype)
+        agg_matrix = sparse_aggregate(subset_matrix, agg)
         if isinstance(agg_matrix, np.ndarray):
             nozero_ind = np.nonzero(agg_matrix)[0]
             col.append(nozero_ind)
@@ -69,12 +69,16 @@ def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
         else:
             raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
     row = np.concatenate(row)
-    out_matrix = coo_array(
-        (np.concatenate(data), (row, np.concatenate(col))),
-        dtype=out_dtype,
+    data = np.concatenate(data)
+    col = np.concatenate(col)
+    row = row.astype(get_min_dtype(row), copy=False)
+    col = col.astype(get_min_dtype(col), copy=False)
+    data = data.astype(get_min_dtype(data), copy=False)
+    out_matrix = csr_array(
+        (data, (row, col)),
         shape=(windows.shape[0], num_features),
     )
-    return csr_array(out_matrix)
+    return out_matrix
 
 
 def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
@@ -249,17 +253,14 @@ if __name__ == "__main__":
     import json
     from pathlib import Path
 
-    feature_columns = json.load(
-        open(
-            Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/tabularize") / "feature_columns.json"
-        )
-    )
-    df = pl.scan_parquet(
-        Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed")
-        / "final_cohort"
-        / "train"
-        / "2.parquet"
-    )
+    # feature_columns_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS") / "tabularized_code_metadata.parquet"
+    # shard_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS/final_cohort/train/0.parquet")
+
+    feature_columns_fp = Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed") / "tabularized_code_metadata.parquet"
+    shard_fp = Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort/train/0.parquet")
+
+    feature_columns = get_feature_columns(feature_columns_fp)
+    df = pl.scan_parquet(shard_fp)
     agg = "code/count"
     index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, df)
     generate_summary(

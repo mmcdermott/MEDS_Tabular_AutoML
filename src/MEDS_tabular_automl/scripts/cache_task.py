@@ -39,10 +39,10 @@ VALID_AGGREGATIONS = [
 
 def generate_row_cached_matrix(matrix, label_df):
     """Generates row-cached matrix for a given matrix and label_df."""
-    label_len = label_df.select(pl.len()).collect().item()
-    if not matrix.shape[0] == label_len:
+    label_len = label_df.select(pl.col("event_id").max()).collect().item()
+    if matrix.shape[0] <= label_len:
         raise ValueError(
-            f"Matrix and label_df must have the same number of rows: {matrix.shape[0]} != {label_len}"
+            f"Label_df event_ids must be valid indexes of sparse matrix: {matrix.shape[0]} <= {label_len}"
         )
     csr = sp.csr_array(matrix)
     valid_ids = label_df.select(pl.col("event_id")).collect().to_series().to_numpy()
