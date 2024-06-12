@@ -73,11 +73,43 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
     return coo_array((data, (row, col)), shape=shape)
 
 
-def get_min_dtype(array):
-    try:
+def get_min_dtype(array: np.ndarray) -> np.dtype:
+    """Get the minimal dtype that can represent the array.
+
+    Args:
+        array: The array to determine the minimal dtype for.
+
+    Returns:
+        The minimal dtype that can represent the array, or the array's dtype if it is non-numeric.
+
+    Examples:
+        >>> get_min_dtype(np.array([1, 2, 3]))
+        dtype('uint8')
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)]))
+        dtype('uint32')
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)]))
+        dtype('uint64')
+        >>> get_min_dtype(np.array([1, 2, 3, -128]))
+        dtype('int8')
+        >>> get_min_dtype(np.array([1.0, 2.0, 3.0]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([1, 2, 3, np.nan]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([1, 2, 3, "a"]))
+        dtype('<U21')
+    """
+    if np.issubdtype(array.dtype, np.integer):
         return np.result_type(np.min_scalar_type(array.min()), array.max())
-    except:
-        return array.dtype
+    elif np.issubdtype(array.dtype, np.floating):
+        return np.result_type(np.float32)
+        # For more precision, we could do this
+        # try:
+        #    array.astype(np.float32, copy=False)
+        #    return np.float32
+        # except OverflowError:
+        #    return np.float64
+
+    return array.dtype
 
 
 def sparse_matrix_to_array(coo_matrix: coo_array):

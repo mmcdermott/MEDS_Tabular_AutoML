@@ -5,6 +5,7 @@ import polars as pl
 
 pl.enable_string_cache()
 
+import gc
 from importlib.resources import files
 from itertools import product
 from pathlib import Path
@@ -27,7 +28,6 @@ from MEDS_tabular_automl.utils import (
     load_tqdm,
     write_df,
 )
-import gc
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
 if not config_yaml.is_file():
