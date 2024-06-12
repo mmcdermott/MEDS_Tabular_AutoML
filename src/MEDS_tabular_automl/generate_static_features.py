@@ -99,18 +99,17 @@ def summarize_static_measurements(
 ) -> pl.LazyFrame:
     """Aggregates static measurements for feature columns that are marked as 'present' or 'first'.
 
-    Parameters:
-    - feature_columns (list[str]): List of feature column identifiers that are specifically marked
-        for staticanalysis.
-    - df (DF_T): Data frame from which features will be extracted and summarized.
-
-    Returns:
-    - pl.LazyFrame: A LazyFrame containing the summarized data pivoted by 'patient_id'
-        for each static feature.
-
     This function first filters for features that need to be recorded as the first occurrence
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
+
+    Args:
+        agg: The type of aggregation ('present' or 'first').
+        feature_columns: A list of feature column identifiers marked for static analysis.
+        df: DataFrame from which features will be extracted and summarized.
+
+    Returns:
+        A LazyFrame containing summarized data pivoted by 'patient_id' for each static feature.
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
