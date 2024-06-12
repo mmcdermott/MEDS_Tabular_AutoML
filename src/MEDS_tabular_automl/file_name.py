@@ -50,13 +50,10 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
     return sorted(list(Path(root).glob(f"**/*.{ext}")))
 
 
-def get_task_specific_path(cfg, split, shard_num, window_size, agg):
-    return Path(cfg.input_dir) / split / f"{shard_num}" / f"{window_size}" / f"{agg}.npz"
-
-
 def get_model_files(cfg, split: str, shard_num: int):
     window_sizes = cfg.tabularization.window_sizes
     aggs = cfg.tabularization.aggs
+    shard_dir = Path(cfg.input_dir) / split / f"{shard_num}"
     # Given a shard number, returns the model files
     model_files = []
     for window_size in window_sizes:
@@ -64,9 +61,9 @@ def get_model_files(cfg, split: str, shard_num: int):
             if agg.startswith("static"):
                 continue
             else:
-                model_files.append(get_task_specific_path(cfg, split, shard_num, window_size, agg))
+                model_files.append(shard_dir / window_size / f"{agg}.npz")
     for agg in aggs:
         if agg.startswith("static"):
             window_size = "none"
-            model_files.append(get_task_specific_path(cfg, split, shard_num, window_size, agg))
+            model_files.append(shard_dir / window_size / f"{agg}.npz")
     return sorted(model_files)
