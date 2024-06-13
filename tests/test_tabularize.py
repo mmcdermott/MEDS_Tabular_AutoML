@@ -198,7 +198,6 @@ MERGE_EXPECTED_FILES = [
 
 
 def test_tabularize():
-    return  # Skip this test for now
     with tempfile.TemporaryDirectory() as d:
         MEDS_cohort_dir = Path(d) / "processed"
 

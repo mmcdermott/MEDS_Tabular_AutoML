@@ -112,9 +112,10 @@ def aggregate_matrix(
     row = np.concatenate(row)
     data = np.concatenate(data)
     col = np.concatenate(col)
-    row = row.astype(get_min_dtype(row), copy=False)
-    col = col.astype(get_min_dtype(col), copy=False)
-    data = data.astype(get_min_dtype(data), copy=False)
+    if len(data):
+        row = row.astype(get_min_dtype(row), copy=False)
+        col = col.astype(get_min_dtype(col), copy=False)
+        data = data.astype(get_min_dtype(data), copy=False)
     out_matrix = csr_array(
         (data, (row, col)),
         shape=(windows.shape[0], num_features),
@@ -165,6 +166,7 @@ def compute_agg(
 
 
 def generate_summary(
+    feature_columns: list[str],
     index_df: pl.LazyFrame,
     matrix: sparray,
     window_size: str,
