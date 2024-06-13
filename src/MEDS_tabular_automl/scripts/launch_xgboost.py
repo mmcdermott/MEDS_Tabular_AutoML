@@ -13,9 +13,9 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
-from MEDS_tabular_automl.describe_codes import get_feature_columns
-from MEDS_tabular_automl.file_name import get_model_files, list_subdir_files
-from MEDS_tabular_automl.utils import get_feature_indices, hydra_loguru_init
+from ..describe_codes import get_feature_columns
+from ..file_name import get_model_files, list_subdir_files
+from ..utils import get_feature_indices, hydra_loguru_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
 if not config_yaml.is_file():

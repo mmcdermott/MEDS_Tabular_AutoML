@@ -10,15 +10,24 @@ import sys
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "MEDS-Tab"
-copyright = "2024, Matthew McDermott, Nassim Oufattole, Teya Bergamaschi"
-author = "Matthew McDermott, Nassim Oufattole, Teya Bergamaschi"
-release = "0.0.1"
-version = "0.0.1"
+copyright = "2024, Nassim Oufattole, Matthew McDermott, Teya Bergamaschi, Aleksia Kolo, Hyewon Jeong"
+author = "Nassim Oufattole, Matthew McDermott, Teya Bergamaschi, Aleksia Kolo, Hyewon Jeong"
+release = "0.0.2"
+version = "0.0.2"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-sys.path.insert(0, os.path.abspath("../.."))
+# -- Path setup
+from pathlib import Path
+
+__location__ = Path(os.path.dirname(__file__))
+__src__ = __location__ / "../.."
+
+# If extensions (or modules to document with autodoc) are in another directory,
+# add these directories to sys.path here. If the directory is relative to the
+# documentation root, use os.path.abspath to make it absolute, like shown here.
+sys.path.insert(0, str(__src__))
 
 extensions = [
     "sphinx.ext.duration",

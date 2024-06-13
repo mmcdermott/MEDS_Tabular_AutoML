@@ -78,7 +78,7 @@ def filter_to_codes(
     return sorted(feature_freqs["code"].to_list())
 
 
-OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
+OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
 
 
 def load_tqdm(use_tqdm: bool):
