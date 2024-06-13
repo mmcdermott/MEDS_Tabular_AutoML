@@ -16,7 +16,19 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def sparse_aggregate(sparse_matrix, agg):
+def sparse_aggregate(sparse_matrix: sparray, agg: str) -> csr_array:
+    """Aggregates values in a sparse matrix according to the specified method.
+
+    Args:
+        sparse_matrix: The sparse matrix to aggregate.
+        agg: The aggregation method to apply, such as 'sum', 'min', 'max', 'sum_sqd', or 'count'.
+
+    Returns:
+        The aggregated sparse matrix.
+
+    Raises:
+        ValueError: If the aggregation method is not implemented.
+    """
     if agg == "sum":
         merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "min":
@@ -32,8 +44,16 @@ def sparse_aggregate(sparse_matrix, agg):
     return merged_matrix
 
 
-def get_rolling_window_indicies(index_df, window_size):
-    """Get the indices for the rolling windows."""
+def get_rolling_window_indicies(index_df: pl.LazyFrame, window_size: str) -> pl.LazyFrame:
+    """Computes the start and end indices for rolling window operations on a LazyFrame.
+
+    Args:
+        index_df: The LazyFrame containing the indices.
+        window_size: The size of the window as a string denoting time, e.g., '7d' for 7 days.
+
+    Returns:
+        A LazyFrame with columns 'min_index' and 'max_index' representing the range of each window.
+    """
     if window_size == "full":
         timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
     else:
@@ -47,8 +67,24 @@ def get_rolling_window_indicies(index_df, window_size):
     )
 
 
-def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
-    """Aggregate the matrix based on the windows."""
+def aggregate_matrix(
+    windows: pl.LazyFrame, matrix: sparray, agg: str, num_features: int, use_tqdm: bool = False
+) -> csr_array:
+    """Aggregates a matrix according to defined windows and specified aggregation method.
+
+    Args:
+        windows: The LazyFrame containing 'min_index' and 'max_index' for each window.
+        matrix: The matrix to aggregate.
+        agg: The aggregation method to apply.
+        num_features: The number of features in the matrix.
+        use_tqdm: The flag to enable progress display.
+
+    Returns:
+        Aggregated sparse matrix.
+
+    Raises:
+        TypeError: If the type of the aggregated matrix is not compatible for further operations.
+    """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
     matrix = csr_array(matrix)
@@ -86,12 +122,30 @@ def aggregate_matrix(windows, matrix, agg, num_features, use_tqdm=False):
     return out_matrix
 
 
-def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
-    """Applies aggreagtion to dataframe.
+def compute_agg(
+    index_df: pl.LazyFrame,
+    matrix: sparray,
+    window_size: str,
+    agg: str,
+    num_features: int,
+    use_tqdm: bool = False,
+) -> csr_array:
+    """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
 
-    Dataframe is expected to only have the relevant columns for aggregating It should have the patient_id and
+    Dataframe is expected to only have the relevant columns for aggregating. It should have the patient_id and
     timestamp columns, and then only code columns if agg is a code aggregation or only value columns if it is
     a value aggreagation.
+
+    Args:
+        index_df: The DataFrame with 'patient_id' and 'timestamp' columns used for grouping.
+        matrix: The sparse matrix to be aggregated.
+        window_size: The string defining the rolling window size.
+        agg: The string specifying the aggregation method.
+        num_features: The number of features in the matrix.
+        use_tqdm: The flag to enable or disable tqdm progress bar.
+
+    Returns:
+        The aggregated sparse matrix.
     """
     group_df = (
         index_df.with_row_index("index")
@@ -110,54 +164,36 @@ def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_featu
     return matrix
 
 
-def _generate_summary(
-    ts_columns: list[str],
-    index_df: pd.DataFrame,
+def generate_summary(
+    index_df: pl.LazyFrame,
     matrix: sparray,
     window_size: str,
     agg: str,
-    num_features,
-    use_tqdm=False,
-) -> pl.LazyFrame:
+    use_tqdm: bool = False,
+) -> csr_array:
     """Generate a summary of the data frame for a given window size and aggregation.
 
     Args:
-    - df (DF_T): The data frame to summarize.
-    - window_size (str): The window size to use for the summary.
-    - agg (str): The aggregation to apply to the data frame.
+        feature_columns: A list of all feature columns that must exist in the final output.
+        index_df: The DataFrame with index and grouping information.
+        matrix: The sparse matrix containing the data to aggregate.
+        window_size: The size of the rolling window used for summary.
+        agg: The aggregation function to apply.
+        num_features: The total number of features to handle.
+        use_tqdm: The flag to enable or disable progress display.
 
     Returns:
-    - pl.LazyFrame: The summarized data frame.
+        The summary of data as a sparse matrix.
+
+    Raises:
+        ValueError: If the aggregation type is not supported.
     """
     if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
         raise ValueError(
             f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
         )
-    out_matrix = compute_agg(index_df, matrix, window_size, agg, num_features, use_tqdm=use_tqdm)
-    return out_matrix
-
-
-def generate_summary(
-    feature_columns: list[str], index_df: pl.LazyFrame, matrix: sparray, window_size, agg: str, use_tqdm=False
-) -> pl.LazyFrame:
-    """Generate a summary of the data frame for given window sizes and aggregations.
-
-    This function processes a dataframe to apply specified aggregations over defined window sizes.
-    It then joins the resulting frames on 'patient_id' and 'timestamp', and ensures all specified
-    feature columns exist in the final output, adding missing ones with default values.
-
-    Args:
-        feature_columns (list[str]): List of all feature columns that must exist in the final output.
-        df (list[pl.LazyFrame]): The input dataframes to process, expected to be length 2 list with code_df
-            (pivoted shard with binary presence of codes) and value_df (pivoted shard with numerical values
-            for each code).
-        window_sizes (list[str]): List of window sizes to apply for summarization.
-        aggregations (list[str]): List of aggregations to perform within each window size.
-
-    Returns:
-        pl.LazyFrame: A LazyFrame containing the summarized data with all required features present.
-    """
     assert len(feature_columns), "feature_columns must be a non-empty list"
+
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
     code_type, _ = agg.split("/")
@@ -166,9 +202,8 @@ def generate_summary(
     logger.info(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
-    out_matrix = _generate_summary(
-        ts_columns, index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm
-    )
+
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm)
     return out_matrix
 
 
