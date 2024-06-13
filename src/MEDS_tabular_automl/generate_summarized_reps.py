@@ -16,7 +16,7 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def sparse_aggregate(sparse_matrix: sparray, agg: str) -> csr_array:
+def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array:
     """Aggregates values in a sparse matrix according to the specified method.
 
     Args:
