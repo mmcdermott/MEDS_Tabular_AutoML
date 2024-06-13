@@ -1,9 +1,9 @@
 """The base class for core dataset processing logic.
 
 Attributes:
-    INPUT_pl.LazyFrame: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
+    INPUT_DF_T: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
         dataframes, etc.
-    pl.LazyFrame: This defines the type of internal dataframes -- e.g. polars DataFrames.
+    DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
 import os
 from collections.abc import Mapping
