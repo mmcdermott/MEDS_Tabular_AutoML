@@ -6,7 +6,6 @@ Attributes:
     DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
 """
 import os
-from collections.abc import Mapping
 from pathlib import Path
 
 import hydra
@@ -245,65 +244,6 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         store_matrix(df, fp)
     else:
         raise TypeError(f"Unsupported type for df: {type(df)}")
-
-
-def get_prediction_ts_cols(
-    aggregations: list[str], ts_feature_cols: pl.LazyFrame, window_sizes: list[str] | None = None
-) -> list[str]:
-    """Generates a list of feature column names for prediction tasks based on aggregations and window sizes.
-
-    Args:
-        aggregations: The list of aggregation methods to apply.
-        ts_feature_cols: The list of existing time-series feature columns.
-        window_sizes: The optional list of window sizes to consider.
-
-    Returns:
-        A list of feature column names formatted with aggregation and window size.
-    """
-    agg_feature_columns = []
-    for code in ts_feature_cols:
-        ts_aggregations = [f"{code}/{agg}" for agg in aggregations]
-        agg_feature_columns.extend(ts_aggregations)
-    if window_sizes:
-        ts_aggregations = [f"{window_size}/{code}" for window_size in window_sizes]
-    return sorted(ts_aggregations)
-
-
-def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str, pl.LazyFrame]:
-    """Loads the MEDS dataset from disk, structured by data splits.
-
-    Args:
-        MEDS_cohort_dir: The directory containing the MEDS datasets split by subfolders.
-            We expect `train` to be a split so `MEDS_cohort_dir/train` should exist.
-        load_data: If True, returns LazyFrames for each data split, otherwise returns file paths.
-
-    Returns:
-        A dictionary mapping from split name to a LazyFrame, containing the MEDS dataset for each split.
-
-    Example:
-        >>> import tempfile
-        >>> from pathlib import Path
-        >>> MEDS_cohort_dir = Path(tempfile.mkdtemp())
-        >>> for split in ["train", "val", "test"]:
-        ...     split_dir = MEDS_cohort_dir / split
-        ...     split_dir.mkdir()
-        ...     pl.DataFrame({"patient_id": [1, 2, 3]}).write_parquet(split_dir / "data.parquet")
-        >>> split_to_df = load_meds_data(MEDS_cohort_dir)
-        >>> assert "train" in split_to_df
-        >>> assert len(split_to_df) == 3
-        >>> assert len(split_to_df["train"]) == 1
-        >>> assert isinstance(split_to_df["train"][0], pl.LazyFrame)
-    """
-    MEDS_cohort_dir = Path(MEDS_cohort_dir)
-    meds_fps = list(MEDS_cohort_dir.glob("*/*.parquet"))
-    splits = {fp.parent.stem for fp in meds_fps}
-    split_to_fps = {split: [fp for fp in meds_fps if fp.parent.stem == split] for split in splits}
-    if not load_data:
-        return split_to_fps
-    split_to_df = {
-        split: [pl.scan_parquet(fp) for fp in split_fps] for split, split_fps in split_to_fps.items()
-    }
-    return split_to_df
 
 
 def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
