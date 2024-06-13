@@ -30,13 +30,12 @@ if not config_yaml.is_file():
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
-def main(
-    cfg: DictConfig,
-):
-    """Computes the feature frequencies so we can filter out infrequent events.
+def main(cfg: DictConfig):
+    """Computes feature frequencies and stores them to disk.
 
     Args:
-        cfg: The configuration object for the tabularization process.
+        cfg: The configuration object for the tabularization process, loaded from a Hydra
+            YAML configuration file.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
