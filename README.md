@@ -17,6 +17,7 @@ This repository provides utilities and scripts to run limited automatic tabular 
 datasets.
 
 # Installation
+To use MEDS-Tab, install the dependencies following commands below:
 
 **Pip Install**
 
@@ -50,6 +51,7 @@ See `tests/test_integration.py` for an example of the end-to-end pipeline being 
 script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
 
 For an end to end example over MIMIC-IV, see the [companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV)
+For an end to end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
 ### Core CLI Scripts Overview
 
@@ -60,14 +62,59 @@ For an end to end example over MIMIC-IV, see the [companion repository](https://
    - static codes (codes without timestamps)
    - static numerical codes (codes without timestamps but with numerical values).
 
+   **Caching feature names and frequencies** in a dataset stored in `"path_to_data"`
+    ```
+    meds-tab-describe MEDS_cohort_dir="path_to_data"
+    ```
+    
 2. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the frequency of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `patient_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
 
+    **Tabularizing static data** with the minimum code frequency of 10 and window sizes of `[1d, 30d, 365d, full]` and value aggregation methods of `[static/present, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
+    
+    ```
+    meds-tab-tabularize-static MEDS_cohort_dir="path_to_data" \
+                                tabularization.min_code_inclusion_frequency=10 \
+                                tabularization.window_sizes=[1d,30d,365d,full] \
+                                do_overwrite=False \
+                                tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+    ```
+    
 3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `patient_id` x `timestamp`. This stage (and the previous stage) use sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's `--multirun` flag and the `joblib` launcher.
 
+    **Aggregates time-series data** on features across different `window_sizes`
+    ```
+    meds-tab-tabularize-time-series --multirun \
+                                    worker="range(0,$N_PARALLEL_WORKERS)" \
+                                    hydra/launcher=joblib \
+                                    MEDS_cohort_dir="path_to_data" \
+                                    tabularization.min_code_inclusion_frequency=10 \
+                                    do_overwrite=False \
+                                    tabularization.window_sizes=[1d,30d,365d,full] \
+                                    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    ```
 4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`patient_id`, `timestamp`, `label`) structured similarly to the `MEDS_cohort_dir`.
 
-5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters.
-
+    **Aligh tabularized data** for a specific task `$TASK` and labels that has pulled from [ACES](https://github.com/justin13601/ACES)
+    ```
+    meds-tab-cache-task MEDS_cohort_dir="path_to_data" \
+                        task_name=$TASK \
+                        tabularization.min_code_inclusion_frequency=10 \
+                        do_overwrite=False \
+                        tabularization.window_sizes=[1d,30d,365d,full] \
+                        tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    ```
+    
+5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters. Permutations of `window_sizes` and `aggs` can be generated using `generate-permutations` command (See the section below for descriptions).
+    ```
+    meds-tab-xgboost --multirun \
+                      MEDS_cohort_dir="path_to_data" \
+                      task_name=$TASK \
+                      output_dir="output_directory" \
+                      tabularization.min_code_inclusion_frequency=10 \
+                      tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
+                      do_overwrite=False \
+                      tabularization.aggs=$(generate-permutations [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
+    ```
 6. **`meds-tab-xgboost-sweep`**: Conducts an Optuna hyperparameter sweep to optimize over `window_sizes`, `aggregations`, and `min_code_inclusion_frequency`, aiming to enhance model performance and adaptability.
 
 # How does MEDS-Tab Work?
