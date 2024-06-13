@@ -12,7 +12,6 @@ from pathlib import Path
 import hydra
 import numpy as np
 import polars as pl
-import polars.selectors as cs
 from loguru import logger
 from omegaconf import DictConfig
 from scipy.sparse import coo_array
@@ -246,74 +245,6 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         store_matrix(df, fp)
     else:
         raise TypeError(f"Unsupported type for df: {type(df)}")
-
-
-def get_static_col_dtype(col: str) -> pl.DataType:
-    """Determines the appropriate minimal data type for given flat representation column string based on its
-    aggregation type.
-
-    Args:
-        col (str): The column name in the format 'category/type/aggregation'.
-
-    Returns:
-        pl.DataType: The appropriate Polars data type for the column.
-
-    Raises:
-        ValueError: If the column name format or aggregation type is not recognized.
-    """
-    code, code_type, agg = parse_static_feature_column(col)
-
-    match agg:
-        case "sum" | "sum_sqd" | "min" | "max" | "value" | "first":
-            return pl.Float32
-        case "present":
-            return pl.Boolean
-        case "count" | "has_values_count":
-            return pl.UInt32
-        case _:
-            raise ValueError(f"Column name {col} malformed!")
-
-
-def add_static_missing_cols(
-    flat_df: pl.LazyFrame, feature_columns: list[str], set_count_0_to_null: bool = False
-) -> pl.LazyFrame:
-    """Normalizes columns in a LazyFrame so all expected columns are present and appropriately typed and
-    potentially modifies zero counts to nulls based on the configuration.
-
-    Args:
-        flat_df: The LazyFrame to normalize.
-        feature_columns: A list of expected column names.
-        set_count_0_to_null: A flag of whether to convert zero counts to nulls.
-
-    Returns:
-        The normalized LazyFrame with all specified columns present and correctly typed and with
-        zero-counts handled if specified.
-    """
-    cols_to_add = set(feature_columns) - set(flat_df.columns)
-    cols_to_retype = set(feature_columns).intersection(set(flat_df.columns))
-
-    cols_to_add = [(c, get_static_col_dtype(c)) for c in cols_to_add]
-    cols_to_retype = [(c, get_static_col_dtype(c)) for c in cols_to_retype]
-
-    if "timestamp" in flat_df.columns:
-        key_cols = ["patient_id", "timestamp"]
-    else:
-        key_cols = ["patient_id"]
-
-    flat_df = flat_df.with_columns(
-        *[pl.lit(None, dtype=dt).alias(c) for c, dt in cols_to_add],
-        *[pl.col(c).cast(dt).alias(c) for c, dt in cols_to_retype],
-    ).select(*key_cols, *feature_columns)
-
-    if not set_count_0_to_null:
-        return flat_df
-
-    flat_df = flat_df.collect()
-
-    flat_df = flat_df.with_columns(
-        pl.when(cs.ends_with("count") != 0).then(cs.ends_with("count")).keep_name()
-    ).lazy()
-    return flat_df
 
 
 def get_static_feature_cols(shard_df: pl.LazyFrame) -> list[str]:
