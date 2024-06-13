@@ -23,7 +23,7 @@ if not config_yaml.is_file():
 
 
 class Iterator(xgb.DataIter, TimeableMixin):
-    """Iterator class for loading and processing data shards.
+    """Iterator class for loading and processing data shards for use in XGBoost models.
 
     This class provides functionality for iterating through data shards, loading
     feature data and labels, and processing them based on the provided configuration.
@@ -72,7 +72,7 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
-        """Create boolean masks for filtering features.
+        """Creates boolean masks for filtering features.
 
         Creates a dictionary of boolean masks for each aggregation type. The masks are used to filter
         the feature columns based on the specified included codes and minimum code inclusion frequency.
@@ -93,13 +93,16 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _load_matrix(self, path: Path) -> sp.csc_matrix:
-        """Load a sparse matrix from disk.
+        """Loads a sparse matrix from disk.
 
         Args:
-        - path (Path): Path to the sparse matrix.
+            path: Path to the sparse matrix.
 
         Returns:
-        - sp.csc_matrix: Sparse matrix.
+            The sparse matrix.
+
+        Raises:
+            ValueError: If the loaded array does not have exactly 3 rows, indicating an unexpected format.
         """
         npzfile = np.load(path)
         array, shape = npzfile["array"], npzfile["shape"]
@@ -113,10 +116,9 @@ class Iterator(xgb.DataIter, TimeableMixin):
         """Loads valid event ids and labels for each shard.
 
         Returns:
-        - Tuple[Mapping[int, list], Mapping[int, list]]: Tuple containing:
-            dictionary from shard number to list of valid event ids -- used for indexing rows
-                in the sparse matrix
-            dictionary from shard number to list of labels for these valid event ids
+            A tuple containing two mappings: one from shard indices to lists of valid event IDs
+            which is used for indexing rows in the sparse matrix, and another from shard indices
+            to lists of corresponding labels.
         """
         label_fps = {
             shard: (Path(self.cfg.input_label_dir) / self.split / shard).with_suffix(".parquet")
@@ -138,8 +140,15 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return cached_event_ids, cached_labels
 
     @TimeableMixin.TimeAs
-    def _get_code_set(self) -> tuple[set, Mapping[int, list], int]:
-        """Get the set of codes to include in the data based on the configuration."""
+    def _get_code_set(self) -> tuple[set[int], Mapping[str, list[bool]], int]:
+        """Determines the set of feature codes to include based on the configuration settings.
+
+        Returns:
+            A tuple containing:
+            - A set of feature indices to be included.
+            - A mapping from aggregation types to boolean masks indicating whether each feature is included.
+            - The total number of features.
+        """
         feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
         feature_dict = {col: i for i, col in enumerate(feature_columns)}
         allowed_codes = set(self.cfg.tabularization._resolved_codes)
@@ -153,13 +162,14 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
-        """Load a sparse shard into memory.
+        """Loads a specific data shard into memory as a sparse matrix.
 
         Args:
-            - path (Path): Path to the sparse shard.
+            path: Path to the sparse shard.
+            idx: Index of the shard.
 
         Returns:
-            - sp.csc_matrix: Data frame with the sparse shard.
+            The sparse matrix loaded from the file.
         """
         # column_shard is of form event_idx, feature_idx, value
         matrix = self._load_matrix(path)
@@ -172,14 +182,16 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _get_dynamic_shard_by_index(self, idx: int) -> sp.csc_matrix:
-        """Load a specific shard of dynamic data from disk and return it as a sparse matrix after filtering
-        column inclusion.
+        """Loads a shard and returns it as a sparse matrix after applying feature inclusion filtering.
 
         Args:
-        - idx (int): Index of the shard to load.
+            idx: Index of the shard to load from disk.
 
         Returns:
-        - sp.csc_matrix: Filtered sparse matrix.
+            The filtered sparse matrix.
+
+        Raises:
+            ValueError: If any of the required files for the shard do not exist.
         """
         # get all window_size x aggreagation files using the file resolver
         files = get_model_files(self.cfg, self.split, self._data_shards[idx])
@@ -195,14 +207,14 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _get_shard_by_index(self, idx: int) -> tuple[sp.csc_matrix, np.ndarray]:
-        """Load a specific shard of data from disk and concatenate with static data.
+        """Loads a specific shard of data from disk and concatenate with static data.
 
         Args:
-        - idx (int): Index of the shard to load.
+            idx: Index of the shard to load.
 
         Returns:
-        - X (scipy.sparse.csc_matrix): Feature data frame.ß
-        - y (numpy.ndarray): Labels.
+            A tuple containing the combined feature data and the corresponding labels
+            for the given shard.
         """
         dynamic_df = self._get_dynamic_shard_by_index(idx)
         label_df = self.labels[self._data_shards[idx]]
@@ -210,14 +222,17 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _filter_shard_on_codes_and_freqs(self, agg: str, df: sp.csc_matrix) -> sp.csc_matrix:
-        """Filter the dynamic data frame based on the inclusion sets. Given the codes_mask, filter the data
-        frame to only include columns that are True in the mask.
+        """Filters the given data frame based on the inclusion sets and aggregation type.
+
+        Given the codes_mask, the method filters the dynamic data frame to only include
+        columns that are True in the mask.
 
         Args:
-        - df (scipy.sparse.csc_matrix): Data frame to filter.
+            agg: The aggregation type used to determine the filtering logic.
+            df: The data frame to be filtered.
 
         Returns:
-        - df (scipy.sparse.sp.csc_matrix): Filtered data frame.
+            The filtered data frame.
         """
         if self.codes_set is None:
             return df
@@ -232,15 +247,14 @@ class Iterator(xgb.DataIter, TimeableMixin):
         return df
 
     @TimeableMixin.TimeAs
-    def next(self, input_data: Callable):
-        """Advance the iterator by 1 step and pass the data to XGBoost.  This function is called by XGBoost
-        during the construction of ``DMatrix``
+    def next(self, input_data: Callable) -> int:
+        """Advances the iterator by one step and provides data to XGBoost for DMatrix construction.
 
         Args:
-        - input_data (Callable): A function passed by XGBoost with the same signature as `DMatrix`.
+            input_data: A function passed by XGBoost with the same signature as `DMatrix`.
 
         Returns:
-        - int: 0 if end of iteration, 1 otherwise.
+            0 if end of iteration, 1 otherwise.
         """
         if self._it == len(self._data_shards):
             # return 0 to let XGBoost know this is the end of iteration
@@ -256,22 +270,24 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
     @TimeableMixin.TimeAs
     def reset(self):
-        """Reset the iterator to its beginning."""
+        """Resets the iterator to its beginning."""
         self._it = 0
 
     @TimeableMixin.TimeAs
     def collect_in_memory(self) -> tuple[sp.csc_matrix, np.ndarray]:
         """Collects data from all shards into memory and returns it.
 
-        This method iterates through all data shards, retrieves the feature data
-        and labels from each shard, and then concatenates them into a single
-        sparse matrix and a single array, respectively.
+        This method iterates through all data shards, retrieves the feature data and labels
+        from each shard, and then concatenates them into a single sparse matrix and a single
+        array, respectively.
 
         Returns:
             A tuple where the first element is a sparse matrix containing the
             feature data, and the second element is a numpy array containing the labels.
-        """
 
+        Raises:
+            ValueError: If no data is found in the shards or labels, indicating an issue with input files.
+        """
         X = []
         y = []
         for i in range(len(self._data_shards)):
@@ -286,13 +302,35 @@ class Iterator(xgb.DataIter, TimeableMixin):
 
 
 class XGBoostModel(TimeableMixin):
+    """Class for configuring, training, and evaluating an XGBoost model.
+
+    This class utilizes the configuration settings provided to manage the training and evaluation
+    process of an XGBoost model, ensuring the model is trained and validated using specified parameters
+    and data splits. It supports training with in-memory data handling as well as direct streaming from
+    disk using iterators.
+
+    Args:
+        cfg: The configuration settings for the model, including data paths, model parameters,
+            and flags for data handling.
+
+    Attributes:
+        cfg: Configuration object containing all settings required for model operation.
+        model: The XGBoost model after being trained.
+        dtrain: The training dataset in DMatrix format.
+        dtuning: The tuning (validation) dataset in DMatrix format.
+        dheld_out: The held-out (test) dataset in DMatrix format.
+        itrain: Iterator for the training dataset.
+        ituning: Iterator for the tuning dataset.
+        iheld_out: Iterator for the held-out dataset.
+        keep_data_in_memory: Flag indicating whether to keep all data in memory or stream from disk.
+    """
+
     def __init__(self, cfg: DictConfig):
-        """Initialize the XGBoostClassifier with the provided configuration.
+        """Initializes the XGBoostClassifier with the provided configuration.
 
         Args:
-        - cfg (DictConfig): Configuration dictionary.
+            cfg: The configuration dictionary.
         """
-
         self.cfg = cfg
         self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
 
@@ -307,8 +345,18 @@ class XGBoostModel(TimeableMixin):
         self.model = None
 
     @TimeableMixin.TimeAs
+    def _build(self):
+        """Builds necessary data structures for training."""
+        if self.keep_data_in_memory:
+            self._build_iterators()
+            self._build_dmatrix_in_memory()
+        else:
+            self._build_iterators()
+            self._build_dmatrix_from_iterators()
+
+    @TimeableMixin.TimeAs
     def _train(self):
-        """Train the model."""
+        """Trains the model."""
         self.model = xgb.train(
             OmegaConf.to_container(self.cfg.model_params.model),
             self.dtrain,
@@ -321,23 +369,13 @@ class XGBoostModel(TimeableMixin):
 
     @TimeableMixin.TimeAs
     def train(self):
-        """Train the model."""
+        """Trains the model."""
         self._build()
         self._train()
 
     @TimeableMixin.TimeAs
-    def _build(self):
-        """Build necessary data structures for training."""
-        if self.keep_data_in_memory:
-            self._build_iterators()
-            self._build_dmatrix_in_memory()
-        else:
-            self._build_iterators()
-            self._build_dmatrix_from_iterators()
-
-    @TimeableMixin.TimeAs
     def _build_dmatrix_in_memory(self):
-        """Build the DMatrix from the data in memory."""
+        """Builds the DMatrix from the data in memory."""
         X_train, y_train = self.itrain.collect_in_memory()
         X_tuning, y_tuning = self.ituning.collect_in_memory()
         X_held_out, y_held_out = self.iheld_out.collect_in_memory()
@@ -347,24 +385,24 @@ class XGBoostModel(TimeableMixin):
 
     @TimeableMixin.TimeAs
     def _build_dmatrix_from_iterators(self):
-        """Build the DMatrix from the iterators."""
+        """Builds the DMatrix from the iterators."""
         self.dtrain = xgb.DMatrix(self.itrain)
         self.dtuning = xgb.DMatrix(self.ituning)
         self.dheld_out = xgb.DMatrix(self.iheld_out)
 
     @TimeableMixin.TimeAs
     def _build_iterators(self):
-        """Build the iterators for training, validation, and testing."""
+        """Builds the iterators for training, validation, and testing."""
         self.itrain = Iterator(self.cfg, split="train")
         self.ituning = Iterator(self.cfg, split="tuning")
         self.iheld_out = Iterator(self.cfg, split="held_out")
 
     @TimeableMixin.TimeAs
     def evaluate(self) -> float:
-        """Evaluate the model on the test set.
+        """Evaluates the model on the test set.
 
         Returns:
-        - float: Evaluation metric (mae).
+            The evaluation metric as the ROC AUC score.
         """
         y_pred = self.model.predict(self.dheld_out)
         y_true = self.dheld_out.get_label()
@@ -373,13 +411,13 @@ class XGBoostModel(TimeableMixin):
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
 def main(cfg: DictConfig) -> float:
-    """Optimize the model based on the provided configuration.
+    """Optimizes the model based on the provided configuration.
 
     Args:
-    - cfg (DictConfig): Configuration dictionary.
+        cfg: The configuration dictionary specifying model and training parameters.
 
     Returns:
-    - float: Evaluation result.
+        The evaluation result as the ROC AUC score on the held-out test set.
     """
 
     # print(OmegaConf.to_yaml(cfg))
