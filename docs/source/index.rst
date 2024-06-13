@@ -17,3 +17,5 @@ Welcome to MEDS-Tab's documentation!
    computational-performance
    xgboost-performance
    api
+
+   autoapi/index

@@ -13,3 +13,4 @@ omegaconf
 ipywidgets
 ipykernel
 ipython
+autoapi

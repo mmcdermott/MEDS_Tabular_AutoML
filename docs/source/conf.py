@@ -39,8 +39,25 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx_rtd_theme",
     "recommonmark",
-    # "sphinx_immaterial"
+    "sphinx.ext.viewcode",
+    "autoapi.extension",
 ]
+
+# AutoAPI configuration
+autoapi_type = "python"
+autoapi_dirs = ["../../src"]  # Adjust the path to your source code directory
+
+# Autodoc options
+autodoc_default_options = {
+    "members": True,
+    "undoc-members": True,
+    "private-members": True,
+    "special-members": True,
+    "inherited-members": True,
+    "show-inheritance": True,
+}
+
+# Autosummary options
 
 source_suffix = {
     ".rst": "restructuredtext",
@@ -98,7 +115,7 @@ html_short_title = "MEDS-Tab Documentation"
 # html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
 
 html_theme_options = {
-    "dark_mode_code_blocks": False,
+    "dark_mode_code_blocks": True,
     # "nav_title": "MEDS-Tab",
     # "palette": {"primary": "green", "accent": "green"},
     # "repo_url": "https://github.com/mmcdermott/MEDS_Tabular_AutoML",
