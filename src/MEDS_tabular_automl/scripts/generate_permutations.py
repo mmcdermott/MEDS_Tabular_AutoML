@@ -35,7 +35,7 @@ def get_permutations(list_of_options: list[str]) -> None:
     format_print(sorted(permutations))
 
 
-def main() -> None:
+def main():
     """Generates and prints all possible permutations from given list of options."""
     list_of_options = list(sys.argv[1].strip("[]").split(","))
     get_permutations(list_of_options)
