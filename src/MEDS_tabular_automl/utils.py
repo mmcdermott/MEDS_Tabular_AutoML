@@ -79,6 +79,16 @@ def parse_static_feature_column(c: str) -> tuple[str, str, str, str]:
 
     Raises:
         ValueError: If the column string format is incorrect.
+
+    Examples:
+        >>> parse_static_feature_column("A/static/present")
+        ('A', 'static', 'present')
+        >>> parse_static_feature_column("A/B/static/first")
+        ('A/B', 'static', 'first')
+        >>> parse_static_feature_column("static/first")
+        Traceback (most recent call last):
+            ...
+        ValueError: Column static/first is not a valid flat feature column!
     """
     parts = c.split("/")
     if len(parts) < 3:
@@ -192,21 +202,38 @@ def load_matrix(fp_path: Path) -> coo_array:
     return array_to_sparse_matrix(array, shape)
 
 
-def write_df(df: coo_array, fp: Path, **kwargs) -> None:
+def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite: bool = False) -> None:
     """Writes a sparse matrix to disk.
 
     Args:
         df: The sparse matrix to write.
         fp: The file path where to write the data.
-        **kwargs: Additional keyword arguments, such as 'do_overwrite' to control file overwriting.
+        do_overwrite: A flag indicating whether to overwrite the file if it already exists.
 
     Raises:
         FileExistsError: If the file exists and 'do_overwrite' is not set to True.
         TypeError: If the type of 'df' is not supported for writing.
-    """
-    do_overwrite = kwargs.get("do_overwrite", False)
 
-    if not do_overwrite and fp.is_file():
+    Examples:
+        >>> import tempfile
+        >>> from polars.testing import assert_frame_equal
+        >>> df_polars = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df_coo_array = coo_array(([1, 2, 3], ([0, 1, 2], [0, 0, 0])), shape=(3, 1))
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     fp = Path(tmpdir) / "test.parquet"
+        ...     write_df(df_polars, fp)
+        ...     assert fp.is_file()
+        ...     assert_frame_equal(pl.read_parquet(fp), df_polars)
+        ...     write_df(df_polars.lazy(), fp, do_overwrite=True)
+        ...     assert_frame_equal(pl.read_parquet(fp), df_polars)
+        ...     write_df(df_coo_array, fp, do_overwrite=True)
+        ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
+        ...     write_df(df_coo_array, fp, do_overwrite=False)
+        Traceback (most recent call last):
+            ...
+        FileExistsError: test.parquet exists and do_overwrite is False!
+    """
+    if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
 
     fp.parent.mkdir(exist_ok=True, parents=True)
