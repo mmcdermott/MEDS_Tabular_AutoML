@@ -12,6 +12,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
+from omegaconf import OmegaConf
 from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
@@ -42,6 +43,42 @@ def hydra_loguru_init() -> None:
     """
     hydra_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     logger.add(os.path.join(hydra_path, "main.log"))
+
+
+def filter_to_codes(
+    allowed_codes: list[str] | None,
+    min_code_inclusion_frequency: int,
+    code_metadata_fp: Path,
+) -> list[str]:
+    """Filters and returns codes based on allowed list and minimum frequency.
+
+    Args:
+        allowed_codes: List of allowed codes, None means all codes are allowed.
+        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
+        code_metadata_fp: Path to the metadata file containing code information.
+
+    Returns:
+        Sorted list of the intersection of allowed codes (if they are specified) and filters based on
+        inclusion frequency.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes(["A", "D"], 3, f.name)
+        ['D']
+    """
+
+    feature_freqs = pl.read_parquet(code_metadata_fp)
+
+    if allowed_codes is not None:
+        feature_freqs = feature_freqs.filter(pl.col("code").is_in(allowed_codes))
+
+    feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_frequency)
+    return sorted(feature_freqs["code"].to_list())
+
+
+OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
 
 
 def load_tqdm(use_tqdm: bool):

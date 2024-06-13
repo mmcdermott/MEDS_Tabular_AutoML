@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import polars as pl
-from omegaconf import OmegaConf
 
 from MEDS_tabular_automl.utils import DF_T, get_feature_names
 
@@ -167,45 +166,6 @@ def get_feature_freqs(fp: Path) -> dict[str, int]:
         {'E': 1, 'D': 3, 'A': 2}
     """
     return convert_to_freq_dict(pl.scan_parquet(fp))
-
-
-def filter_to_codes(
-    allowed_codes: list[str] | None,
-    min_code_inclusion_frequency: int,
-    code_metadata_fp: Path,
-) -> list[str]:
-    """Filters and returns codes based on allowed list and minimum frequency.
-
-    Args:
-        allowed_codes: List of allowed codes, None means all codes are allowed.
-        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
-        code_metadata_fp: Path to the metadata file containing code information.
-
-    Returns:
-        Sorted list of the intersection of allowed codes (if they are specified) and filters based on
-        inclusion frequency.
-
-    Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> with NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes(["A", "D"], 3, f.name)
-        ['D']
-    """
-    if allowed_codes is None:
-        allowed_codes = get_feature_columns(code_metadata_fp)
-    feature_freqs = get_feature_freqs(code_metadata_fp)
-    allowed_codes_set = set(allowed_codes)
-
-    filtered_codes = [
-        code
-        for code, freq in feature_freqs.items()
-        if freq >= min_code_inclusion_frequency and code in allowed_codes_set
-    ]
-    return sorted(filtered_codes)
-
-
-OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
 
 
 def clear_code_aggregation_suffix(code: str) -> str:
