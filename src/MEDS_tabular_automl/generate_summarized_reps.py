@@ -6,8 +6,7 @@ pl.enable_string_cache()
 from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
-from MEDS_tabular_automl.describe_codes import get_feature_columns
-from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
+from MEDS_tabular_automl.generate_ts_features import get_feature_names
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
     VALUE_AGGREGATIONS,
@@ -207,25 +206,3 @@ def generate_summary(
 
     out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm)
     return out_matrix
-
-
-if __name__ == "__main__":
-    from pathlib import Path
-
-    feature_columns_fp = (
-        Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed") / "tabularized_code_metadata.parquet"
-    )
-    shard_fp = Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed/final_cohort/train/0.parquet")
-
-    feature_columns = get_feature_columns(feature_columns_fp)
-    df = pl.scan_parquet(shard_fp)
-    agg = "code/count"
-    index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, df)
-    generate_summary(
-        feature_columns=feature_columns,
-        index_df=index_df,
-        matrix=sparse_matrix,
-        window_size="full",
-        agg=agg,
-        use_tqdm=True,
-    )
