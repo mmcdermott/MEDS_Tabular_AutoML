@@ -17,7 +17,6 @@ from omegaconf import DictConfig
 from MEDS_tabular_automl.describe_codes import (
     convert_to_df,
     filter_parquet,
-    filter_to_codes,
     get_feature_columns,
     get_feature_freqs,
 )
@@ -27,6 +26,7 @@ from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
 from MEDS_tabular_automl.utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
+    filter_to_codes,
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import polars as pl
-from omegaconf import DictConfig
 
 from MEDS_tabular_automl.utils import DF_T, get_feature_names
 
@@ -14,17 +13,64 @@ def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
 
     Returns:
         A DataFrame with two columns, "code" and "count".
+
+    TODOs:
+        - Eliminate this function and just use a DataFrame throughout. See #14
+        - Use categorical types for `code` instead of strings.
+
+    Examples:
+        >>> convert_to_df({"A": 1, "B": 2, "C": 3})
+        shape: (3, 2)
+        ┌──────┬───────┐
+        │ code ┆ count │
+        │ ---  ┆ ---   │
+        │ str  ┆ i64   │
+        ╞══════╪═══════╡
+        │ A    ┆ 1     │
+        │ B    ┆ 2     │
+        │ C    ┆ 3     │
+        └──────┴───────┘
     """
     return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
 
 
-def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame:
+def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
+    """Converts a DataFrame to a dictionary of frequencies.
+
+    Args:
+        df: The DataFrame to be converted.
+
+    Returns:
+        A dictionary where keys are column names and values are
+        dictionaries of code frequencies.
+
+    Raises:
+        ValueError: If the DataFrame does not have the expected columns "code" and "count".
+
+    TODOs:
+        - Eliminate this function and just use a DataFrame throughout. See #14
+
+    Example:
+        >>> import polars as pl
+        >>> data = pl.DataFrame({"code": [1, 2, 3, 4, 5], "count": [10, 20, 30, 40, 50]}).lazy()
+        >>> convert_to_freq_dict(data)
+        {1: 10, 2: 20, 3: 30, 4: 40, 5: 50}
+        >>> convert_to_freq_dict(pl.DataFrame({"code": ["A", "B", "C"], "value": [1, 2, 3]}).lazy())
+        Traceback (most recent call last):
+            ...
+        ValueError: DataFrame must have columns 'code' and 'count', but has columns ['code', 'value']!
+    """
+    if not df.columns == ["code", "count"]:
+        raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
+    return dict(df.collect().iter_rows())
+
+
+def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
     """Generates a DataFrame containing the frequencies of codes and numerical values under different
     aggregations by computing frequency counts for certain attributes and organizing the results into specific
     categories based on the dataset's features.
 
     Args:
-        cfg: Configuration dictionary specifying how features should be evaluated and aggregated.
         shard_df: A DataFrame containing the data to be analyzed and split (e.g., 'train', 'test').
 
     Returns:
@@ -32,14 +78,27 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame
         during the evaluation.
 
     Examples:
-        # >>> import polars as pl
-        # >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-        # ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
-        # ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-        # >>> df = pl.DataFrame(data).lazy()
-        # >>> aggs = ['value/sum', 'code/count']
-        # >>> compute_feature_frequencies(aggs, df)
-        # ['A/code', 'A/value', 'C/code', 'C/value']
+        >>> from datetime import datetime
+        >>> data = pl.DataFrame({
+        ...     'patient_id': [1, 1, 2, 2, 3, 3, 3],
+        ...     'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+        ...     'timestamp': [
+        ...         None,
+        ...         datetime(2021, 1, 1),
+        ...         None,
+        ...         None,
+        ...         datetime(2021, 1, 3),
+        ...         datetime(2021, 1, 4),
+        ...         None
+        ...     ],
+        ...     'numerical_value': [1, None, 2, 2, None, None, 3]
+        ... }).lazy()
+        >>> assert (
+        ...     convert_to_freq_dict(compute_feature_frequencies(data).lazy()) == {
+        ...         'B/static/present': 2, 'C/static/present': 1, 'A/static/present': 1, 'B/static/first': 2,
+        ...         'C/static/first': 1, 'A/static/first': 1, 'A/code': 1, 'C/code': 2
+        ...     }
+        ... )
     """
     static_df = shard_df.filter(
         pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
@@ -71,33 +130,6 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame
     return convert_to_df(combined_freqs)
 
 
-def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
-    """Converts a DataFrame to a dictionary of frequencies.
-
-    Args:
-        df: The DataFrame to be converted.
-
-    Returns:
-        A dictionary where keys are column names and values are
-        dictionaries of code frequencies.
-
-    Raises:
-        ValueError: If the DataFrame does not have the expected columns "code" and "count".
-
-    Example:
-        # >>> import polars as pl
-        # >>> df = pl.DataFrame({
-        # ...     "code": [1, 2, 3, 4, 5],
-        # ...     "value": [10, 20, 30, 40, 50]
-        # ... })
-        # >>> convert_to_freq_dict(df)
-        # {'code': {1: 1, 2: 1, 3: 1, 4: 1, 5: 1}, 'value': {10: 1, 20: 1, 30: 1, 40: 1, 50: 1}}
-    """
-    if not df.columns == ["code", "count"]:
-        raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
-    return dict(df.collect().iter_rows())
-
-
 def get_feature_columns(fp: Path) -> list[str]:
     """Retrieves feature column names from a parquet file.
 
@@ -106,8 +138,15 @@ def get_feature_columns(fp: Path) -> list[str]:
 
     Returns:
         Sorted list of column names.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
+        ...     get_feature_columns(f.name)
+        ['A', 'D', 'E']
     """
-    return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp)).keys()))
+    return sorted(list(get_feature_freqs(fp).keys()))
 
 
 def get_feature_freqs(fp: Path) -> dict[str, int]:
@@ -118,47 +157,15 @@ def get_feature_freqs(fp: Path) -> dict[str, int]:
 
     Returns:
         Dictionary of feature frequencies.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
+        ...     get_feature_freqs(f.name)
+        {'E': 1, 'D': 3, 'A': 2}
     """
     return convert_to_freq_dict(pl.scan_parquet(fp))
-
-
-def filter_to_codes(
-    allowed_codes: list[str] | None,
-    min_code_inclusion_frequency: int,
-    code_metadata_fp: Path,
-) -> list[str]:
-    """Filters and returns codes based on allowed list and minimum frequency.
-
-    Args:
-        allowed_codes: List of allowed codes, None means all codes are allowed.
-        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
-        code_metadata_fp: Path to the metadata file containing code information.
-
-    Returns:
-        Sorted list of the intersection of allowed codes (if they are specified) and filters based on
-        inclusion frequency.
-    """
-    if allowed_codes is None:
-        allowed_codes = get_feature_columns(code_metadata_fp)
-    feature_freqs = get_feature_freqs(code_metadata_fp)
-    allowed_codes_set = set(allowed_codes)
-
-    filtered_codes = [
-        code
-        for code, freq in feature_freqs.items()
-        if freq >= min_code_inclusion_frequency and code in allowed_codes_set
-    ]
-    return sorted(filtered_codes)
-
-    # code_freqs = {
-    #     code: freq
-    #     for code, freq in feature_freqs.items()
-    #     if (freq >= min_code_inclusion_frequency and code in set(allowed_codes))
-    # }
-    # return sorted([code for code, freq in code_freqs.items() if freq >= min_code_inclusion_frequency])
-
-
-# OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes)
 
 
 def clear_code_aggregation_suffix(code: str) -> str:
@@ -169,6 +176,23 @@ def clear_code_aggregation_suffix(code: str) -> str:
 
     Returns:
         Code string without aggregation suffixes.
+
+    Raises:
+        ValueError: If the code does not have a recognized aggregation suffix.
+
+    Examples:
+        >>> clear_code_aggregation_suffix("A/code")
+        'A'
+        >>> clear_code_aggregation_suffix("A/value")
+        'A'
+        >>> clear_code_aggregation_suffix("A/static/present")
+        'A'
+        >>> clear_code_aggregation_suffix("A/static/first")
+        'A'
+        >>> clear_code_aggregation_suffix("A")
+        Traceback (most recent call last):
+            ...
+        ValueError: Code A does not have a recognized aggregation suffix!
     """
     if code.endswith("/code"):
         return code[:-5]
@@ -178,6 +202,8 @@ def clear_code_aggregation_suffix(code: str) -> str:
         return code[:-15]
     elif code.endswith("/static/first"):
         return code[:-13]
+    else:
+        raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
 
 
 def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:

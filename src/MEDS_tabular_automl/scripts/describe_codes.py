@@ -8,7 +8,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.describe_codes import (
     compute_feature_frequencies,
@@ -21,7 +21,6 @@ from MEDS_tabular_automl.utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
-    store_config_yaml,
     write_df,
 )
 
@@ -31,13 +30,12 @@ if not config_yaml.is_file():
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
-def main(
-    cfg: DictConfig,
-):
-    """Computes the feature frequencies so we can filter out infrequent events.
+def main(cfg: DictConfig):
+    """Computes feature frequencies and stores them to disk.
 
     Args:
-        cfg: The configuration object for the tabularization process.
+        cfg: The configuration object for the tabularization process, loaded from a Hydra
+            YAML configuration file.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
@@ -46,7 +44,7 @@ def main(
     # Store Config
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    store_config_yaml(output_dir / "config.yaml", cfg)
+    OmegaConf.save(cfg, output_dir / "config.yaml")
 
     # Create output dir
     input_dir = Path(cfg.input_dir)
@@ -54,9 +52,6 @@ def main(
 
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")
-
-    def compute_fn(shard_df):
-        return compute_feature_frequencies(cfg, shard_df)
 
     def write_fn(df, out_fp):
         write_df(df, out_fp)
@@ -76,7 +71,7 @@ def main(
             out_fp,
             read_fn,
             write_fn,
-            compute_fn,
+            compute_feature_frequencies,
             do_overwrite=cfg.do_overwrite,
             do_return=False,
         )

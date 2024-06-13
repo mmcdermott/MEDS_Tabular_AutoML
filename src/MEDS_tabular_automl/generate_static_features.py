@@ -4,7 +4,9 @@ transform them into a tabular format suitable for analysis. The module leverages
 efficient data manipulation.
 
 Functions:
-- _summarize_static_measurements: Summarizes static measurements from a given DataFrame.
+- convert_to_matrix: Converts a Polars DataFrame to a sparse matrix.
+- get_sparse_static_rep: Merges static and time-series dataframes into a sparse representation.
+- summarize_static_measurements: Summarizes static measurements from a given DataFrame.
 - get_flat_static_rep: Produces a tabular representation of static data features.
 """
 
@@ -14,7 +16,6 @@ from loguru import logger
 from scipy.sparse import coo_array, csr_array
 
 from MEDS_tabular_automl.utils import (
-    DF_T,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     get_events_df,
@@ -24,8 +25,17 @@ from MEDS_tabular_automl.utils import (
 )
 
 
-def convert_to_matrix(df, num_events, num_features):
-    """Converts a Polars DataFrame to a sparse matrix."""
+def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> csr_array:
+    """Converts a Polars DataFrame to a sparse matrix.
+
+    Args:
+        df: The DataFrame to convert.
+        num_events: Number of events to set matrix dimension.
+        num_features: Number of features to set matrix dimension.
+
+    Returns:
+        A sparse matrix representation of the DataFrame.
+    """
     dense_matrix = df.drop("patient_id").collect().to_numpy()
     data_list = []
     rows = []
@@ -41,18 +51,19 @@ def convert_to_matrix(df, num_events, num_features):
     return matrix
 
 
-def get_sparse_static_rep(static_features, static_df, meds_df, feature_columns) -> coo_array:
-    """Merges static and time-series dataframes.
-
-    This function merges the static and time-series dataframes based on the patient_id column.
+def get_sparse_static_rep(
+    static_features: list[str], static_df: pl.DataFrame, meds_df: pl.DataFrame, feature_columns: list[str]
+) -> coo_array:
+    """Merges static and time-series dataframes into a sparse representation based on the patient_id column.
 
     Args:
-    - feature_columns (List[str]): A list of feature columns to include in the merged dataframe.
-    - static_df (pd.DataFrame): A dataframe containing static features.
-    - ts_df (pd.DataFrame): A dataframe containing time-series features.
+        static_features: A list of static feature names.
+        static_df: A DataFrame containing static features.
+        meds_df: A DataFrame containing time-series features.
+        feature_columns (list[str]): A list of feature columns to include in the merged DataFrame.
 
     Returns:
-    - pd.DataFrame: A merged dataframe containing static and time-series features.
+        A sparse array representation of the merged static and time-series features.
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
@@ -85,22 +96,21 @@ def get_sparse_static_rep(static_features, static_df, meds_df, feature_columns) 
 def summarize_static_measurements(
     agg: str,
     feature_columns: list[str],
-    df: DF_T,
+    df: pl.LazyFrame,
 ) -> pl.LazyFrame:
     """Aggregates static measurements for feature columns that are marked as 'present' or 'first'.
-
-    Parameters:
-    - feature_columns (list[str]): List of feature column identifiers that are specifically marked
-        for staticanalysis.
-    - df (DF_T): Data frame from which features will be extracted and summarized.
-
-    Returns:
-    - pl.LazyFrame: A LazyFrame containing the summarized data pivoted by 'patient_id'
-        for each static feature.
 
     This function first filters for features that need to be recorded as the first occurrence
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
+
+    Args:
+        agg: The type of aggregation ('present' or 'first').
+        feature_columns: A list of feature column identifiers marked for static analysis.
+        df: The DataFrame from which features will be extracted and summarized.
+
+    Returns:
+        A LazyFrame containing summarized data pivoted by 'patient_id' for each static feature.
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
@@ -157,20 +167,21 @@ def summarize_static_measurements(
 def get_flat_static_rep(
     agg: str,
     feature_columns: list[str],
-    shard_df: DF_T,
+    shard_df: pl.LazyFrame,
 ) -> coo_array:
-    """Produces a raw representation for static data from a specified shard DataFrame.
-
-    Parameters:
-    - feature_columns (list[str]): List of feature columns to include in the static representation.
-    - shard_df (DF_T): The shard DataFrame containing patient data.
-
-    Returns:
-    - pl.LazyFrame: A LazyFrame that includes all static features for the data provided.
+    """Produces a sparse representation for static data from a specified shard DataFrame.
 
     This function selects the appropriate static features, summarizes them using
-    _summarize_static_measurements, and then normalizes the resulting data to ensure it is
-    suitable for further analysis or machine learning tasks.
+    summarize_static_measurements, and then normalizes the resulting data to ensure
+    it is suitable for further analysis or machine learning tasks.
+
+    Args:
+        agg: The aggregation method for static data.
+        feature_columns: A list of feature columns to include.
+        shard_df: The shard DataFrame containing the patient data.
+
+    Returns:
+        A sparse array representing the static features for the provided shard of data.
     """
     static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
     static_measurements = summarize_static_measurements(agg, static_features, df=shard_df)
