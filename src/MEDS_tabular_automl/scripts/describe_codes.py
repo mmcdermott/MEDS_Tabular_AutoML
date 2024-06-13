@@ -31,9 +31,8 @@ if not config_yaml.is_file():
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
-def main(cfg: DictConfig) -> None:
-    """Main function that orchestrates the feature frequency computation and storage process and enables
-    filtering out infrequent events.
+def main(cfg: DictConfig):
+    """Computes feature frequencies and stores them to disk.
 
     Args:
         cfg: The configuration object for the tabularization process, loaded from a Hydra
