@@ -44,7 +44,6 @@ def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test
 
 
 def test_integration():
-    return  # Skip this test for now
     # Step 0: Setup Environment
     with tempfile.TemporaryDirectory() as d:
         MEDS_cohort_dir = Path(d) / "processed"
