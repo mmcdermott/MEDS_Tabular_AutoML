@@ -184,6 +184,13 @@ def filter_to_codes(
     Returns:
         Sorted list of the intersection of allowed codes (if they are specified) and filters based on
         inclusion frequency.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes(["A", "D"], 3, f.name)
+        ['D']
     """
     if allowed_codes is None:
         allowed_codes = get_feature_columns(code_metadata_fp)
@@ -209,6 +216,23 @@ def clear_code_aggregation_suffix(code: str) -> str:
 
     Returns:
         Code string without aggregation suffixes.
+
+    Raises:
+        ValueError: If the code does not have a recognized aggregation suffix.
+
+    Examples:
+        >>> clear_code_aggregation_suffix("A/code")
+        'A'
+        >>> clear_code_aggregation_suffix("A/value")
+        'A'
+        >>> clear_code_aggregation_suffix("A/static/present")
+        'A'
+        >>> clear_code_aggregation_suffix("A/static/first")
+        'A'
+        >>> clear_code_aggregation_suffix("A")
+        Traceback (most recent call last):
+            ...
+        ValueError: Code A does not have a recognized aggregation suffix!
     """
     if code.endswith("/code"):
         return code[:-5]
@@ -218,6 +242,8 @@ def clear_code_aggregation_suffix(code: str) -> str:
         return code[:-15]
     elif code.endswith("/static/first"):
         return code[:-13]
+    else:
+        raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
 
 
 def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
