@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 
 # Configuration file for the Sphinx documentation builder.
@@ -46,6 +47,24 @@ source_suffix = {
     ".txt": "markdown",
     ".md": "markdown",
 }
+
+# -- Run sphinx-apidoc
+# This ensures we don't need to run apidoc manually.
+
+# TODO: use https://github.com/sphinx-extensions2/sphinx-autodoc2
+
+from sphinx.ext import apidoc
+
+output_dir = __location__ / "generated"
+module_dir = __src__ / "src/MEDS_tabular_automl"
+if output_dir.is_dir():
+    shutil.rmtree(output_dir)
+
+try:
+    cmd_line = f"--implicit-namespaces -e -f -o {output_dir} {module_dir}"
+    apidoc.main(cmd_line.split(" "))
+except Exception as e:  # pylint: disable=broad-except
+    print(f"Running `sphinx-apidoc {cmd_line}` failed!\n{e}")
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
