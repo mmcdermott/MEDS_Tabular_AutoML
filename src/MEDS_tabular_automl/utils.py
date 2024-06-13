@@ -47,7 +47,15 @@ def hydra_loguru_init() -> None:
     logger.add(os.path.join(hydra_path, "main.log"))
 
 
-def load_tqdm(use_tqdm):
+def load_tqdm(use_tqdm: bool):
+    """Conditionally loads and returns tqdm progress bar handler or a no-operation function.
+
+    Args:
+        use_tqdm: Flag indicating whether to use tqdm progress bar.
+
+    Returns:
+        A function that either encapsulates tqdm or simply returns the input it is given.
+    """
     if use_tqdm:
         from tqdm import tqdm
 
@@ -61,13 +69,36 @@ def load_tqdm(use_tqdm):
 
 
 def parse_static_feature_column(c: str) -> tuple[str, str, str, str]:
+    """Parses a flat feature column format into component parts.
+
+    Args:
+        c: The column string in 'category/subcategory/feature' format.
+
+    Returns:
+        A tuple containing separate strings of the feature column format.
+
+    Raises:
+        ValueError: If the column string format is incorrect.
+    """
     parts = c.split("/")
     if len(parts) < 3:
         raise ValueError(f"Column {c} is not a valid flat feature column!")
     return ("/".join(parts[:-2]), parts[-2], parts[-1])
 
 
-def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
+def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_array:
+    """Converts a numpy array representation into a sparse matrix.
+
+    Args:
+        array: The array containing data, rows, and columns.
+        shape: The shape of the resulting sparse matrix.
+
+    Returns:
+        The formatted sparse matrix.
+
+    Raises:
+        AssertionError: If the input array's first dimension is not 3.
+    """
     assert array.shape[0] == 3
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
@@ -112,7 +143,15 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
     return array.dtype
 
 
-def sparse_matrix_to_array(coo_matrix: coo_array):
+def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int, int]]:
+    """Converts a sparse matrix to a numpy array format with shape information.
+
+    Args:
+        coo_matrix: The sparse matrix to convert.
+
+    Returns:
+        A tuple of a numpy array ([data, row, col]) and the shape of the original matrix.
+    """
     data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
     # Remove invalid indices
     valid_indices = (data == 0) | np.isnan(data)
@@ -128,19 +167,43 @@ def sparse_matrix_to_array(coo_matrix: coo_array):
     return np.array([data, row, col]), coo_matrix.shape
 
 
-def store_matrix(coo_matrix: coo_array, fp_path: Path):
+def store_matrix(coo_matrix: coo_array, fp_path: Path) -> None:
+    """Stores a sparse matrix to disk as a .npz file.
+
+    Args:
+        coo_matrix: The sparse matrix to store.
+        fp_path: The file path where the matrix will be stored.
+    """
     array, shape = sparse_matrix_to_array(coo_matrix)
     np.savez(fp_path, array=array, shape=shape)
 
 
-def load_matrix(fp_path: Path):
+def load_matrix(fp_path: Path) -> coo_array:
+    """Loads a sparse matrix from a .npz file.
+
+    Args:
+        fp_path: The path to the .npz file containing the sparse matrix data.
+
+    Returns:
+        The loaded sparse matrix.
+    """
     npzfile = np.load(fp_path)
     array, shape = npzfile["array"], npzfile["shape"]
     return array_to_sparse_matrix(array, shape)
 
 
-def write_df(df: coo_array, fp: Path, **kwargs):
-    """Write shard to disk."""
+def write_df(df: coo_array, fp: Path, **kwargs) -> None:
+    """Writes a sparse matrix to disk.
+
+    Args:
+        df: The sparse matrix to write.
+        fp: The file path where to write the data.
+        **kwargs: Additional keyword arguments, such as 'do_overwrite' to control file overwriting.
+
+    Raises:
+        FileExistsError: If the file exists and 'do_overwrite' is not set to True.
+        TypeError: If the type of 'df' is not supported for writing.
+    """
     do_overwrite = kwargs.get("do_overwrite", False)
 
     if not do_overwrite and fp.is_file():
@@ -159,8 +222,18 @@ def write_df(df: coo_array, fp: Path, **kwargs):
 
 
 def get_static_col_dtype(col: str) -> pl.DataType:
-    """Gets the appropriate minimal dtype for the given flat representation column string."""
+    """Determines the appropriate minimal data type for given flat representation column string based on its
+    aggregation type.
 
+    Args:
+        col (str): The column name in the format 'category/type/aggregation'.
+
+    Returns:
+        pl.DataType: The appropriate Polars data type for the column.
+
+    Raises:
+        ValueError: If the column name format or aggregation type is not recognized.
+    """
     code, code_type, agg = parse_static_feature_column(col)
 
     match agg:
@@ -175,21 +248,19 @@ def get_static_col_dtype(col: str) -> pl.DataType:
 
 
 def add_static_missing_cols(
-    flat_df: DF_T, feature_columns: list[str], set_count_0_to_null: bool = False
-) -> DF_T:
-    """Normalizes columns in a DataFrame so all expected columns are present and appropriately typed.
+    flat_df: pl.LazyFrame, feature_columns: list[str], set_count_0_to_null: bool = False
+) -> pl.LazyFrame:
+    """Normalizes columns in a LazyFrame so all expected columns are present and appropriately typed and
+    potentially modifies zero counts to nulls based on the configuration.
 
-    Parameters:
-    - flat_df (DF_T): The DataFrame to be normalized.
-    - feature_columns (list[str]): A list of feature column names that should exist in the DataFrame.
-    - set_count_0_to_null (bool): A flag indicating whether counts of zero should be converted to nulls.
+    Args:
+        flat_df: The LazyFrame to normalize.
+        feature_columns: A list of expected column names.
+        set_count_0_to_null: A flag of whether to convert zero counts to nulls.
 
     Returns:
-    - DF_T: The normalized DataFrame with all columns set to the correct type and zero-counts handled
-        if specified.
-
-    This function ensures that all necessary columns are added and typed correctly within
-    a DataFrame, potentially modifying zero counts to nulls based on the configuration.
+        The normalized LazyFrame with all specified columns present and correctly typed and with
+        zero-counts handled if specified.
     """
     cols_to_add = set(feature_columns) - set(flat_df.columns)
     cols_to_retype = set(feature_columns).intersection(set(flat_df.columns))
@@ -218,30 +289,28 @@ def add_static_missing_cols(
     return flat_df
 
 
-def get_static_feature_cols(shard_df) -> list[str]:
-    """Generates a list of feature column names from the data within each shard based on specified
-    configurations.
-
-    Parameters:
-    - cfg (dict): Configuration dictionary specifying how features should be evaluated and aggregated.
-    - split_to_shard_df (dict): A dictionary of DataFrames, divided by data split (e.g., 'train', 'test').
-
-    Returns:
-    - tuple[list[str], dict]: A tuple containing a list of feature columns and a dictionary of code properties
-        identified during the evaluation.
+def get_static_feature_cols(shard_df: pl.LazyFrame) -> list[str]:
+    """Generates a list of static feature column names based on data within a shard.
 
     This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    aggregations to generate a comprehensive list of the static feature columns for modeling purposes.
+
+    Args:
+        shard_df: The LazyFrame shard to analyze.
+
+    Returns:
+        A list of column names representing static features.
+
     Examples:
-    >>> import polars as pl
-    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    ...         'timestamp': [
-    ...             None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None
-    ...         ],
-    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-    >>> df = pl.DataFrame(data).lazy()
-    >>> get_static_feature_cols(df)
-    ['A/static/first', 'A/static/present', 'C/static/first', 'C/static/present']
+        >>> import polars as pl
+        >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+        ...         'timestamp': [
+        ...             None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None
+        ...         ],
+        ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
+        >>> df = pl.DataFrame(data).lazy()
+        >>> get_static_feature_cols(df)
+        ['A/static/first', 'A/static/present', 'C/static/first', 'C/static/present']
     """
     feature_columns = []
     static_df = shard_df.filter(pl.col("timestamp").is_null())
@@ -251,20 +320,18 @@ def get_static_feature_cols(shard_df) -> list[str]:
     return sorted(feature_columns)
 
 
-def get_ts_feature_cols(shard_df: DF_T) -> list[str]:
-    """Generates a list of feature column names from the data within each shard based on specified
-    configurations.
-
-    Parameters:
-    - cfg (dict): Configuration dictionary specifying how features should be evaluated and aggregated.
-    - split_to_shard_df (dict): A dictionary of DataFrames, divided by data split (e.g., 'train', 'test').
-
-    Returns:
-    - tuple[list[str], dict]: A tuple containing a list of feature columns and a dictionary of code properties
-        identified during the evaluation.
+def get_ts_feature_cols(shard_df: pl.LazyFrame) -> list[str]:
+    """Generates a list of time-series feature column names based on data within a shard.
 
     This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    aggregations to generate a comprehensive list of the time-series feature columns for modeling
+    purposes.
+
+    Args:
+        shard_df: The LazyFrame shard to analyze.
+
+    Returns:
+        A list of column names representing time-series features.
     """
     ts_df = shard_df.filter(pl.col("timestamp").is_not_null())
     feature_columns = list(ts_df.select(pl.col("code").unique()).collect().to_series())
@@ -275,9 +342,18 @@ def get_ts_feature_cols(shard_df: DF_T) -> list[str]:
 
 
 def get_prediction_ts_cols(
-    aggregations: list[str], ts_feature_cols: DF_T, window_sizes: list[str] | None = None
+    aggregations: list[str], ts_feature_cols: pl.LazyFrame, window_sizes: list[str] | None = None
 ) -> list[str]:
-    """Generates a list of feature column names that will be used for downstream task."""
+    """Generates a list of feature column names for prediction tasks based on aggregations and window sizes.
+
+    Args:
+        aggregations: The list of aggregation methods to apply.
+        ts_feature_cols: The list of existing time-series feature columns.
+        window_sizes: The optional list of window sizes to consider.
+
+    Returns:
+        A list of feature column names formatted with aggregation and window size.
+    """
     agg_feature_columns = []
     for code in ts_feature_cols:
         ts_aggregations = [f"{code}/{agg}" for agg in aggregations]
@@ -287,48 +363,48 @@ def get_prediction_ts_cols(
     return sorted(ts_aggregations)
 
 
-def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: DF_T) -> list[str]:
-    """Generates a list of feature column names from the data within each shard based on specified
-    configurations.
-
-    Parameters:
-    - cfg (dict): Configuration dictionary specifying how features should be evaluated and aggregated.
-    - shard_df (DF_T): MEDS format dataframe shard.
-
-    Returns:
-    - list[str]: list of all feature columns.
+def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: pl.LazyFrame) -> list[str]:
+    """Combines static and time-series feature columns from a shard based on specified configurations.
 
     This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of feature columns for modeling purposes.
+    aggregations to generate a comprehensive list of all feature columns for modeling purposes.
+
+    Args:
+        cfg: The configuration dictionary specifying aggregation settings.
+        shard_df: The LazyFrame shard in MEDS format to process.
+
+    Returns:
+        A combined list of all feature columns from both static and time-series data.
     """
     static_feature_columns = get_static_feature_cols(shard_df)
     ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)
     return static_feature_columns + ts_feature_columns
 
 
-def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str, pl.DataFrame]:
-    """Loads the MEDS dataset from disk.
+def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str, pl.LazyFrame]:
+    """Loads the MEDS dataset from disk, structured by data splits.
 
     Args:
         MEDS_cohort_dir: The directory containing the MEDS datasets split by subfolders.
             We expect `train` to be a split so `MEDS_cohort_dir/train` should exist.
+        load_data: If True, returns LazyFrames for each data split, otherwise returns file paths.
 
     Returns:
-        Mapping[str, pl.DataFrame]: Mapping from split name to a polars DataFrame containing the MEDS dataset.
+        A dictionary mapping from split name to a LazyFrame, containing the MEDS dataset for each split.
 
     Example:
-    >>> import tempfile
-    >>> from pathlib import Path
-    >>> MEDS_cohort_dir = Path(tempfile.mkdtemp())
-    >>> for split in ["train", "val", "test"]:
-    ...     split_dir = MEDS_cohort_dir / split
-    ...     split_dir.mkdir()
-    ...     pl.DataFrame({"patient_id": [1, 2, 3]}).write_parquet(split_dir / "data.parquet")
-    >>> split_to_df = load_meds_data(MEDS_cohort_dir)
-    >>> assert "train" in split_to_df
-    >>> assert len(split_to_df) == 3
-    >>> assert len(split_to_df["train"]) == 1
-    >>> assert isinstance(split_to_df["train"][0], pl.LazyFrame)
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> MEDS_cohort_dir = Path(tempfile.mkdtemp())
+        >>> for split in ["train", "val", "test"]:
+        ...     split_dir = MEDS_cohort_dir / split
+        ...     split_dir.mkdir()
+        ...     pl.DataFrame({"patient_id": [1, 2, 3]}).write_parquet(split_dir / "data.parquet")
+        >>> split_to_df = load_meds_data(MEDS_cohort_dir)
+        >>> assert "train" in split_to_df
+        >>> assert len(split_to_df) == 3
+        >>> assert len(split_to_df["train"]) == 1
+        >>> assert isinstance(split_to_df["train"][0], pl.LazyFrame)
     """
     MEDS_cohort_dir = Path(MEDS_cohort_dir)
     meds_fps = list(MEDS_cohort_dir.glob("*/*.parquet"))
@@ -342,8 +418,16 @@ def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str,
     return split_to_df
 
 
-def get_events_df(shard_df: pl.DataFrame, feature_columns) -> pl.DataFrame:
-    """Extracts Events DataFrame with one row per observation (timestamps can be duplicated)"""
+def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
+    """Extracts and filters an Events LazyFrame with one row per observation (timestamps can be duplicated).
+
+    Args:
+        shard_df: The LazyFrame shard from which to extract events.
+        feature_columns: The columns that define features used to filter the LazyFrame.
+
+    Returns:
+        A LazyFrame where each row corresponds to an event, filtered by feature columns.
+    """
     # Filter out feature_columns that were not present in the training set
     raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
     shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
@@ -352,8 +436,15 @@ def get_events_df(shard_df: pl.DataFrame, feature_columns) -> pl.DataFrame:
     return ts_shard_df
 
 
-def get_unique_time_events_df(events_df: pl.DataFrame):
-    """Updates Events DataFrame to have unique timestamps and sorted by patient_id and timestamp."""
+def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
+    """Ensures all timestamps in the events LazyFrame are unique and sorted by patient_id and timestamp.
+
+    Args:
+        events_df: Events LazyFrame to process.
+
+    Returns:
+        A LazyFrame with unique timestamps, sorted by patient_id and timestamp.
+    """
     assert events_df.select(pl.col("timestamp")).null_count().collect().item() == 0
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
@@ -365,8 +456,19 @@ def get_unique_time_events_df(events_df: pl.DataFrame):
     return events_df
 
 
-def get_feature_names(agg, feature_columns) -> str:
-    """Indices of columns in feature_columns list."""
+def get_feature_names(agg: str, feature_columns: list[str]) -> str:
+    """Extracts feature column names based on aggregation type from a list of column names.
+
+    Args:
+        agg: The aggregation type to filter by.
+        feature_columns: The list of feature column names.
+
+    Returns:
+        The filtered list of feature column names based on the aggregation type.
+
+    Raises:
+        ValueError: If the aggregation type is unknown or unsupported.
+    """
     if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]:
         return [c for c in feature_columns if c.endswith(agg)]
     elif agg in CODE_AGGREGATIONS:
@@ -377,31 +479,32 @@ def get_feature_names(agg, feature_columns) -> str:
         raise ValueError(f"Unknown aggregation type {agg}")
 
 
-def get_feature_indices(agg, feature_columns) -> str:
-    """Indices of columns in feature_columns list."""
+def get_feature_indices(agg: str, feature_columns: list[str]) -> list[int]:
+    """Generates a list of feature name indices based on the aggregation type.
+
+    Args:
+        agg: The aggregation type used to filter feature names.
+        feature_columns: The list of all feature column names.
+
+    Returns:
+        Indices of the columns that match the aggregation type.
+    """
     feature_to_index = {c: i for i, c in enumerate(feature_columns)}
     agg_features = get_feature_names(agg, feature_columns)
     return [feature_to_index[c] for c in agg_features]
 
 
-def store_config_yaml(config_fp: Path, cfg: DictConfig):
-    """Stores configuration parameters into a JSON file.
+def store_config_yaml(config_fp: Path, cfg: DictConfig) -> None:
+    """Stores configuration parameters into a YAML file.
 
     This function writes a dictionary of parameters, which includes patient partitioning
-    information and configuration details, to a specified JSON file.
+    information and configuration details, to a specified YAML file.
 
     Args:
-    - config_fp (Path): The file path for the JSON file where config should be stored.
-    - cfg (DictConfig): A configuration object containing settings like the number of patients
-      per sub-shard, minimum code inclusion frequency, and flags for updating or overwriting existing files.
-
-    Behavior:
-    - If config_fp exists and cfg.do_overwrite is False (without do_update being True), a
-      FileExistsError is raised to prevent unintentional data loss.
-
-    Raises:
-    - ValueError: If there are discrepancies between old and new parameters during an update.
-    - FileExistsError: If the file exists and overwriting is not allowed.
+        config_fp: The file path for the YAML file where config should be stored.
+        cfg: A configuration object containing settings like the number of patients
+            per sub-shard, minimum code inclusion frequency, and flags for updating
+            or overwriting existing files.
     """
     OmegaConf.save(cfg, config_fp)
 
@@ -410,8 +513,8 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     """Extracts the shard prefix from a file path by removing the raw_cohort_dir.
 
     Args:
-        base_path: The base path to remove.
-        fp: The file path to extract the shard prefix from.
+        base_path: The base path to remove from the file path.
+        fp: The full file path from which to extract the shard prefix.
 
     Returns:
         The shard prefix (the file path relative to the base path with the suffix removed).
