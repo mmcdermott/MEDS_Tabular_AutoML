@@ -17,6 +17,7 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from scipy.sparse import coo_array
 
+DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
 
