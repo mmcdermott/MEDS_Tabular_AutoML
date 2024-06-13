@@ -1,14 +1,12 @@
 import warnings
 
 import numpy as np
-import pandas as pd
 import polars as pl
 from loguru import logger
 from scipy.sparse import csr_array
 
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
-    DF_T,
     VALUE_AGGREGATIONS,
     get_events_df,
     get_feature_names,
@@ -18,12 +16,38 @@ warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
 def feature_name_to_code(feature_name: str) -> str:
-    """Converts a feature name to a code name."""
+    """Converts a feature name to a code name by removing the aggregation part.
+
+    Args:
+        feature_name: The full feature name, including aggregation.
+
+    Returns:
+        The code name without the aggregation part.
+
+    Examples:
+        >>> feature_name_to_code("A/code/count")
+        'A/code'
+        >>> feature_name_to_code("A/B/code/count")
+        'A/B/code'
+        >>> feature_name_to_code("invalid_name")
+        ''
+    """
     return "/".join(feature_name.split("/")[:-1])
 
 
-def get_long_code_df(df, ts_columns):
-    """Pivots the codes data frame to a long format one-hot rep for time series data."""
+def get_long_code_df(
+    df: pl.LazyFrame, ts_columns: list[str]
+) -> tuple[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+    """Pivots the codes data frame to a long format one-hot representation for time-series data.
+
+    Args:
+        df: The LazyFrame containing the code data.
+        ts_columns: The list of time-series columns to include in the output.
+
+    Returns:
+        A tuple containing the data (1s for presence), and a tuple of row and column indices for
+        the CSR sparse matrix.
+    """
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
     rows = range(df.select(pl.len()).collect().item())
     cols = (
@@ -38,8 +62,19 @@ def get_long_code_df(df, ts_columns):
     return data, (rows, cols)
 
 
-def get_long_value_df(df, ts_columns):
-    """Pivots the numerical value data frame to a long format for time series data."""
+def get_long_value_df(
+    df: pl.LazyFrame, ts_columns: list[str]
+) -> tuple[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+    """Pivots the numerical value data frame to a long format for time-series data.
+
+    Args:
+        df: The LazyFrame containing the numerical value data.
+        ts_columns: The list of time-series columns that have numerical values.
+
+    Returns:
+        A tuple containing the data (numerical values), and a tuple of row and column indices for
+        the CSR sparse matrix.
+    """
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
     value_df = (
         df.with_row_index("index").drop_nulls("numerical_value").filter(pl.col("code").is_in(ts_columns))
@@ -60,17 +95,18 @@ def get_long_value_df(df, ts_columns):
 def summarize_dynamic_measurements(
     agg: str,
     ts_columns: list[str],
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-    """Summarize dynamic measurements for feature columns that are marked as 'dynamic'.
+    df: pl.LazyFrame,
+) -> tuple[pl.DataFrame, csr_array]:
+    """Summarizes dynamic measurements for feature columns that are marked as 'dynamic'.
 
     Args:
-    - ts_columns (list[str]): List of feature column identifiers that are specifically marked for dynamic
-        analysis.
-    - shard_df (DF_T): Data frame from which features will be extracted and summarized.
+        agg: The aggregation method, either from CODE_AGGREGATIONS or VALUE_AGGREGATIONS.
+        ts_columns: The list of time-series feature columns.
+        df: The LazyFrame from which features will be extracted and summarized.
 
     Returns:
-    - pl.LazyFrame: A summarized data frame containing the dynamic features.
+        A tuple containing a DataFrame with dynamic feature identifiers and a sparse matrix
+        of aggregated values.
     """
     logger.info("Generating Sparse matrix for Time Series Features")
     id_cols = ["patient_id", "timestamp"]
@@ -97,24 +133,18 @@ def summarize_dynamic_measurements(
 def get_flat_ts_rep(
     agg: str,
     feature_columns: list[str],
-    shard_df: DF_T,
-) -> pl.LazyFrame:
-    """Produce a flat time series representation from a given data frame, focusing on non-static feature
-    columns.
-
-    This function filters the given data frame for non-static features based on the 'feature_columns'
-    provided and generates a flat time series representation using these dynamic features. The resulting
-    data frame includes both codes and values transformed and aggregated appropriately.
+    shard_df: pl.LazyFrame,
+) -> tuple[pl.DataFrame, csr_array]:
+    """Produces a flat time-series representation from a given data frame, focusing on non-static features.
 
     Args:
-        feature_columns (list[str]): A list of column identifiers that determine which features are considered
-            for dynamic analysis.
-        shard_df (DF_T): The data frame containing time-stamped data from which features will be extracted
-            and summarized.
+        agg: The aggregation method to use for summarizing the data.
+        feature_columns: The list of column identifiers for features involved in dynamic analysis.
+        shard_df: The LazyFrame containing time-stamped data from which features will be extracted.
 
     Returns:
-        pl.LazyFrame: A LazyFrame consisting of the processed time series data, combining both code and value
-            representations.
+        A tuple containing a LazyFrame with consisting of the processed time series data, combining
+        both code and value representations. and a sparse matrix of the flat time series data.
     """
     # Remove codes not in training set
     shard_df = get_events_df(shard_df, feature_columns)
