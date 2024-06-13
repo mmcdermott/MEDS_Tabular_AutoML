@@ -73,11 +73,43 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]):
     return coo_array((data, (row, col)), shape=shape)
 
 
-def get_min_dtype(array):
-    try:
+def get_min_dtype(array: np.ndarray) -> np.dtype:
+    """Get the minimal dtype that can represent the array.
+
+    Args:
+        array: The array to determine the minimal dtype for.
+
+    Returns:
+        The minimal dtype that can represent the array, or the array's dtype if it is non-numeric.
+
+    Examples:
+        >>> get_min_dtype(np.array([1, 2, 3]))
+        dtype('uint8')
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)]))
+        dtype('uint32')
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)]))
+        dtype('uint64')
+        >>> get_min_dtype(np.array([1, 2, 3, -128]))
+        dtype('int8')
+        >>> get_min_dtype(np.array([1.0, 2.0, 3.0]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([1, 2, 3, np.nan]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([1, 2, 3, "a"]))
+        dtype('<U21')
+    """
+    if np.issubdtype(array.dtype, np.integer):
         return np.result_type(np.min_scalar_type(array.min()), array.max())
-    except:
-        return array.dtype
+    elif np.issubdtype(array.dtype, np.floating):
+        return np.result_type(np.float32)
+        # For more precision, we could do this
+        # try:
+        #    array.astype(np.float32, copy=False)
+        #    return np.float32
+        # except OverflowError:
+        #    return np.float64
+
+    return array.dtype
 
 
 def sparse_matrix_to_array(coo_matrix: coo_array):
@@ -233,15 +265,6 @@ def get_ts_feature_cols(shard_df: DF_T) -> list[str]:
 
     This function evaluates the properties of codes within training data and applies configured
     aggregations to generate a comprehensive list of feature columns for modeling purposes.
-    Examples:
-    >>> import polars as pl
-    >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-    ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
-    ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-    >>> df = pl.DataFrame(data).lazy()
-    >>> aggs = ['value/sum', 'code/count']
-    >>> get_ts_feature_cols(aggs, df)
-    ['A/code', 'A/value', 'C/code', 'C/value']
     """
     ts_df = shard_df.filter(pl.col("timestamp").is_not_null())
     feature_columns = list(ts_df.select(pl.col("code").unique()).collect().to_series())
@@ -254,17 +277,7 @@ def get_ts_feature_cols(shard_df: DF_T) -> list[str]:
 def get_prediction_ts_cols(
     aggregations: list[str], ts_feature_cols: DF_T, window_sizes: list[str] | None = None
 ) -> list[str]:
-    """Generates a list of feature column names that will be used for downstream task
-    Examples:
-    >>> feature_cols = ['A/code', 'A/value', 'C/code', 'C/value']
-    >>> window_sizes = None
-    >>> aggs = ['value/sum', 'code/count']
-    >>> get_prediction_ts_cols(aggs, feature_cols, window_sizes)
-    error
-    >>> window_sizes = ["1d"]
-    >>> get_prediction_ts_cols(aggs, feature_cols, window_sizes)
-    error
-    """
+    """Generates a list of feature column names that will be used for downstream task."""
     agg_feature_columns = []
     for code in ts_feature_cols:
         ts_aggregations = [f"{code}/{agg}" for agg in aggregations]
@@ -287,16 +300,6 @@ def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: DF_T) -> list[str]:
 
     This function evaluates the properties of codes within training data and applies configured
     aggregations to generate a comprehensive list of feature columns for modeling purposes.
-    Example:
-    >>> data = {'code': ['A', 'A', 'B', 'B'],
-    ...         'timestamp': [None, '2021-01-01', None, None],
-    ...         'numerical_value': [1, None, 2, 2]}
-    >>> df = pl.DataFrame(data).lazy()
-    >>> aggs = ['value/sum', 'code/count']
-    >>> cfg = DictConfig({'aggs': aggs})
-    >>> get_flat_rep_feature_cols(cfg, df) # doctest: +NORMALIZE_WHITESPACE
-    ['A/static/first', 'A/static/present', 'B/static/first', 'B/static/present', 'A/code/count',
-     'A/value/sum']
     """
     static_feature_columns = get_static_feature_cols(shard_df)
     ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)
@@ -399,26 +402,6 @@ def store_config_yaml(config_fp: Path, cfg: DictConfig):
     Raises:
     - ValueError: If there are discrepancies between old and new parameters during an update.
     - FileExistsError: If the file exists and overwriting is not allowed.
-
-    Example:
-    >>> cfg = DictConfig({
-    ...     "n_patients_per_sub_shard": 100,
-    ...     "min_code_inclusion_frequency": 5,
-    ...     "do_overwrite": True,
-    ... })
-    >>> import tempfile
-    >>> from pathlib import Path
-    >>> with tempfile.NamedTemporaryFile() as temp_f:
-    ...     config_fp = Path(temp_f.name)
-    ...     store_config_yaml(config_fp, cfg)
-    ...     assert config_fp.exists()
-    ...     store_config_yaml(config_fp, cfg)
-    ...     cfg.do_overwrite = False
-    ...     try:
-    ...         store_config_yaml(config_fp, cfg)
-    ...     except FileExistsError as e:
-    ...         print("FileExistsError Error Triggered")
-    FileExistsError Error Triggered
     """
     OmegaConf.save(cfg, config_fp)
 

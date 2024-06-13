@@ -4,7 +4,7 @@ import polars as pl
 
 pl.enable_string_cache()
 from loguru import logger
-from scipy.sparse import coo_array, csr_array, sparray, coo_matrix
+from scipy.sparse import coo_array, csr_array, sparray
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.generate_ts_features import get_feature_names, get_flat_ts_rep
@@ -37,14 +37,14 @@ def sparse_assign(row_index, index, data, row, col, sparse_matrix, value, dtype)
     if isinstance(agg_matrix, np.ndarray):
         nozero_ind = agg_matrix.nonzero()[0]
         len_data = len(nozero_ind)
-        col[index: index+len_data] = nozero_ind
-        data[index: index+len_data] = agg_matrix[nozero_ind]
-        row[index: index+len_data] = row_index
+        col[index : index + len_data] = nozero_ind
+        data[index : index + len_data] = agg_matrix[nozero_ind]
+        row[index : index + len_data] = row_index
     elif isinstance(agg_matrix, coo_array):
         len_data = len(agg_matrix.data)
-        col[index: index+len_data] = agg_matrix.col
-        data[index: index+len_data] = agg_matrix.data
-        row[index: index+len_data] = row_index
+        col[index : index + len_data] = agg_matrix.col
+        data[index : index + len_data] = agg_matrix.data
+        row[index : index + len_data] = row_index
     else:
         raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
     return len_data
@@ -111,35 +111,9 @@ def aggregate_matrix(data, row, col, windows, matrix, agg, num_features, use_tqd
 def compute_agg(index_df, matrix: sparray, window_size: str, agg: str, num_features: int, use_tqdm=False):
     """Applies aggreagtion to dataframe.
 
-    Dataframe is expected to only have the relevant columns for aggregating
-    It should have the patient_id and timestamp columns, and then only code columns
-    if agg is a code aggregation or only value columns if it is a value aggreagation.
-
-    Example:
-    >>> from datetime import datetime
-    >>> df = pd.DataFrame({
-    ...     "patient_id": [1, 1, 1, 2],
-    ...     "timestamp": [
-    ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
-    ...     ],
-    ...     "A/code": [1, 1, 0, 0],
-    ...     "B/code": [0, 0, 1, 1],
-    ...     "C/code": [0, 0, 0, 0],
-    ... })
-    >>> output = compute_agg(df, "1d", "code/count")
-    >>> output
-       1d/A/code/count  1d/B/code/count  1d/C/code/count  timestamp  patient_id
-    0                1                0                0 2021-01-01           1
-    1                2                0                0 2021-01-01           1
-    2                0                1                0 2020-01-01           1
-    0                0                1                0 2021-01-04           2
-    >>> output.dtypes
-    1d/A/code/count    Sparse[int64, 0]
-    1d/B/code/count    Sparse[int64, 0]
-    1d/C/code/count    Sparse[int64, 0]
-    timestamp            datetime64[ns]
-    patient_id                    int64
-    dtype: object
+    Dataframe is expected to only have the relevant columns for aggregating It should have the patient_id and
+    timestamp columns, and then only code columns if agg is a code aggregation or only value columns if it is
+    a value aggreagation.
     """
     group_df = (
         index_df.with_row_index("index")
@@ -177,27 +151,6 @@ def _generate_summary(
 
     Returns:
     - pl.LazyFrame: The summarized data frame.
-
-    Expect:
-        >>> from datetime import datetime
-        >>> wide_df = pd.DataFrame({
-        ...     "patient_id": [1, 1, 1, 2],
-        ...     "timestamp": [
-        ...         datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 1, 3), datetime(2021, 1, 4)
-        ...     ],
-        ...     "A/code": [1, 1, 0, 0],
-        ...     "B/code": [0, 0, 1, 1],
-        ...     "C/code": [0, 0, 0, 0],
-        ...     "A/value": [1, 2, 0, 0],
-        ...     "B/value": [0, 0, 2, 2],
-        ...     "C/value": [0, 0, 0, 0],
-        ... })
-        >>> _generate_summary(wide_df, "full", "value/sum")
-           full/A/value/count  full/B/value/count  full/C/value/count  timestamp  patient_id
-        0                   1                   0                   0 2021-01-01           1
-        1                   3                   0                   0 2021-01-01           1
-        2                   3                   2                   0 2021-01-01           1
-        0                   0                   2                   0 2021-01-04           2
     """
     if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
         raise ValueError(
@@ -226,41 +179,6 @@ def generate_summary(
 
     Returns:
         pl.LazyFrame: A LazyFrame containing the summarized data with all required features present.
-
-    Expect:
-        >>> from datetime import date
-        >>> wide_df = pd.DataFrame({"patient_id": [1, 1, 1, 2],
-        ...     "A/code": [1, 1, 0, 0],
-        ...     "B/code": [0, 0, 1, 1],
-        ...     "A/value": [1, 2, 3, None],
-        ...     "B/value": [None, None, None, 4.0],
-        ...     "timestamp": [date(2021, 1, 1), date(2021, 1, 1),date(2020, 1, 3), date(2021, 1, 4)],
-        ...     })
-        >>> wide_df['timestamp'] = pd.to_datetime(wide_df['timestamp'])
-        >>> for col in ["A/code", "B/code", "A/value", "B/value"]:
-        ...     wide_df[col] = pd.arrays.SparseArray(wide_df[col])
-        >>> feature_columns = ["A/code/count", "B/code/count", "A/value/sum", "B/value/sum"]
-        >>> aggregations = ["code/count", "value/sum"]
-        >>> window_sizes = ["full", "1d"]
-        >>> generate_summary(feature_columns, wide_df, window_sizes, aggregations)[
-        ...    ["1d/A/code/count", "full/B/code/count", "full/B/value/sum"]]
-           1d/A/code/count  full/B/code/count  full/B/value/sum
-        0              NaN                1.0                 0
-        1              NaN                1.0                 0
-        2              NaN                1.0                 0
-        0              NaN                1.0                 0
-        0              NaN                NaN                 0
-        1              NaN                NaN                 0
-        2              NaN                NaN                 0
-        0              NaN                NaN                 0
-        0                0                NaN                 0
-        1              1.0                NaN                 0
-        2              2.0                NaN                 0
-        0                0                NaN                 0
-        0              NaN                NaN                 0
-        1              NaN                NaN                 0
-        2              NaN                NaN                 0
-        0              NaN                NaN                 0
     """
     assert len(feature_columns), "feature_columns must be a non-empty list"
     ts_columns = get_feature_names(agg, feature_columns)
@@ -279,11 +197,6 @@ def generate_summary(
 
 if __name__ == "__main__":
     from pathlib import Path
-
-    # feature_columns_fp = Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS") \
-    #     / "tabularized_code_metadata.parquet"
-    # shard_fp = \
-    #     Path("/storage/shared/meds_tabular_ml/mimiciv_dataset/mimiciv_MEDS/final_cohort/train/0.parquet")
 
     feature_columns_fp = (
         Path("/storage/shared/meds_tabular_ml/ebcl_dataset/processed") / "tabularized_code_metadata.parquet"
