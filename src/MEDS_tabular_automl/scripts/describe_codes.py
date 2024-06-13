@@ -56,15 +56,12 @@ def main(cfg: DictConfig) -> None:
     logger.info("Iterating through shards and caching feature frequencies.")
 
     def compute_fn(shard_df):
-        """Function to compute feature frequencies for each shard."""
         return compute_feature_frequencies(cfg, shard_df)
 
     def write_fn(df, out_fp):
-        """Function to write computed data frame to disk."""
         write_df(df, out_fp)
 
     def read_fn(in_fp):
-        """Function to read a data frame from disk."""
         return pl.scan_parquet(in_fp)
 
     # Map: Iterates through shards and caches feature frequencies
@@ -88,7 +85,6 @@ def main(cfg: DictConfig) -> None:
     # Reduce: sum the frequency computations
 
     def compute_fn(freq_df_list):
-        """Function to aggregate frequency data from multiple data frames."""
         feature_freqs = defaultdict(int)
         for shard_freq_df in freq_df_list:
             shard_freq_dict = convert_to_freq_dict(shard_freq_df)
@@ -98,11 +94,9 @@ def main(cfg: DictConfig) -> None:
         return feature_df
 
     def write_fn(df, out_fp):
-        """Function to write computed data frame to disk."""
         write_df(df, out_fp)
 
     def read_fn(feature_dir):
-        """Function to read multiple data frames from a directory."""
         files = list_subdir_files(feature_dir, "parquet")
         return [pl.scan_parquet(fp) for fp in files]
 
