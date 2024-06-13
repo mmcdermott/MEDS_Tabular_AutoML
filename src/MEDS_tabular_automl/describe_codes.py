@@ -139,6 +139,17 @@ def get_feature_columns(fp: Path) -> list[str]:
 
     Returns:
         Sorted list of column names.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> fp = NamedTemporaryFile()
+        >>> with NamedTemporaryFile() as fp:
+        ...     pl.DataFrame({
+        ...         "code": ["E", "D", "A", "A"],
+        ...         "count": [1, 1, 1, 1],
+        ...     }).write_parquet(fp.name)
+        ...     get_feature_columns(fp.name)
+        ['A', 'D', 'E']
     """
     return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp)).keys()))
 
