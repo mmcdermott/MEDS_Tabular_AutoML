@@ -117,6 +117,24 @@ For an end to end example over Philips eICU, see the [eICU companion repository]
     ```
 6. **`meds-tab-xgboost-sweep`**: Conducts an Optuna hyperparameter sweep to optimize over `window_sizes`, `aggregations`, and `min_code_inclusion_frequency`, aiming to enhance model performance and adaptability.
 
+### Additional CLI Scripts
+
+1. **`generate-permutations`**: Generates and prints a sorted list of all permutations from a comma separated input. This is provided for the convenience of sweeping over all possible combinations of window sizes and aggregations.
+
+    For example you can directly call **`generate-permutations`** in the command line:
+    ``` bash
+    generate-permutations [2,3,4]
+    [2], [2, 3], [2, 3, 4], [2, 4], [3], [3, 4], [4] 
+    ```
+    This could be used in the command line in concert with other calls. For example, the following call:
+    ``` bash
+    meds-tab-xgboost --multirun tabularization.window_sizes=$(generate-permutations [1d,2d,7d,full])
+    ```
+    would resolve to:
+    ``` bash
+    meds-tab-xgboost --multirun tabularization.window_sizes=[1d],[1d,2d],[1d,2d,7d],[1d,2d,7d,full],[1d,2d,full],[1d,7d],[1d,7d,full],[1d,full],[2d],[2d,7d],[2d,7d,full],[2d,full],[7d],[7d,full],[full]
+    ```
+    
 # How does MEDS-Tab Work?
 
 #### What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
