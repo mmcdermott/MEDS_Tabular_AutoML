@@ -46,7 +46,7 @@ This repository consists of two key pieces:
    what is more advanced is the efficient construction, storage, and loading of tabular features for the
    candidate AutoML models, enabling a far more extensive search over different featurization strategies.
 
-### Scripts and Examples
+## Scripts and Examples
 
 See `tests/test_integration.py` for an example of the end-to-end pipeline being run on synthetic data. This
 script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
@@ -54,7 +54,7 @@ script is a functional test that is also run with `pytest` to verify the correct
 For an end to end example over MIMIC-IV, see the [companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV)
 For an end to end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
-### Core CLI Scripts Overview
+## Core CLI Scripts Overview
 
 1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code-types
 
@@ -124,7 +124,7 @@ For an end to end example over Philips eICU, see the [eICU companion repository]
 
 6. **`meds-tab-xgboost-sweep`**: Conducts an Optuna hyperparameter sweep to optimize over `window_sizes`, `aggregations`, and `min_code_inclusion_frequency`, aiming to enhance model performance and adaptability.
 
-### Additional CLI Scripts
+## Additional CLI Scripts
 
 1. **`generate-permutations`**: Generates and prints a sorted list of all permutations from a comma separated input. This is provided for the convenience of sweeping over all possible combinations of window sizes and aggregations.
 
@@ -149,7 +149,7 @@ For an end to end example over Philips eICU, see the [eICU companion repository]
 
 # How does MEDS-Tab Work?
 
-#### What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
+## What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
 
 This is a common misconception. _Tabular_ data refers to data that can be organized in a consistent, logical
 set of rows/columns such that the entirety of a "sample" or "instance" for modeling or analysis is contained
