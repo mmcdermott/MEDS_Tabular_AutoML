@@ -13,7 +13,6 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig
 from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
@@ -247,58 +246,6 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         raise TypeError(f"Unsupported type for df: {type(df)}")
 
 
-def get_static_feature_cols(shard_df: pl.LazyFrame) -> list[str]:
-    """Generates a list of static feature column names based on data within a shard.
-
-    This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of the static feature columns for modeling purposes.
-
-    Args:
-        shard_df: The LazyFrame shard to analyze.
-
-    Returns:
-        A list of column names representing static features.
-
-    Examples:
-        >>> import polars as pl
-        >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-        ...         'timestamp': [
-        ...             None, '2021-01-01', '2021-01-01', '2021-01-02', '2021-01-03', '2021-01-04', None
-        ...         ],
-        ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-        >>> df = pl.DataFrame(data).lazy()
-        >>> get_static_feature_cols(df)
-        ['A/static/first', 'A/static/present', 'C/static/first', 'C/static/present']
-    """
-    feature_columns = []
-    static_df = shard_df.filter(pl.col("timestamp").is_null())
-    for code in static_df.select(pl.col("code").unique()).collect().to_series():
-        static_aggregations = [f"{code}/static/present", f"{code}/static/first"]
-        feature_columns.extend(static_aggregations)
-    return sorted(feature_columns)
-
-
-def get_ts_feature_cols(shard_df: pl.LazyFrame) -> list[str]:
-    """Generates a list of time-series feature column names based on data within a shard.
-
-    This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of the time-series feature columns for modeling
-    purposes.
-
-    Args:
-        shard_df: The LazyFrame shard to analyze.
-
-    Returns:
-        A list of column names representing time-series features.
-    """
-    ts_df = shard_df.filter(pl.col("timestamp").is_not_null())
-    feature_columns = list(ts_df.select(pl.col("code").unique()).collect().to_series())
-    feature_columns = [f"{code}/code" for code in feature_columns] + [
-        f"{code}/value" for code in feature_columns
-    ]
-    return sorted(feature_columns)
-
-
 def get_prediction_ts_cols(
     aggregations: list[str], ts_feature_cols: pl.LazyFrame, window_sizes: list[str] | None = None
 ) -> list[str]:
@@ -319,24 +266,6 @@ def get_prediction_ts_cols(
     if window_sizes:
         ts_aggregations = [f"{window_size}/{code}" for window_size in window_sizes]
     return sorted(ts_aggregations)
-
-
-def get_flat_rep_feature_cols(cfg: DictConfig, shard_df: pl.LazyFrame) -> list[str]:
-    """Combines static and time-series feature columns from a shard based on specified configurations.
-
-    This function evaluates the properties of codes within training data and applies configured
-    aggregations to generate a comprehensive list of all feature columns for modeling purposes.
-
-    Args:
-        cfg: The configuration dictionary specifying aggregation settings.
-        shard_df: The LazyFrame shard in MEDS format to process.
-
-    Returns:
-        A combined list of all feature columns from both static and time-series data.
-    """
-    static_feature_columns = get_static_feature_cols(shard_df)
-    ts_feature_columns = get_ts_feature_cols(cfg.aggs, shard_df)
-    return static_feature_columns + ts_feature_columns
 
 
 def load_meds_data(MEDS_cohort_dir: str, load_data: bool = True) -> Mapping[str, pl.LazyFrame]:
