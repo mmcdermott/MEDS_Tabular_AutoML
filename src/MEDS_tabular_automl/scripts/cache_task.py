@@ -62,7 +62,7 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig):
     """Performs row splicing of tabularized data for a specific task based on configuration.
 
     Uses Hydra to manage configurations and logging. The function processes data files based on specified
