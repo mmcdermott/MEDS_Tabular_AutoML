@@ -147,8 +147,6 @@ MEDS-Tab has several key limitations which we plan to address in future changes.
 3. We need to ensure full and seamless compatibility with the ACES CLI tool, rather than relying on the python API and manual adjustments:
    [#34](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/34)
 
-# How does MEDS-Tab Work?
-
 ## What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
 
 This is a common misconception. _Tabular_ data refers to data that can be organized in a consistent, logical
