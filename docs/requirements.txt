@@ -11,4 +11,4 @@ omegaconf
 ipywidgets
 ipykernel
 ipython
-esgpt @ git+https://github.com/mmcdermott/EventStreamGPT
+pydata-sphinx-theme
