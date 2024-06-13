@@ -19,10 +19,18 @@ def feature_name_to_code(feature_name: str) -> str:
     """Converts a feature name to a code name by removing the aggregation part.
 
     Args:
-        feature_name (str): The full feature name, including aggregation.
+        feature_name: The full feature name, including aggregation.
 
     Returns:
         The code name without the aggregation part.
+
+    Examples:
+        >>> feature_name_to_code("A/code/count")
+        'A/code'
+        >>> feature_name_to_code("A/B/code/count")
+        'A/B/code'
+        >>> feature_name_to_code("invalid_name")
+        ''
     """
     return "/".join(feature_name.split("/")[:-1])
 
