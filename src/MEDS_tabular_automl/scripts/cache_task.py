@@ -37,8 +37,19 @@ VALID_AGGREGATIONS = [
 ]
 
 
-def generate_row_cached_matrix(matrix, label_df):
-    """Generates row-cached matrix for a given matrix and label_df."""
+def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> sp.coo_array:
+    """Generates row-cached matrix for a given matrix and label DataFrame.
+
+    Args:
+        matrix: The input sparse matrix.
+        label_df: A LazyFrame with an 'event_id' column indicating valid row indices in the matrix.
+
+    Returns:
+        A COOrdinate formatted sparse matrix containing only the rows specified by label_df's event_ids.
+
+    Raises:
+        ValueError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
+    """
     label_len = label_df.select(pl.col("event_id").max()).collect().item()
     if matrix.shape[0] <= label_len:
         raise ValueError(
@@ -51,10 +62,15 @@ def generate_row_cached_matrix(matrix, label_df):
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
-def main(
-    cfg: DictConfig,
-):
-    """Performs row splicing of tabularized data for a specific task."""
+def main(cfg: DictConfig) -> None:
+    """Performs row splicing of tabularized data for a specific task based on configuration.
+
+    Uses Hydra to manage configurations and logging. The function processes data files based on specified
+    task configurations, loading matrices, applying transformations, and writing results.
+
+    Args:
+        cfg: The configuration for processing, loaded from a YAML file.
+    """
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
