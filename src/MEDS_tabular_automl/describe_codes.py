@@ -142,16 +142,12 @@ def get_feature_columns(fp: Path) -> list[str]:
 
     Examples:
         >>> from tempfile import NamedTemporaryFile
-        >>> fp = NamedTemporaryFile()
-        >>> with NamedTemporaryFile() as fp:
-        ...     pl.DataFrame({
-        ...         "code": ["E", "D", "A", "A"],
-        ...         "count": [1, 1, 1, 1],
-        ...     }).write_parquet(fp.name)
-        ...     get_feature_columns(fp.name)
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
+        ...     get_feature_columns(f.name)
         ['A', 'D', 'E']
     """
-    return sorted(list(convert_to_freq_dict(pl.scan_parquet(fp)).keys()))
+    return sorted(list(get_feature_freqs(fp).keys()))
 
 
 def get_feature_freqs(fp: Path) -> dict[str, int]:
@@ -162,6 +158,13 @@ def get_feature_freqs(fp: Path) -> dict[str, int]:
 
     Returns:
         Dictionary of feature frequencies.
+
+    Examples:
+        >>> from tempfile import NamedTemporaryFile
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
+        ...     get_feature_freqs(f.name)
+        {'E': 1, 'D': 3, 'A': 2}
     """
     return convert_to_freq_dict(pl.scan_parquet(fp))
 
