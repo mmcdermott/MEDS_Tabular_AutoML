@@ -55,9 +55,6 @@ def main(
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")
 
-    def compute_fn(shard_df):
-        return compute_feature_frequencies(cfg, shard_df)
-
     def write_fn(df, out_fp):
         write_df(df, out_fp)
 
@@ -76,7 +73,7 @@ def main(
             out_fp,
             read_fn,
             write_fn,
-            compute_fn,
+            compute_feature_frequencies,
             do_overwrite=cfg.do_overwrite,
             do_return=False,
         )
