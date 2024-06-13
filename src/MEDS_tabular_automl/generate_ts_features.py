@@ -1,14 +1,12 @@
 import warnings
 
 import numpy as np
-import pandas as pd
 import polars as pl
 from loguru import logger
 from scipy.sparse import csr_array
 
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
-    DF_T,
     VALUE_AGGREGATIONS,
     get_events_df,
     get_feature_names,
@@ -89,17 +87,18 @@ def get_long_value_df(
 def summarize_dynamic_measurements(
     agg: str,
     ts_columns: list[str],
-    df: pd.DataFrame,
-) -> pd.DataFrame:
-    """Summarize dynamic measurements for feature columns that are marked as 'dynamic'.
+    df: pl.LazyFrame,
+) -> tuple[pl.DataFrame, csr_array]:
+    """Summarizes dynamic measurements for feature columns that are marked as 'dynamic'.
 
     Args:
-    - ts_columns (list[str]): List of feature column identifiers that are specifically marked for dynamic
-        analysis.
-    - shard_df (DF_T): Data frame from which features will be extracted and summarized.
+        agg: The aggregation method, either from CODE_AGGREGATIONS or VALUE_AGGREGATIONS.
+        ts_columns: The list of time-series feature columns.
+        df: The LazyFrame from which features will be extracted and summarized.
 
     Returns:
-    - pl.LazyFrame: A summarized data frame containing the dynamic features.
+        A tuple containing a DataFrame with dynamic feature identifiers and a sparse matrix
+        of aggregated values.
     """
     logger.info("Generating Sparse matrix for Time Series Features")
     id_cols = ["patient_id", "timestamp"]
@@ -126,24 +125,18 @@ def summarize_dynamic_measurements(
 def get_flat_ts_rep(
     agg: str,
     feature_columns: list[str],
-    shard_df: DF_T,
-) -> pl.LazyFrame:
-    """Produce a flat time series representation from a given data frame, focusing on non-static feature
-    columns.
-
-    This function filters the given data frame for non-static features based on the 'feature_columns'
-    provided and generates a flat time series representation using these dynamic features. The resulting
-    data frame includes both codes and values transformed and aggregated appropriately.
+    shard_df: pl.LazyFrame,
+) -> tuple[pl.DataFrame, csr_array]:
+    """Produces a flat time-series representation from a given data frame, focusing on non-static features.
 
     Args:
-        feature_columns (list[str]): A list of column identifiers that determine which features are considered
-            for dynamic analysis.
-        shard_df (DF_T): The data frame containing time-stamped data from which features will be extracted
-            and summarized.
+        agg: The aggregation method to use for summarizing the data.
+        feature_columns: The list of column identifiers for features involved in dynamic analysis.
+        shard_df: The LazyFrame containing time-stamped data from which features will be extracted.
 
     Returns:
-        pl.LazyFrame: A LazyFrame consisting of the processed time series data, combining both code and value
-            representations.
+        A tuple containing a LazyFrame with consisting of the processed time series data, combining
+        both code and value representations. and a sparse matrix of the flat time series data.
     """
     # Remove codes not in training set
     shard_df = get_events_df(shard_df, feature_columns)
