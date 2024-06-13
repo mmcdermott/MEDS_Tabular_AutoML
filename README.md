@@ -270,7 +270,7 @@ The script for tabularizing time series data primarily transforms a raw, unstruc
 
 5. **Output Storage**:
 
-   - Sparse array is converted to Coordinate List (COO) format and stored as a `.npz` file on disk.
+   - Sparse array is converted to Coordinate List format and stored as a `.npz` file on disk.
    - The file paths look as follows
 
 ```
@@ -331,7 +331,7 @@ Tabularization of time-series data, as depecited above, is commonly used in seve
 
 ## 2. Comparative Performance Analysis
 
-The tables below detail computational resource utilization across two datasets and various patient scales, emphasizing the better performance of MEDS-Tab in all of the scenarios. The tables are organized by dataset and number of patients. For the analysis, the full window sizes and the aggregation method code_count were used. We additionally use a budget of 10 minutes as these are very small number of patients (10, 100, and 500 patients), and should be processed quickly. Note that `catabra-mem` is omited from the tables as it never completed within the 10 minute budget.
+The tables below detail computational resource utilization across two datasets and various patient scales, emphasizing the better performance of MEDS-Tab in all of the scenarios. The tables are organized by dataset and number of patients. For the analysis, the full window sizes and the aggregation method code_count were used. We additionally use a budget of 10 minutes as these are very small number of patients (10, 100, and 500 patients), and should be processed quickly. Note that `catabra-mem` is omitted from the tables as it never completed within the 10 minute budget.
 
 ## eICU Dataset
 
@@ -403,7 +403,7 @@ ______________________________________________________________________
 
 Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
 
-Each task is characterized by its specific label and prediction time. For instance, predicting "30-day readmission" involves assessing whether a patient returns to the hospital within 30 days, with predictions made at the time of discharge. This allows input features to be derived from the entire duration of the patient's admission. In contrast, tasks like "In ICU Mortality" focus on predicting the occurence of death using only data from the first 24 or 48 hours of ICU admission. Specifically, we use the terminology "Index Timestamp" to mean the timestamp such that no event included as input will occur later than this point.
+Each task is characterized by its specific label and prediction time. For instance, predicting "30-day readmission" involves assessing whether a patient returns to the hospital within 30 days, with predictions made at the time of discharge. This allows input features to be derived from the entire duration of the patient's admission. In contrast, tasks like "In ICU Mortality" focus on predicting the occurrence of death using only data from the first 24 or 48 hours of ICU admission. Specifically, we use the terminology "Index Timestamp" to mean the timestamp such that no event included as input will occur later than this point.
 
 Optimizing predictive accuracy and model performance necessitated employing varied window sizes and aggregations of patient data. This approach allows us to effectively capture and leverage the temporal dynamics and clinical nuances inherent in each prediction task.
 
