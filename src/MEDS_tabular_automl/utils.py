@@ -226,6 +226,7 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         ...     assert_frame_equal(pl.read_parquet(fp), df_polars)
         ...     write_df(df_polars.lazy(), fp, do_overwrite=True)
         ...     assert_frame_equal(pl.read_parquet(fp), df_polars)
+        ...     fp = Path(tmpdir) / "test.npz"
         ...     write_df(df_coo_array, fp, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
         ...     write_df(df_coo_array, fp, do_overwrite=False)
