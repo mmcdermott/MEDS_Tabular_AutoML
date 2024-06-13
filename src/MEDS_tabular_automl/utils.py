@@ -229,7 +229,7 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         ...     write_df(df_coo_array, fp, do_overwrite=False)
         Traceback (most recent call last):
             ...
-        FileExistsError: test.parquet exists and do_overwrite is False!
+        FileExistsError: ...test.npz exists and do_overwrite is False!
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
