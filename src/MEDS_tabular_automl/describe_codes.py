@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import polars as pl
-from omegaconf import DictConfig
 
 from MEDS_tabular_automl.utils import DF_T, get_feature_names
 
@@ -66,13 +65,12 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
     return dict(df.collect().iter_rows())
 
 
-def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame:
+def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
     """Generates a DataFrame containing the frequencies of codes and numerical values under different
     aggregations by computing frequency counts for certain attributes and organizing the results into specific
     categories based on the dataset's features.
 
     Args:
-        cfg: Configuration dictionary specifying how features should be evaluated and aggregated.
         shard_df: A DataFrame containing the data to be analyzed and split (e.g., 'train', 'test').
 
     Returns:
@@ -80,14 +78,27 @@ def compute_feature_frequencies(cfg: DictConfig, shard_df: DF_T) -> pl.DataFrame
         during the evaluation.
 
     Examples:
-        # >>> import polars as pl
-        # >>> data = {'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-        # ...         'timestamp': [None, '2021-01-01', None, None, '2021-01-03', '2021-01-04', None],
-        # ...         'numerical_value': [1, None, 2, 2, None, None, 3]}
-        # >>> df = pl.DataFrame(data).lazy()
-        # >>> aggs = ['value/sum', 'code/count']
-        # >>> compute_feature_frequencies(aggs, df)
-        # ['A/code', 'A/value', 'C/code', 'C/value']
+        >>> from datetime import datetime
+        >>> data = pl.DataFrame({
+        ...     'patient_id': [1, 1, 2, 2, 3, 3, 3],
+        ...     'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
+        ...     'timestamp': [
+        ...         None,
+        ...         datetime(2021, 1, 1),
+        ...         None,
+        ...         None,
+        ...         datetime(2021, 1, 3),
+        ...         datetime(2021, 1, 4),
+        ...         None
+        ...     ],
+        ...     'numerical_value': [1, None, 2, 2, None, None, 3]
+        ... }).lazy()
+        >>> assert (
+        ...     convert_to_freq_dict(compute_feature_frequencies(data).lazy()) == {
+        ...         'B/static/present': 2, 'C/static/present': 1, 'A/static/present': 1, 'B/static/first': 2,
+        ...         'C/static/first': 1, 'A/static/first': 1, 'A/code': 1, 'C/code': 2
+        ...     }
+        ... )
     """
     static_df = shard_df.filter(
         pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
