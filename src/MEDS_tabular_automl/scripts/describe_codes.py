@@ -8,7 +8,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.describe_codes import (
     compute_feature_frequencies,
@@ -21,7 +21,6 @@ from MEDS_tabular_automl.utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
-    store_config_yaml,
     write_df,
 )
 
@@ -46,7 +45,7 @@ def main(
     # Store Config
     output_dir = Path(cfg.output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
-    store_config_yaml(output_dir / "config.yaml", cfg)
+    OmegaConf.save(cfg, output_dir / "config.yaml")
 
     # Create output dir
     input_dir = Path(cfg.input_dir)

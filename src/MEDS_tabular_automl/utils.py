@@ -14,7 +14,7 @@ import numpy as np
 import polars as pl
 import polars.selectors as cs
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 from scipy.sparse import coo_array
 
 DF_T = pl.LazyFrame
@@ -519,21 +519,6 @@ def get_feature_indices(agg: str, feature_columns: list[str]) -> list[int]:
     feature_to_index = {c: i for i, c in enumerate(feature_columns)}
     agg_features = get_feature_names(agg, feature_columns)
     return [feature_to_index[c] for c in agg_features]
-
-
-def store_config_yaml(config_fp: Path, cfg: DictConfig) -> None:
-    """Stores configuration parameters into a YAML file.
-
-    This function writes a dictionary of parameters, which includes patient partitioning
-    information and configuration details, to a specified YAML file.
-
-    Args:
-        config_fp: The file path for the YAML file where config should be stored.
-        cfg: A configuration object containing settings like the number of patients
-            per sub-shard, minimum code inclusion frequency, and flags for updating
-            or overwriting existing files.
-    """
-    OmegaConf.save(cfg, config_fp)
 
 
 def get_shard_prefix(base_path: Path, fp: Path) -> str:
