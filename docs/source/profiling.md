@@ -19,7 +19,7 @@ The benchmarking tests were conducted using the following hardware and software 
 
 ## MEDS-Tab Tabularization Technique
 
-Tabularization of time-series data, as depecited above, is commonly used in several past works. The only two libraries to our knowledge that provide a full tabularization pipeline are `tsfresh` and `catabra`. `catabra` also offers a slower but more memory efficient version of their method which we denote `catabra-mem`. Other libraries either provide only rolling window functionalities (`featuretools`) or just pivoting operations (`Temporai`/`Clairvoyance`, `sktime`, `AutoTS`). We provide a significantly faster and more memory efficient method. We find that on the MIMICIV and EICU medical datasets we significantly outperform past methods. `catabra` and `tsfresh` could not even run within a budget of 10 minutes on as low as 10 patient's data for EICU, while our method can scale to process hundreds of patients with low memory usage. We present the results below.
+Tabularization of time-series data, as depecited above, is commonly used in several past works. The only two libraries to our knowledge that provide a full tabularization pipeline are `tsfresh` and `catabra`. `catabra` also offers a slower but more memory efficient version of their method which we denote `catabra-mem`. Other libraries either provide only rolling window functionalities (`featuretools`) or just pivoting operations (`Temporai`/`Clairvoyance`, `sktime`, `AutoTS`). We provide a significantly faster and more memory efficient method. We find that on the MIMIC-IV and eICU medical datasets we significantly outperform past methods. `catabra` and `tsfresh` could not even run within a budget of 10 minutes on as low as 10 patient's data for eICU, while our method can scale to process hundreds of patients with low memory usage. We present the results below.
 
 ## 2. Comparative Performance Analysis
 
@@ -51,7 +51,7 @@ b) 500 Patients
 
 ______________________________________________________________________
 
-MEDS-Tab, TSFresh, and Catabra were tested across three different scales on MIMIC_IV.
+MEDS-Tab, TSFresh, and Catabra were tested across three different scales on MIMIC-IV.
 
 a) 10 Patients
 
@@ -79,7 +79,7 @@ For a moderate patient count, MEDS-Tab demonstrated superior performance with si
 
 c) 500 Patients
 
-Scaling further to 500 patients, MEDS-Tab maintained consistent performance, reinforcing its capability to manage large datasets efficiently. Because of the set time limit of ???, we could not get results for Catabra and TSFresh.
+Scaling further to 500 patients, MEDS-Tab maintained consistent performance, reinforcing its capability to manage large datasets efficiently. Because of the set time limit of 10 minutes, we could not get results for Catabra and TSFresh.
 
 **Table 5: 48,115 Codes, 795,368 Rows, Output Shape \[75,595, 8,115\]**
 
