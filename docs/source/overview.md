@@ -60,13 +60,13 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    ```bash
    meds-tab-tabularize-time-series --multirun \
-                                   worker="range(0,$N_PARALLEL_WORKERS)" \
-                                   hydra/launcher=joblib \
-                                   MEDS_cohort_dir="path_to_data" \
-                                   tabularization.min_code_inclusion_frequency=10 \
-                                   do_overwrite=False \
-                                   tabularization.window_sizes=[1d,30d,365d,full] \
-                                   tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+      worker="range(0,$N_PARALLEL_WORKERS)" \
+      hydra/launcher=joblib \
+      MEDS_cohort_dir="path_to_data" \
+      tabularization.min_code_inclusion_frequency=10 \
+      do_overwrite=False \
+      tabularization.window_sizes=[1d,30d,365d,full] \
+      tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
 4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`patient_id`, `timestamp`, `label`) structured similarly to the `MEDS_cohort_dir`.
@@ -75,24 +75,24 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    ```bash
    meds-tab-cache-task MEDS_cohort_dir="path_to_data" \
-                       task_name=$TASK \
-                       tabularization.min_code_inclusion_frequency=10 \
-                       do_overwrite=False \
-                       tabularization.window_sizes=[1d,30d,365d,full] \
-                       tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+      task_name=$TASK \
+      tabularization.min_code_inclusion_frequency=10 \
+      do_overwrite=False \
+      tabularization.window_sizes=[1d,30d,365d,full] \
+      tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
 5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters. Permutations of `window_sizes` and `aggs` can be generated using `generate-permutations` command (See the section below for descriptions).
 
    ```bash
    meds-tab-xgboost --multirun \
-                     MEDS_cohort_dir="path_to_data" \
-                     task_name=$TASK \
-                     output_dir="output_directory" \
-                     tabularization.min_code_inclusion_frequency=10 \
-                     tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
-                     do_overwrite=False \
-                     tabularization.aggs=$(generate-permutations [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
+      MEDS_cohort_dir="path_to_data" \
+      task_name=$TASK \
+      output_dir="output_directory" \
+      tabularization.min_code_inclusion_frequency=10 \
+      tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
+      do_overwrite=False \
+      tabularization.aggs=$(generate-permutations [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
    ```
 
 ## Additional CLI Scripts
@@ -102,7 +102,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
    For example you can directly call **`generate-permutations`** in the command line:
 
    ```bash
-   generate-permutations [2,3,4]
+   generate-permutations [2,3,4] \
    [2], [2, 3], [2, 3, 4], [2, 4], [3], [3, 4], [4]
    ```
 
