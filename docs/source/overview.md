@@ -58,7 +58,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    **Example: Aggregate time-series data** on features across different `window_sizes`
 
-   ```bash
+   ```console
    meds-tab-tabularize-time-series --multirun \
       worker="range(0,$N_PARALLEL_WORKERS)" \
       hydra/launcher=joblib \
