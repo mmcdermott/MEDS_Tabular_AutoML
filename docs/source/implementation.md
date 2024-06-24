@@ -2,14 +2,14 @@
 
 In this section we describe the MEDS-Tab architecture, specifically some of the pipeline choices we made to reduce memory usage and increase speed during the tabularization process and XGBoost tuning process.
 
-We break our method into 4 discrete parts
+We break our method into 4 discrete parts:
 
 1. Describe codes (compute feature frequencies)
-2. Given time series data tabularize it
-3. cache task specific rows of data for efficient loading
+2. Tabularization of time-series data
+3. Efficient data caching for task-specific rows
 4. XGBoost training
 
-### 1. Describe Codes (Compute Feature Frequencies)
+### 1. Describe Codes (compute feature frequencies)
 
 This initial stage processes a pre-shareded dataset. We expect a structure as follows where each shard contains a subset of the patients:
 
@@ -36,9 +36,7 @@ We then compute and store feature frequencies, crucial for determining which fea
 - **Data Loading and Sharding**: We iterate through shards to compute feature frequencies for each shard.
 - **Frequency Aggregation**: After computing frequencies across shards, we aggregate them to get a final count of each feature across the entire dataset training dataset, which allows us to filter out infrequent features in the tabularization stage or when tuning XGBoost.
 
-This outputs parquet file \`\`
-
-### 2. Tabularization of Time Series Data
+### 2. Tabularization of Time-Series Data
 
 ### Overview
 
@@ -95,7 +93,7 @@ Now that we have generated tabular features for all the events in our dataset, w
 - **Row Selection Based on Tasks**: Only the data rows that are relevant to the specific tasks are selected and cached. This reduces the memory footprint and speeds up the training process.
 - **Use of Sparse Matrices for Efficient Storage**: Sparse matrices are again employed here to store the selected data efficiently, ensuring that only non-zero data points are kept in memory, thus optimizing both storage and retrieval times.
 
-The file structure for the cached data mirrors the tabular data and alsi is `.npz` files, and users must specify the directory to labels that follow the same shard filestructure as the input meds data from step (1). Label parquets need `patient_id`, `timestamp`, and `label` columns.
+The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `patient_id`, `timestamp`, and `label` columns.
 
 ### 4. XGBoost Training
 
@@ -105,4 +103,4 @@ The final stage uses the processed and cached data to train an XGBoost model. Th
 
 - **Iterator for Data Loading**: Custom iterators are designed to load sparse matrices efficiently into the XGBoost training process, which can handle sparse inputs natively, thus maintaining high computational efficiency.
 - **Training and Validation**: The model is trained using the tabular data, with evaluation steps that include early stopping to prevent overfitting and tuning of hyperparameters based on validation performance.
-- **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window_sizes, and the minimimu code inclusion frequency.
+- **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window_sizes, and the minimimum code inclusion frequency.
