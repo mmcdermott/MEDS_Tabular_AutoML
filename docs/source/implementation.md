@@ -13,15 +13,15 @@ We break our method into 4 discrete parts:
 
 This initial stage processes a pre-shareded dataset. We expect a structure as follows where each shard contains a subset of the patients:
 
-```
+```text
 /PATH/TO/MEDS/DATA
 │
-└───<SPLIT A>
+└─── <SPLIT A>
 │   │   <SHARD 0>.parquet
 │   │   <SHARD 1>.parquet
 │   │   ...
 │
-└───<SPLIT B>
+└─── <SPLIT B>
 │   │   <SHARD 0>.parquet
 │   │   <SHARD 1>.parquet
 |   │   ...
@@ -72,11 +72,11 @@ The script for tabularizing time series data primarily transforms a raw, unstruc
    - Sparse array is converted to Coordinate List format and stored as a `.npz` file on disk.
    - The file paths look as follows
 
-```
+```text
 /PATH/TO/MEDS/TABULAR_DATA
 │
-└───<SPLIT A>
-    ├───<SHARD 0>
+└─── <SPLIT A>
+    ├─── <SHARD 0>
     │   ├───code
     │   │   └───count.npz
     │   └───value

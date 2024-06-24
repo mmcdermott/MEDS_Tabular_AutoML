@@ -1,6 +1,6 @@
-# Appendix D. XGBoost
+# Prediction Performance
 
-## D.1 XGBoost Model Performance on MIMIC-IV Across Tasks
+## XGBoost Model Performance on MIMIC-IV Across Tasks
 
 Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
 
@@ -12,7 +12,7 @@ Optimizing predictive accuracy and model performance necessitated employing vari
 
 A single XGBoost run was completed to profile time and memory usage. This was done for each `$TASK` using the following command:
 
-```
+```bash
 meds-tab-xgboost
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
@@ -82,7 +82,7 @@ To better understand the runtimes, we also report the task specific cohort size.
 
 The XGBoost sweep was run using the following command for each `$TASK`:
 
-```
+```bash
 meds-tab-xgboost --multirun \
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
@@ -158,7 +158,7 @@ Additionally, the model parameters from the highest performing run are reported 
 | LOS in Hospital > 3 days        | Admission + 24 hr | 0.008389745342 | 0.06656965098  | 0.2553069741  | 0.9886841026 | 89.89987526          | 526                       | 5                     | 14             |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 0.00121145622  | 0.03018152667  | 0.02812771908 | 0.9671829656 | 8.657613623          | 538                       | 8                     | 7              |
 
-## D.2 XGBoost Model Performance on eICU Across Tasks
+## XGBoost Model Performance on eICU Across Tasks
 
 ### 2.1 eICU Sweep
 
