@@ -2,7 +2,7 @@
 
 This repository consists of two key pieces:
 
-1. Construction of and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time-windows (e.g. 1 year, 6 months, etc.) backwards in time from a given index date.
+1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backwards in time from a given index date.
 2. Running a basic XGBoost AutoML pipeline over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
 
 ## Quick Start
@@ -27,7 +27,7 @@ pip install .
 For an end to end example over MIMIC-IV, see the [MIMIC-IV companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV).
 For an end to end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
-See `tests/test_integration.py` for a local example of the end-to-end pipeline being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
+See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for a local example of the end-to-end pipeline being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
 
 ## Core CLI Scripts Overview
 
@@ -42,7 +42,7 @@ See `tests/test_integration.py` for a local example of the end-to-end pipeline b
 
 2. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the frequency of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `patient_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
 
-   **Example: Tabularizing static data** with the minimum code frequency of 10 and window sizes of `[1d, 30d,  365d, full]` and value aggregation methods of `[static/present, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
+   **Example: Tabularizing static data** with the minimum code frequency of 10, window sizes of `[1d, 30d,  365d, full]`, and value aggregation methods of `[static/present, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
 
    ```bash
    meds-tab-tabularize-static MEDS_cohort_dir="path_to_data" \
@@ -52,7 +52,7 @@ See `tests/test_integration.py` for a local example of the end-to-end pipeline b
                                tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
    ```
 
-   - For the exhuastive examples of value aggregations, see [`/src/MEDS_tabular_automl /utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
+   - For the exhuastive examples of value aggregations, see [`/src/MEDS_tabular_automl/utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
 
 3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `patient_id` x `timestamp`. This stage (and the previous stage) use sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
 
