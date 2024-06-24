@@ -11,13 +11,13 @@ To use MEDS-Tab, install the dependencies following commands below:
 
 **Pip Install**
 
-```bash
+```console
 pip install meds-tab
 ```
 
 **Local Install**
 
-```bash
+```console
 # clone the git repo
 pip install .
 ```
@@ -44,12 +44,12 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    **Example: Tabularizing static data** with the minimum code frequency of 10, window sizes of `[1d, 30d,  365d, full]`, and value aggregation methods of `[static/present, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
 
-   ```bash
+   ```console
    meds-tab-tabularize-static MEDS_cohort_dir="path_to_data" \
-                               tabularization.min_code_inclusion_frequency=10 \
-                               tabularization.window_sizes=[1d,30d,365d,full] \
-                               do_overwrite=False \
-                               tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+      tabularization.min_code_inclusion_frequency=10 \
+      tabularization.window_sizes=[1d,30d,365d,full] \
+      do_overwrite=False \
+      tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
    - For the exhuastive examples of value aggregations, see [`/src/MEDS_tabular_automl/utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
@@ -58,7 +58,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    **Example: Aggregate time-series data** on features across different `window_sizes`
 
-   ```bash
+   ```console
    meds-tab-tabularize-time-series --multirun \
       worker="range(0,$N_PARALLEL_WORKERS)" \
       hydra/launcher=joblib \
@@ -73,7 +73,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    **Example: Aligh tabularized data** for a specific task `$TASK` and labels that has pulled from [ACES](https://github.com/justin13601/ACES)
 
-   ```bash
+   ```console
    meds-tab-cache-task MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
       tabularization.min_code_inclusion_frequency=10 \
@@ -84,7 +84,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
 5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters. Permutations of `window_sizes` and `aggs` can be generated using `generate-permutations` command (See the section below for descriptions).
 
-   ```bash
+   ```console
    meds-tab-xgboost --multirun \
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
@@ -101,20 +101,20 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    For example you can directly call **`generate-permutations`** in the command line:
 
-   ```bash
+   ```console
    generate-permutations [2,3,4] \
    [2], [2, 3], [2, 3, 4], [2, 4], [3], [3, 4], [4]
    ```
 
    This could be used in the command line in concert with other calls. For example, the following call:
 
-   ```bash
+   ```console
    meds-tab-xgboost --multirun tabularization.window_sizes=$(generate-permutations [1d,2d,7d,full])
    ```
 
    would resolve to:
 
-   ```bash
+   ```console
    meds-tab-xgboost --multirun tabularization.window_sizes=[1d],[1d,2d],[1d,2d,7d],[1d,2d,7d,full],[1d,2d,full],[1d,7d],[1d,7d,full],[1d,full],[2d],[2d,7d],[2d,7d,full],[2d,full],[7d],[7d,full],[full]
    ```
 

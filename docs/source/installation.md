@@ -22,13 +22,13 @@ To use MEDS-Tab, install the dependencies following commands below:
 
 **Pip Install**
 
-```bash
+```console
 pip install meds-tab
 ```
 
 **Local Install**
 
-```bash
+```console
 # clone the git repo
 pip install .
 ```
