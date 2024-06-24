@@ -1,4 +1,4 @@
-## The MEDS-Tab Architecture
+# The MEDS-Tab Architecture
 
 In this section, we describe the MEDS-Tab architecture, specifically some of the pipeline choices we made to reduce memory usage and increase speed during the tabularization process and XGBoost tuning process.
 
@@ -9,7 +9,7 @@ We break our method into 4 discrete parts:
 3. Efficient data caching for task-specific rows
 4. XGBoost training
 
-### 1. Describe Codes (compute feature frequencies)
+## 1. Describe Codes (compute feature frequencies)
 
 This initial stage processes a pre-shareded dataset. We expect a structure as follows where each shard contains a subset of the patients:
 
@@ -36,7 +36,7 @@ We then compute and store feature frequencies, crucial for determining which fea
 - **Data Loading and Sharding**: We iterate through shards to compute feature frequencies for each shard.
 - **Frequency Aggregation**: After computing frequencies across shards, we aggregate them to get a final count of each feature across the entire dataset training dataset, which allows us to filter out infrequent features in the tabularization stage or when tuning XGBoost.
 
-### 2. Tabularization of Time-Series Data
+## 2. Tabularization of Time-Series Data
 
 ### Overview
 
@@ -84,7 +84,7 @@ The script for tabularizing time series data primarily transforms a raw, unstruc
     ...
 ```
 
-### 3. Efficient Data Caching for Task-Specific Rows
+## 3. Efficient Data Caching for Task-Specific Rows
 
 Now that we have generated tabular features for all the events in our dataset, we can cache subsets relevant for each task we wish to train a supervised model on. This step is critical for efficiently training machine learning models on task-specific data without having to load the entire dataset.
 
@@ -95,7 +95,7 @@ Now that we have generated tabular features for all the events in our dataset, w
 
 The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `patient_id`, `timestamp`, and `label` columns.
 
-### 4. XGBoost Training
+## 4. XGBoost Training
 
 The final stage uses the processed and cached data to train an XGBoost model. This stage is optimized to handle the sparse data structures produced in earlier stages efficiently.
 

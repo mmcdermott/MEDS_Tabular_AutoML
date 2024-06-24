@@ -15,7 +15,7 @@ The benchmarking tests were conducted using the following hardware and software 
 - **RAM Specification**: 1024GB, 3200MHz, DDR4
 - **Software Environment**: Ubuntu 22.04.4 LTS
 
-## MEDS-Tab Tabularization Technique
+### MEDS-Tab Tabularization Technique
 
 Tabularization of time-series data, as depecited above, is commonly used in several past works. The only two libraries to our knowledge that provide a full tabularization pipeline are `tsfresh` and `catabra`. `catabra` also offers a slower but more memory efficient version of their method which we denote `catabra-mem`. Other libraries either provide only rolling window functionalities (`featuretools`) or just pivoting operations (`Temporai`/`Clairvoyance`, `sktime`, `AutoTS`). We provide a significantly faster and more memory efficient method. Our findings show that on the MIMIC-IV and eICU medical datasets we significantly outperform both above-mentioned methods that provide similar functionalities with MEDS-Tab. While `catabra` and `tsfresh` could not even run within a budget of 10 minutes on as low as 10 patient's data for eICU, our method scales to process hundreds of patients with low memory usage under the same time budget. We present the results below.
 
@@ -23,7 +23,7 @@ Tabularization of time-series data, as depecited above, is commonly used in seve
 
 The tables below detail computational resource utilization across two datasets and various patient scales, emphasizing the better performance of MEDS-Tab in all of the scenarios. The tables are organized by dataset and number of patients. For the analysis, the full window sizes and the aggregation method code_count were used. Additionally, we use a budget of 10 minutes for running our tests given that for such small number of patients (10, 100, and 500 patients) data should be processed quickly. Note that `catabra-mem` is omitted from the tables as it never completed within the 10 minute budget.
 
-## eICU Dataset
+### eICU Dataset
 
 The only method that was able to tabularize eICU data was MEDS-Tab. We ran our method with both 100 and 500 patients, resulting in an increment by three times in the number of codes. MEDS-Tab gave efficient results in terms of both time and memory usage.
 
@@ -43,7 +43,7 @@ b) 500 Patients
 | --------- | ----------- | ------------ | ----------- | -------- |
 | 3m4.435s  | 8,335.44 MB | 15,102.55 MB | 1,326 MB    | meds_tab |
 
-## MIMIC-IV Dataset
+### MIMIC-IV Dataset
 
 MEDS-Tab, `tsfresh`, and `catabra` were tested across three different patient scales on MIMIC-IV.
 
