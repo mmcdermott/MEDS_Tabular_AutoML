@@ -10,9 +10,9 @@ import polars as pl
 import scipy.sparse as sp
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.file_name import list_subdir_files
-from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import (
+from ..file_name import list_subdir_files
+from ..mapper import wrap as rwlock_wrap
+from ..utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,

@@ -15,12 +15,12 @@ import numpy as np
 from loguru import logger
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.describe_codes import filter_parquet, get_feature_columns
-from MEDS_tabular_automl.file_name import list_subdir_files
-from MEDS_tabular_automl.generate_summarized_reps import generate_summary
-from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
-from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import (
+from ..describe_codes import filter_parquet, get_feature_columns
+from ..file_name import list_subdir_files
+from ..generate_summarized_reps import generate_summary
+from ..generate_ts_features import get_flat_ts_rep
+from ..mapper import wrap as rwlock_wrap
+from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     get_shard_prefix,

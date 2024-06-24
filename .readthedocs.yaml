@@ -8,6 +8,13 @@ build:
 python:
   install:
     - requirements: docs/requirements.txt
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
 
 sphinx:
   configuration: docs/source/conf.py
+# Optionally build your docs in additional formats such as PDF
+formats:
+  - pdf

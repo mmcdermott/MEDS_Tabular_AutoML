@@ -10,19 +10,14 @@ import polars as pl
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-from MEDS_tabular_automl.describe_codes import (
+from ..describe_codes import (
     compute_feature_frequencies,
     convert_to_df,
     convert_to_freq_dict,
 )
-from MEDS_tabular_automl.file_name import list_subdir_files
-from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import (
-    get_shard_prefix,
-    hydra_loguru_init,
-    load_tqdm,
-    write_df,
-)
+from ..file_name import list_subdir_files
+from ..mapper import wrap as rwlock_wrap
+from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, write_df
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
 if not config_yaml.is_file():
