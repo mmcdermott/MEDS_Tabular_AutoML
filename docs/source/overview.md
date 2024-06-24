@@ -108,7 +108,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    This could be used in the command line in concert with other calls. For example, the following call:
 
-   ```bash
+   ```console
    meds-tab-xgboost --multirun tabularization.window_sizes=$(generate-permutations [1d,2d,7d,full])
    ```
 
