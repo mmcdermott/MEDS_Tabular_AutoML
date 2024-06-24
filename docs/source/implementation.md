@@ -1,6 +1,6 @@
 ## The MEDS-Tab Architecture
 
-In this section we describe the MEDS-Tab architecture, specifically some of the pipeline choices we made to reduce memory usage and increase speed during the tabularization process and XGBoost tuning process.
+In this section, we describe the MEDS-Tab architecture, specifically some of the pipeline choices we made to reduce memory usage and increase speed during the tabularization process and XGBoost tuning process.
 
 We break our method into 4 discrete parts:
 

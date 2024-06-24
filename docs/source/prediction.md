@@ -1,14 +1,14 @@
 # Prediction Performance
 
-## XGBoost Model Performance on MIMIC-IV Across Tasks
+## XGBoost Model Performance on MIMIC-IV Tasks
 
-Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
+Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks, using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
 
 Each task is characterized by its specific label and prediction time. For instance, predicting "30-day readmission" involves assessing whether a patient returns to the hospital within 30 days, with predictions made at the time of discharge. This allows input features to be derived from the entire duration of the patient's admission. In contrast, tasks like "In ICU Mortality" focus on predicting the occurrence of death using only data from the first 24 or 48 hours of ICU admission. Specifically, we use the terminology "Index Timestamp" to mean the timestamp such that no event included as input will occur later than this point.
 
-Optimizing predictive accuracy and model performance necessitated employing varied window sizes and aggregations of patient data. This approach allows us to effectively capture and leverage the temporal dynamics and clinical nuances inherent in each prediction task.
+We optimize predictive accuracy and model performance by using varied window sizes and aggregations of patient data. This approach allows us to effectively capture and leverage the temporal dynamics and clinical nuances inherent in each prediction task.
 
-### 1.1 XGBoost Time and Memory Profiling on MIMIC-IV
+### 1. XGBoost Time and Memory Profiling on MIMIC-IV
 
 A single XGBoost run was completed to profile time and memory usage. This was done for each `$TASK` using the following command:
 
@@ -44,7 +44,7 @@ aggs:
 
 Since this includes every window size and aggregation, it is the most expensive to run. The runtimes and memory usage are reported below.
 
-#### 1.1.1 XGBoost Runtimes and Memory Usage on MIMIC-IV Tasks
+#### 1.1 XGBoost Runtimes and Memory Usage on MIMIC-IV Tasks
 
 | Task                            | Index Timestamp   | Real Time | User Time | Sys Time  | Avg Memory (MiB) | Peak Memory (MiB) |
 | ------------------------------- | ----------------- | --------- | --------- | --------- | ---------------- | ----------------- |
@@ -60,7 +60,7 @@ Since this includes every window size and aggregation, it is the most expensive 
 | LOS in Hospital > 3 days        | Admission + 24 hr | 6m4.884s  | 7m5.025s  | 1m4.335s  | 11011.710        | 12223.449         |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 6m9.587s  | 7m12.853s | 1m3.858s  | 10703.064        | 11829.742         |
 
-#### 1.1.2 MIMIC-IV Task Specific Training Cohort Size
+#### 1.2 MIMIC-IV Task Specific Training Cohort Size
 
 To better understand the runtimes, we also report the task specific cohort size.
 
@@ -78,7 +78,7 @@ To better understand the runtimes, we also report the task specific cohort size.
 | LOS in Hospital > 3 days        | Admission + 24 hr | 152126             | 360208           |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 152120             | 359020           |
 
-### 1.2 MIMIC-IV Sweep
+### 2. MIMIC-IV Sweep
 
 The XGBoost sweep was run using the following command for each `$TASK`:
 
@@ -122,7 +122,7 @@ Note that the XGBoost command shown includes `tabularization.window_sizes` and `
 
 For a complete example on MIMIC-IV and for all of our config files, see the [MIMIC-IV companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV).
 
-#### 1.2.1 XGBoost Performance on MIMIC-IV
+#### 2.1 XGBoost Performance on MIMIC-IV
 
 | Task                            | Index Timestamp   | AUC          | Minimum Code Inclusion Frequency | Number of Included Codes\* | Window Sizes           | Aggregations                                                                |
 | ------------------------------- | ----------------- | ------------ | -------------------------------- | -------------------------- | ---------------------- | --------------------------------------------------------------------------- |
@@ -140,7 +140,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 
 - Number of Included Codes is based on Minimum Code Inclusion Frequency -- we calculated the number of resulting codes that were above the minimum threshold and reported that.
 
-#### 1.2.2 XGBoost Optimal Found Model Parameters
+#### 2.2 XGBoost Optimal Found Model Parameters
 
 Additionally, the model parameters from the highest performing run are reported below.
 
@@ -158,15 +158,15 @@ Additionally, the model parameters from the highest performing run are reported 
 | LOS in Hospital > 3 days        | Admission + 24 hr | 0.008389745342 | 0.06656965098  | 0.2553069741  | 0.9886841026 | 89.89987526          | 526                       | 5                     | 14             |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 0.00121145622  | 0.03018152667  | 0.02812771908 | 0.9671829656 | 8.657613623          | 538                       | 8                     | 7              |
 
-## XGBoost Model Performance on eICU Across Tasks
+## XGBoost Model Performance on eICU Tasks
 
-### 2.1 eICU Sweep
+### eICU Sweep
 
-The eICU sweep was conducted equivalently to the MIMIC-IV sweep. Please see Appendix D.1.2 for details on the commands and sweep parameters.
+The eICU sweep was conducted equivalently to the MIMIC-IV sweep. Please refer to the MIMIC-IV Sweep subsection above for details on the commands and sweep parameters.
 
 For more details about eICU specific task generation and running, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
-#### 2.1.1 XGBoost Performance on eICU
+#### 1. XGBoost Performance on eICU
 
 | Task                            | Index Timestamp   | AUC          | Minimum Code Inclusion Frequency | Window Sizes             | Aggregations                                                   |
 | ------------------------------- | ----------------- | ------------ | -------------------------------- | ------------------------ | -------------------------------------------------------------- |
@@ -179,7 +179,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 | LOS in Hospital > 3 days        | Admission + 24 hr | 0.8640973238 | 160                              | \[1d,30d,365d,full\]     | \[static/present,code/count,value/min,value/max\]              |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 0.8950621974 | 975                              | \[12h,1d,30d,365d,full\] | \[code/count,value/count,value/sum,value/sum_sqd\]             |
 
-#### 2.1.2 XGBoost Optimal Found Model Parameters
+#### 2. XGBoost Optimal Found Model Parameters
 
 | Task                            | Index Timestamp   | Eta            | Lambda         | Alpha          | Subsample    | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
 | ------------------------------- | ----------------- | -------------- | -------------- | -------------- | ------------ | -------------------- | ------------------------- | --------------------- | -------------- |
@@ -192,7 +192,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 | Post-discharge 30 day Mortality | Discharge         | 0.003120329768 | 0.01157485817  | 0.001488659801 | 0.7295192432 | 12.6755339           | 986                       | 7                     | 7              |
 | Post-discharge 1 year Mortality | Discharge         | 0.004953313969 | 0.005881577613 | 0.001786936591 | 0.6897205622 | 93.18348266          | 938                       | 6                     | 14             |
 
-#### 2.1.3 eICU Task Specific Training Cohort Size
+#### 3. eICU Task Specific Training Cohort Size
 
 | Task                            | Index Timestamp   | Number of Patients | Number of Events |
 | ------------------------------- | ----------------- | ------------------ | ---------------- |

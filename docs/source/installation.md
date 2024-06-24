@@ -28,7 +28,7 @@ pip install meds-tab
 
 **Local Install**
 
-```
+```bash
 # clone the git repo
 pip install .
 ```
