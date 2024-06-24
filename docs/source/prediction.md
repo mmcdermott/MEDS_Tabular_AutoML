@@ -12,7 +12,7 @@ We optimize predictive accuracy and model performance by using varied window siz
 
 A single XGBoost run was completed to profile time and memory usage. This was done for each `$TASK` using the following command:
 
-```bash
+```console
 meds-tab-xgboost
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
@@ -82,7 +82,7 @@ To better understand the runtimes, we also report the task specific cohort size.
 
 The XGBoost sweep was run using the following command for each `$TASK`:
 
-```bash
+```console
 meds-tab-xgboost --multirun \
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
