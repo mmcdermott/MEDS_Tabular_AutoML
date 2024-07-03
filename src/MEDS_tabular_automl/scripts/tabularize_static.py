@@ -14,16 +14,16 @@ from importlib.resources import files
 
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.describe_codes import (
+from ..describe_codes import (
     convert_to_df,
     filter_parquet,
     get_feature_columns,
     get_feature_freqs,
 )
-from MEDS_tabular_automl.file_name import list_subdir_files
-from MEDS_tabular_automl.generate_static_features import get_flat_static_rep
-from MEDS_tabular_automl.mapper import wrap as rwlock_wrap
-from MEDS_tabular_automl.utils import (
+from ..file_name import list_subdir_files
+from ..generate_static_features import get_flat_static_rep
+from ..mapper import wrap as rwlock_wrap
+from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     filter_to_codes,

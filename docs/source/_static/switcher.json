@@ -1,0 +1,12 @@
+[
+    {
+      "version": "dev",
+      "url": "https://meds-tab.readthedocs.io/en/latest/"
+    },
+    {
+      "name": "0.0.2 (stable)",
+      "version": "v0.0.2",
+      "url": "https://meds-tab.readthedocs.io/en/stable/",
+      "preferred": true
+    }
+  ]
