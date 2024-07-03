@@ -31,17 +31,17 @@ a) 100 Patients
 
 **Table 1: 6,374 Codes, 2,065,608 Rows, Output Shape \[132,461, 6,374\]**
 
-| Wall Time | Avg Memory  | Peak Memory  | Output Size | Method   |
-| --------- | ----------- | ------------ | ----------- | -------- |
-| 0m39.426s | 5,271.85 MB | 14,791.83 MB | 362 MB      | meds_tab |
+| Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
+| --------- | ---------- | ----------- | ----------- | -------- |
+| 0m39.426s | 5,271 MB   | 14,791 MB   | 362 MB      | meds_tab |
 
 b) 500 Patients
 
 **Table 2: 18,314 Codes, 8,737,355 Rows, Output Shape \[565,014, 18,314\]**
 
-| Wall Time | Avg Memory  | Peak Memory  | Output Size | Method   |
-| --------- | ----------- | ------------ | ----------- | -------- |
-| 3m4.435s  | 8,335.44 MB | 15,102.55 MB | 1,326 MB    | meds_tab |
+| Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
+| --------- | ---------- | ----------- | ----------- | -------- |
+| 3m4.435s  | 8,335 MB   | 15,102 MB   | 1,326 MB    | meds_tab |
 
 ### MIMIC-IV Dataset
 
@@ -53,11 +53,11 @@ This table illustrates the efficiency of MEDS-Tab in processing a small subset o
 
 **Table 3: 1,504 Codes, 23,346 Rows, Output Shape \[2,127, 1,504\]**
 
-| Wall Time | Avg Memory   | Peak Memory   | Output Size | Method   |
-| --------- | ------------ | ------------- | ----------- | -------- |
-| 0m2.071s  | 423.78 MB    | 943.984 MB    | 7 MB        | meds_tab |
-| 1m41.920s | 84,159.44 MB | 265,877.86 MB | 1 MB        | tsfresh  |
-| 0m15.366s | 2,537.46 MB  | 4,781.824 MB  | 1 MB        | catabra  |
+| Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
+| --------- | ---------- | ----------- | ----------- | -------- |
+| 0m2.071s  | 423 MB     | 943 MB      | 7 MB        | meds_tab |
+| 1m41.920s | 84,159 MB  | 265,877 MB  | 1 MB        | tsfresh  |
+| 0m15.366s | 2,537 MB   | 4,781 MB    | 1 MB        | catabra  |
 
 b) 100 Patients
 
@@ -65,11 +65,11 @@ The performance gap was further highlighted with an increased number of patients
 
 **Table 4: 4,154 Codes, 150,789 Rows, Output Shape \[15,664, 4,154\]**
 
-| Wall Time | Avg Memory    | Peak Memory   | Output Size | Method   |
-| --------- | ------------- | ------------- | ----------- | -------- |
-| 0m4.724s  | 718.76 MB     | 1,167.29 MB   | 45 MB       | meds_tab |
-| 5m9.077s  | 217,477.52 MB | 659,735.25 MB | 4 MB        | tsfresh  |
-| 3m17.671s | 14,319.53 MB  | 28,342.81 MB  | 4 MB        | catabra  |
+| Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
+| --------- | ---------- | ----------- | ----------- | -------- |
+| 0m4.724s  | 718 MB     | 1,167 MB    | 45 MB       | meds_tab |
+| 5m9.077s  | 217,477 MB | 659,735 MB  | 4 MB        | tsfresh  |
+| 3m17.671s | 14,319 MB  | 28,342 MB   | 4 MB        | catabra  |
 
 c) 500 Patients
 
@@ -77,8 +77,8 @@ Scaling further to 500 patients, MEDS-Tab maintained consistent performance, rei
 
 **Table 5: 48,115 Codes, 795,368 Rows, Output Shape \[75,595, 8,115\]**
 
-| Wall Time | Avg Memory  | Peak Memory | Output Size | Method   |
-| --------- | ----------- | ----------- | ----------- | -------- |
-| 0m15.867s | 1,410.79 MB | 3,539.32 MB | 442 MB      | meds_tab |
+| Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
+| --------- | ---------- | ----------- | ----------- | -------- |
+| 0m15.867s | 1,410 MB   | 3,539 MB    | 442 MB      | meds_tab |
 
 ______________________________________________________________________
