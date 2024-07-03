@@ -8,10 +8,10 @@ glob:
 maxdepth: 2
 ---
 Overview <overview>
-Pipeline/Architecture Details <implementation>
-Computational Profile <profiling>
-Prediction Performance <prediction>
-Module API Reference <api/modules>
+Pipeline <implementation>
+Memory/CPU Usage <profiling>
+Performance <prediction>
+API <api/modules>
 ```
 
 ______________________________________________________________________

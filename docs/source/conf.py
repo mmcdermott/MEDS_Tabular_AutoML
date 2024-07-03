@@ -3,6 +3,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import MEDS_tabular_automl
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -14,8 +16,27 @@ from pathlib import Path
 project = "MEDS-Tab"
 copyright = "2024, Nassim Oufattole, Matthew McDermott, Teya Bergamaschi, Aleksia Kolo, Hyewon Jeong"
 author = "Nassim Oufattole, Matthew McDermott, Teya Bergamaschi, Aleksia Kolo, Hyewon Jeong"
-release = "0.0.2"
-version = "0.0.2"
+# Define the json_url for our version switcher.
+
+
+json_url = "https://meds-tab.readthedocs.io/en/latest/_static/switcher.json"
+# Define the version we use for matching in the version switcher.
+version_match = os.environ.get("READTHEDOCS_VERSION")
+release = MEDS_tabular_automl.__version__
+# If READTHEDOCS_VERSION doesn't exist, we're not on RTD
+# If it is an integer, we're in a PR build and the version isn't correct.
+# If it's "latest" → change to "dev" (that's what we want the switcher to call it)
+if not version_match or version_match.isdigit() or version_match == "latest":
+    # For local development, infer the version to match from the package.
+    if "dev" in release or "rc" in release:
+        version_match = "dev"
+        # We want to keep the relative reference if we are in dev mode
+        # but we want the whole url if we are effectively in a released version
+        json_url = "_static/switcher.json"
+    else:
+        version_match = f"v{release}"
+elif version_match == "stable":
+    version_match = f"v{release}"
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -98,9 +119,13 @@ extensions = [
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 html_theme = "pydata_sphinx_theme"
-html_sidebars = {"**": []}  # ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]
-
-
+# html_sidebars = {"**": []}  # ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]
+html_sidebars = {
+    "api/*": [
+        "sidebar-nav-bs",
+    ],
+    "**": [],
+}
 nbsphinx_allow_errors = True
 
 
@@ -213,22 +238,59 @@ todo_emit_warnings = True
 # documentation.
 
 
-html_title = f"MEDS-Tab v{version} Documentation"
-html_short_title = "MEDS-Tab Documentation"
+html_title = f"MEDS-Tab v{release} Documentation"
+html_short_title = "MEDS-Tab"
 
 # html_logo = "query-512.png"
 # html_favicon = "query-16.ico"
 
-# html_sidebars = {"**": ["logo-text.html", "globaltoc.html", "localtoc.html", "searchbox.html"]}
-
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
-
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-
 # Material theme options (see theme.conf for more information)
+html_theme_options = {
+    "logo": {
+        "text": "MEDS-TAB",
+        "image_light": "../assets/dark_purple_meds_tab.png",
+        "image_dark": "../assets/light_purple_meds_tab.png",
+    },
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/mmcdermott/MEDS_Tabular_AutoML",  # required
+            "icon": "fa-brands fa-github",
+            "type": "fontawesome",
+        },
+        {
+            "name": "PyPI",
+            "url": "https://pypi.org/project/meds-tab/",
+            "icon": "fa-brands fa-python",
+        },
+    ],
+    "header_links_before_dropdown": 6,
+    "show_toc_level": 1,
+    "navbar_align": "left",  # [left, content, right] For testing that the navbar items align properly
+    # "show_nav_level": 2,
+    "announcement": "This is a community-supported tool. If you'd like to contribute, <a href='https://github.com/mmcdermott/MEDS_Tabular_AutoML'>check out our GitHub repository.</a> Your contributions are welcome!",  # noqa E501
+    "show_version_warning_banner": True,
+    "switcher": {
+        "json_url": json_url,
+        "version_match": version_match,
+    },
+    "navbar_center": ["version-switcher", "navbar-nav"],
+    "footer_start": ["copyright"],
+    "footer_center": ["sphinx-version"],
+    "use_edit_page_button": True,
+    # "secondary_sidebar_items": {
+    #     "**/*": ["page-toc", "edit-this-page", "sourcelink"],
+    # },
+    "back_to_top_button": True,
+}
+
+html_context = {
+    "github_user": "mmcdermott",
+    "github_repo": "MEDS_Tabular_AutoML",
+    "github_version": "main",
+    "doc_path": "docs/source",
+}
+
 # html_theme_options = {
 #     # Set the name of the project to appear in the navigation.
 #     "nav_title": "MEDS-TAB",
@@ -261,9 +323,6 @@ html_short_title = "MEDS-Tab Documentation"
 #     # If True, show hidden TOC entries
 #     "globaltoc_includehidden": False,
 # }
-
-
-html_static_path = ["_static"]
 
 
 html_show_copyright = True
@@ -327,22 +386,10 @@ latex_documents = [
 # not chapters.
 # latex_use_parts = False
 
-# If true, show page references after internal links.
-# latex_show_pagerefs = False
-
-# If true, show URL addresses after external links.
-# latex_show_urls = False
-
-# Documents to append as an appendix to all manuals.
-# latex_appendices = []
-
-# If false, no module index is generated.
-# latex_domain_indices = True
-
 # -- Options for EPUB output
 epub_show_urls = "footnote"
 
-print(f"loading configurations for {project} {version} ...", file=sys.stderr)
+print(f"loading configurations for {project} {release} ...", file=sys.stderr)
 
 
 def setup(app):

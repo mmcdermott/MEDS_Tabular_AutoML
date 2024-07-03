@@ -47,9 +47,11 @@ The tabularization stage of our pipeline, exposed via the cli commands:
 
 Static data is relatively small in the medical datasets, so we use a dense pivot operation, convert it to a sparse matrix, and then duplicate rows such that the static data will match up with the time series data rows generated in the next step. Static data is currently processed serially.
 
-The script for tabularizing time series data primarily transforms a raw, unstructured dataset into a structured, feature-rich dataset by utilizing a series of sophisticated data processing steps. This transformation involves converting raw time series from a Polars dataframe into a sparse matrix format, aggregating events that occur at the same date for the same patient, and then applying rolling window aggregations to extract temporal features. Here's a step-by-step breakdown of the algorithm:
+The script for tabularizing time series data primarily transforms a raw, unstructured dataset into a structured, feature-rich dataset by utilizing a series of sophisticated data processing steps. This transformation (as depicted in the figure below) involves converting raw time series from a Polars dataframe into a sparse matrix format, aggregating events that occur at the same date for the same patient, and then applying rolling window aggregations to extract temporal features.
 
-### High-Level Steps
+![Time Series Tabularization Method](../assets/pivot.png)
+
+### High-Level Tabularization Algorithm
 
 1. **Data Loading and Categorization**:
 
@@ -57,17 +59,14 @@ The script for tabularizing time series data primarily transforms a raw, unstruc
 
 2. **Sparse Matrix Conversion**:
 
-   - Data from the Polars dataframe is converted into a sparse matrix format. This step is crucial for efficient memory management, especially when dealing with large datasets.
+   - Data from the Polars dataframe is converted into a sparse matrix format, where each row represents a unique event (patient x timestamp), and each column corresponds to a MEDS code for the patient.
 
-3. **Event Aggregation**:
+3. **Rolling Window Aggregation**:
 
-   - Events that occur on the same date for the same patient are aggregated. This reduces redundancy in the data and significantly speeds up the rolling window aggregations on datasets that have lots of concurrent observations.
+   - For each aggregation method (sum, count, min, max, etc.), events that occur on the same date for the same patient are aggregated. This reduces the amount of data we have to perform rolling windows over.
+   - Then we aggregate features over the specified rolling windows sizes.
 
-4. **Rolling Window Aggregation**:
-
-   - The aggregated data undergoes a rolling window operation where various statistical methods are applied (sum, count, min, max, etc.) to extract features over specified window sizes.
-
-5. **Output Storage**:
+4. **Output Storage**:
 
    - Sparse array is converted to Coordinate List format and stored as a `.npz` file on disk.
    - The file paths look as follows
