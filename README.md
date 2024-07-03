@@ -16,6 +16,8 @@
 This repository provides utilities and scripts to run limited automatic tabular ML pipelines for generic MEDS
 datasets.
 
+______________________________________________________________________
+
 # Usage
 
 This repository consists of two key pieces:
@@ -200,6 +202,8 @@ realize these constraints, which will explicitly involve summarizing the patient
 or future windows in time to produce a single row per patient with a consistent, logical set of columns
 (though there may still be missingness).
 
+______________________________________________________________________
+
 # The MEDS-Tab Architecture
 
 In this section, we describe the MEDS-Tab architecture, specifically some of the pipeline choices we made to reduce memory usage and increase speed during the tabularization process and XGBoost tuning process.
@@ -306,6 +310,8 @@ The final stage uses the processed and cached data to train an XGBoost model. Th
 - **Training and Validation**: The model is trained using the tabular data, with evaluation steps that include early stopping to prevent overfitting and tuning of hyperparameters based on validation performance.
 - **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window sizes, and the minimimum code inclusion frequency.
 
+______________________________________________________________________
+
 # Computational Performance vs. Existing Pipelines
 
 Evaluating the computational overhead of tabularization methods is essential for assessing their efficiency and suitability for large-scale medical data processing. This section presents a comparative analysis of the computational overhead of MEDS-Tab with other systems like Catabra and TSFresh. It outlines the performance of each system in terms of wall time, memory usage, and output size, highlighting the computational efficiency and scalability of MEDS-Tab.
@@ -341,7 +347,7 @@ a) 100 Patients
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
-| 0m39.426s | 5,271 MB   | 14,791 MB   | 362 MB      | meds_tab |
+| 0m39s     | 5,271 MB   | 14,791 MB   | 362 MB      | meds_tab |
 
 b) 500 Patients
 
@@ -349,7 +355,7 @@ b) 500 Patients
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
-| 3m4.435s  | 8,335 MB   | 15,102 MB   | 1,326 MB    | meds_tab |
+| 3m4s      | 8,335 MB   | 15,102 MB   | 1,326 MB    | meds_tab |
 
 ### MIMIC-IV Dataset
 
@@ -363,9 +369,9 @@ This table illustrates the efficiency of MEDS-Tab in processing a small subset o
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
-| 0m2.071s  | 423 MB     | 943 MB      | 7 MB        | meds_tab |
-| 1m41.920s | 84,159 MB  | 265,877 MB  | 1 MB        | tsfresh  |
-| 0m15.366s | 2,537 MB   | 4,781 MB    | 1 MB        | catabra  |
+| 0m2s      | 423 MB     | 943 MB      | 7 MB        | meds_tab |
+| 1m41s     | 84,159 MB  | 265,877 MB  | 1 MB        | tsfresh  |
+| 0m15s     | 2,537 MB   | 4,781 MB    | 1 MB        | catabra  |
 
 b) 100 Patients
 
@@ -375,9 +381,9 @@ The performance gap was further highlighted with an increased number of patients
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
-| 0m4.724s  | 718 MB     | 1,167 MB    | 45 MB       | meds_tab |
-| 5m9.077s  | 217,477 MB | 659,735 MB  | 4 MB        | tsfresh  |
-| 3m17.671s | 14,319 MB  | 28,342 MB   | 4 MB        | catabra  |
+| 0m5s      | 718 MB     | 1,167 MB    | 45 MB       | meds_tab |
+| 5m9s      | 217,477 MB | 659,735 MB  | 4 MB        | tsfresh  |
+| 3m17s     | 14,319 MB  | 28,342 MB   | 4 MB        | catabra  |
 
 c) 500 Patients
 
@@ -387,7 +393,7 @@ Scaling further to 500 patients, MEDS-Tab maintained consistent performance, rei
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
-| 0m15.867s | 1,410 MB   | 3,539 MB    | 442 MB      | meds_tab |
+| 0m16s     | 1,410 MB   | 3,539 MB    | 442 MB      | meds_tab |
 
 ______________________________________________________________________
 
