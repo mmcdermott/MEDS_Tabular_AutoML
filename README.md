@@ -255,7 +255,7 @@ Static data is relatively small in the medical datasets, so we use a dense pivot
 
 The script for tabularizing time series data primarily transforms a raw, unstructured dataset into a structured, feature-rich dataset by utilizing a series of sophisticated data processing steps. This transformation (as depicted in the figure below) involves converting raw time series from a Polars dataframe into a sparse matrix format, aggregating events that occur at the same date for the same patient, and then applying rolling window aggregations to extract temporal features.
 
-![Time Series Tabularization Method](../assets/pivot.png)
+![Time Series Tabularization Method](docs/assets/pivot.png)
 
 ### High-Level Tabularization Algorithm
 
