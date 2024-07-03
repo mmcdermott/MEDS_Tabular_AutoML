@@ -19,14 +19,14 @@ author = "Nassim Oufattole, Matthew McDermott, Teya Bergamaschi, Aleksia Kolo, H
 # Define the json_url for our version switcher.
 
 
-json_url = "https://meds-tab.readthedocs.io/en/latest/_static/switcher.json"
+json_url = "https://meds-tab.readthedocs.io/en/dev/_static/switcher.json"
 # Define the version we use for matching in the version switcher.
 version_match = os.environ.get("READTHEDOCS_VERSION")
 release = MEDS_tabular_automl.__version__
 # If READTHEDOCS_VERSION doesn't exist, we're not on RTD
 # If it is an integer, we're in a PR build and the version isn't correct.
 # If it's "latest" → change to "dev" (that's what we want the switcher to call it)
-if not version_match or version_match.isdigit() or version_match == "latest":
+if not version_match or version_match.isdigit():
     # For local development, infer the version to match from the package.
     if "dev" in release or "rc" in release:
         version_match = "dev"
@@ -35,6 +35,8 @@ if not version_match or version_match.isdigit() or version_match == "latest":
         json_url = "_static/switcher.json"
     else:
         version_match = f"v{release}"
+elif version_match == "latest":
+    version_match = "dev"
 elif version_match == "stable":
     version_match = f"v{release}"
 
