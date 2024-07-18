@@ -44,7 +44,7 @@ hydra:
       seed: 1
     study_name: null #study_${now:%Y-%m-%d_%H-%M-%S}
     storage: null
-    direction: minimize
+    direction: maximize
     n_trials: 250
     n_jobs: 25
 

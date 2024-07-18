@@ -23,6 +23,7 @@ meds-tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_s
 meds-tab-cache-task = "MEDS_tabular_automl.scripts.cache_task:main"
 meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_xgboost:main"
 generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
+generate-optuna-intervals = "MEDS_tabular_automl.scripts.generate_optuna_intervals:main"
 
 
 [project.optional-dependencies]

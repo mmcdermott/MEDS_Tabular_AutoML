@@ -197,6 +197,9 @@ class Iterator(xgb.DataIter, TimeableMixin):
         files = get_model_files(self.cfg, self.split, self._data_shards[idx])
 
         if not all(file.exists() for file in files):
+            for file in files:
+                if not file.exists():
+                    logger.error(f"File {file} does not exist.")
             raise ValueError(f"Not all files exist for shard {self._data_shards[idx]}")
 
         dynamic_cscs = [self._load_dynamic_shard_from_file(file, idx) for file in files]
@@ -423,6 +426,7 @@ def main(cfg: DictConfig) -> float:
     # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
+
     try:
         model = XGBoostModel(cfg)
         model.train()
