@@ -70,9 +70,7 @@ def test_integration():
             file_path = MEDS_cohort_dir / "final_cohort" / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
             df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(
-                file_path
-            )
+            df.with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(file_path)
 
         # Check the files are not empty
         meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -225,7 +223,7 @@ def test_integration():
             df = get_unique_time_events_df(get_events_df(df, feature_columns)).collect()
             pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
             df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
-            df = df.select(pl.col(["patient_id", "timestamp", "label"]))
+            df = df.select(pl.col(["patient_id", "time", "label"]))
             df = df.with_row_index("event_id")
 
             split = f.parent.stem

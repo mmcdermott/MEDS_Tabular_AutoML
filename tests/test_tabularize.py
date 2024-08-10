@@ -35,7 +35,7 @@ logger.disable("MEDS_tabular_automl")
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
 MEDS_TRAIN_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 239684,HEIGHT,,175.271115221764
 239684,EYE_COLOR//BROWN,,
 239684,DOB,1980-12-28T00:00:00.000000,
@@ -68,7 +68,7 @@ patient_id,code,timestamp,numerical_value
 1195293,DISCHARGE,2010-06-20T20:50:04.000000,
 """
 MEDS_TRAIN_1 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 68729,EYE_COLOR//HAZEL,,
 68729,HEIGHT,,160.3953106166676
 68729,DOB,1978-03-09T00:00:00.000000,
@@ -85,7 +85,7 @@ patient_id,code,timestamp,numerical_value
 814703,DISCHARGE,2010-02-05T07:02:30.000000,
 """
 MEDS_HELD_OUT_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 1500733,HEIGHT,,158.60131573580904
 1500733,EYE_COLOR//BROWN,,
 1500733,DOB,1986-07-20T00:00:00.000000,
@@ -99,7 +99,7 @@ patient_id,code,timestamp,numerical_value
 1500733,DISCHARGE,2010-06-03T16:44:26.000000,
 """
 MEDS_TUNING_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 754281,EYE_COLOR//BROWN,,
 754281,HEIGHT,,166.22261567137025
 754281,DOB,1988-12-19T00:00:00.000000,
@@ -173,9 +173,7 @@ def test_tabularize():
             file_path = MEDS_cohort_dir / "final_cohort" / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
             df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(
-                file_path
-            )
+            df.with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(file_path)
 
         # Check the files are not empty
         meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -304,7 +302,7 @@ def test_tabularize():
             df = get_unique_time_events_df(get_events_df(df, feature_columns)).collect()
             pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
             df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
-            df = df.select(pl.col(["patient_id", "timestamp", "label"]))
+            df = df.select(pl.col(["patient_id", "time", "label"]))
             df = df.with_row_index("event_id")
 
             split = f.parent.stem

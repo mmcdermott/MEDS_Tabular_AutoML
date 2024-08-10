@@ -82,7 +82,7 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
         >>> data = pl.DataFrame({
         ...     'patient_id': [1, 1, 2, 2, 3, 3, 3],
         ...     'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
-        ...     'timestamp': [
+        ...     'time': [
         ...         None,
         ...         datetime(2021, 1, 1),
         ...         None,
@@ -91,7 +91,7 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
         ...         datetime(2021, 1, 4),
         ...         None
         ...     ],
-        ...     'numerical_value': [1, None, 2, 2, None, None, 3]
+        ...     'numeric_value': [1, None, 2, 2, None, None, 3]
         ... }).lazy()
         >>> assert (
         ...     convert_to_freq_dict(compute_feature_frequencies(data).lazy()) == {
@@ -101,29 +101,29 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
         ... )
     """
     static_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_null()
+        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
     )
     static_code_freqs_df = static_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     static_code_freqs = {
         row["code"] + "/static/present": row["count"] for row in static_code_freqs_df.iter_rows(named=True)
     }
 
-    static_value_df = static_df.filter(pl.col("numerical_value").is_not_null())
+    static_value_df = static_df.filter(pl.col("numeric_value").is_not_null())
     static_value_freqs_df = (
-        static_value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
+        static_value_df.group_by("code").agg(pl.count("numeric_value").alias("count")).collect()
     )
     static_value_freqs = {
         row["code"] + "/static/first": row["count"] for row in static_value_freqs_df.iter_rows(named=True)
     }
 
     ts_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("timestamp").is_not_null()
+        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_not_null()
     )
     code_freqs_df = ts_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     code_freqs = {row["code"] + "/code": row["count"] for row in code_freqs_df.iter_rows(named=True)}
 
-    value_df = ts_df.filter(pl.col("numerical_value").is_not_null())
-    value_freqs_df = value_df.group_by("code").agg(pl.count("numerical_value").alias("count")).collect()
+    value_df = ts_df.filter(pl.col("numeric_value").is_not_null())
+    value_freqs_df = value_df.group_by("code").agg(pl.count("numeric_value").alias("count")).collect()
     value_freqs = {row["code"] + "/value": row["count"] for row in value_freqs_df.iter_rows(named=True)}
 
     combined_freqs = {**static_code_freqs, **static_value_freqs, **code_freqs, **value_freqs}
@@ -222,13 +222,13 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         >>> fp = NamedTemporaryFile()
         >>> pl.DataFrame({
         ...     "code": ["A", "A", "A", "A", "D", "D", "E", "E"],
-        ...     "timestamp": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
-        ...     "numerical_value": [1, None, 2, 2, None, 5, None, 3]
+        ...     "time": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
+        ...     "numeric_value": [1, None, 2, 2, None, 5, None, 3]
         ... }).write_parquet(fp.name)
         >>> filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
         shape: (6, 3)
         ┌──────┬────────────┬─────────────────┐
-        │ code ┆ timestamp  ┆ numerical_value │
+        │ code ┆ time       ┆ numeric_value   │
         │ ---  ┆ ---        ┆ ---             │
         │ str  ┆ str        ┆ i64             │
         ╞══════╪════════════╪═════════════════╡
@@ -257,8 +257,8 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         clear_code_aggregation_suffix(each) for each in get_feature_names("value/sum", allowed_codes)
     ]
 
-    is_static_code = pl.col("timestamp").is_null()
-    is_numeric_code = pl.col("numerical_value").is_not_null()
+    is_static_code = pl.col("time").is_null()
+    is_numeric_code = pl.col("numeric_value").is_not_null()
     rare_static_code = is_static_code & ~pl.col("code").is_in(static_present_feature_columns)
     rare_ts_code = ~is_static_code & ~pl.col("code").is_in(code_feature_columns)
     rare_ts_value = ~is_static_code & ~pl.col("code").is_in(value_feature_columns) & is_numeric_code
@@ -268,8 +268,8 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
     df = df.with_columns(
         pl.when(rare_static_value | rare_ts_value)
         .then(None)
-        .otherwise(pl.col("numerical_value"))
-        .alias("numerical_value")
+        .otherwise(pl.col("numeric_value"))
+        .alias("numeric_value")
     )
     # Drop rows with rare codes
     df = df.filter(~(rare_static_code | rare_ts_code))
