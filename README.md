@@ -27,7 +27,8 @@ This repository consists of two key pieces:
 
 ## Quick Start
 
-To use MEDS-Tab, install the dependencies following commands below:
+To use MEDS-Tab, install the dependencies following commands below. Note that this version of MEDS-Tab is
+compatible with [MEDS v0.3](https://github.com/Medical-Event-Data-Standard/meds/releases/tag/0.3.0)
 
 **Pip Install**
 
