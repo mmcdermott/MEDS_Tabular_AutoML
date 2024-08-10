@@ -5,10 +5,10 @@ defaults:
 task_name: task
 
 # Tabularized Data
-input_dir: ${MEDS_cohort_dir}/tabularize
+input_dir: ${output_cohort_dir}/tabularize
 # Where the labels are stored, with columns patient_id, timestamp, label
 input_label_dir: ${MEDS_cohort_dir}/${task_name}/labels
 # Where to output the task specific tabularized data
-output_dir: ${MEDS_cohort_dir}/${task_name}/task_cache
+output_dir: ${output_cohort_dir}/${task_name}/task_cache
 
 name: task_specific_caching
