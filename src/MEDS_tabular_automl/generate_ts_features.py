@@ -57,7 +57,7 @@ def get_long_code_df(
         .to_series()
         .to_numpy()
     )
-    assert np.issubdtype(cols.dtype, np.number), "numerical_value must be a numerical type"
+    assert np.issubdtype(cols.dtype, np.number), "numeric_value must be a numerical type"
     data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
     return data, (rows, cols)
 
@@ -76,9 +76,7 @@ def get_long_value_df(
         the CSR sparse matrix.
     """
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
-    value_df = (
-        df.with_row_index("index").drop_nulls("numerical_value").filter(pl.col("code").is_in(ts_columns))
-    )
+    value_df = df.with_row_index("index").drop_nulls("numeric_value").filter(pl.col("code").is_in(ts_columns))
     rows = value_df.select(pl.col("index")).collect().to_series().to_numpy()
     cols = (
         value_df.with_columns(pl.col("code").cast(str).replace(column_to_int).cast(int).alias("value_index"))
@@ -87,8 +85,8 @@ def get_long_value_df(
         .to_series()
         .to_numpy()
     )
-    assert np.issubdtype(cols.dtype, np.number), "numerical_value must be a numerical type"
-    data = value_df.select(pl.col("numerical_value")).collect().to_series().to_numpy()
+    assert np.issubdtype(cols.dtype, np.number), "numeric_value must be a numerical type"
+    data = value_df.select(pl.col("numeric_value")).collect().to_series().to_numpy()
     return data, (rows, cols)
 
 
@@ -109,7 +107,7 @@ def summarize_dynamic_measurements(
         of aggregated values.
     """
     logger.info("Generating Sparse matrix for Time Series Features")
-    id_cols = ["patient_id", "timestamp"]
+    id_cols = ["patient_id", "time"]
 
     # Confirm dataframe is sorted
     check_df = df.select(pl.col(id_cols))
@@ -117,7 +115,7 @@ def summarize_dynamic_measurements(
 
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:
-        code_df = df.drop(*(id_cols + ["numerical_value"]))
+        code_df = df.drop(*(id_cols + ["numeric_value"]))
         data, (rows, cols) = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:
         value_df = df.drop(*id_cols)

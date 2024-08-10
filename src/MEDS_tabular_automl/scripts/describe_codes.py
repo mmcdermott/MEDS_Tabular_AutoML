@@ -8,7 +8,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from ..describe_codes import (
     compute_feature_frequencies,
@@ -35,15 +35,6 @@ def main(cfg: DictConfig):
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
-
-    # Store Config
-    output_dir = Path(cfg.output_dir)
-    output_dir.mkdir(exist_ok=True, parents=True)
-    OmegaConf.save(cfg, output_dir / "config.yaml")
-
-    # Create output dir
-    input_dir = Path(cfg.input_dir)
-    input_dir.mkdir(exist_ok=True, parents=True)
 
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")

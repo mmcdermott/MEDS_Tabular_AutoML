@@ -9,13 +9,12 @@ defaults:
 task_name: task
 
 # Task cached data dir
-input_dir: ${MEDS_cohort_dir}/${task_name}/task_cache
+input_dir: ${output_cohort_dir}/${task_name}/task_cache
 # Directory with task labels
-input_label_dir: ${MEDS_cohort_dir}/${task_name}/labels/final_cohort
+input_label_dir: ${MEDS_cohort_dir}/${task_name}/labels/
 # Where to output the model and cached data
-output_dir: ${MEDS_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
-output_filepath: ${output_dir}/model_metadata.parquet
-cache_dir: ${MEDS_cohort_dir}/.cache
+model_dir: ${output_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
+output_filepath: ${model_dir}/model_metadata.json
 
 # Model parameters
 model_params:
@@ -31,13 +30,9 @@ model_params:
     keep_data_in_memory: True
     binarize_task: True
 
-hydra:
-  verbose: False
-  sweep:
-    dir: ${output_dir}/.logs/
-  run:
-    dir: ${output_dir}/.logs/
+log_dir: ${model_dir}/.logs/
 
+hydra:
   # Optuna Sweeper
   sweeper:
     sampler:
