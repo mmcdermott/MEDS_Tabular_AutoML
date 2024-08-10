@@ -227,18 +227,18 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         ... }).write_parquet(fp.name)
         >>> filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
         shape: (6, 3)
-        ┌──────┬────────────┬─────────────────┐
-        │ code ┆ time       ┆ numeric_value   │
-        │ ---  ┆ ---        ┆ ---             │
-        │ str  ┆ str        ┆ i64             │
-        ╞══════╪════════════╪═════════════════╡
-        │ A    ┆ 2021-01-01 ┆ null            │
-        │ A    ┆ 2021-01-01 ┆ null            │
-        │ D    ┆ null       ┆ null            │
-        │ D    ┆ null       ┆ null            │
-        │ E    ┆ 2021-01-03 ┆ null            │
-        │ E    ┆ 2021-01-04 ┆ 3               │
-        └──────┴────────────┴─────────────────┘
+        ┌──────┬────────────┬───────────────┐
+        │ code ┆ time       ┆ numeric_value │
+        │ ---  ┆ ---        ┆ ---           │
+        │ str  ┆ str        ┆ i64           │
+        ╞══════╪════════════╪═══════════════╡
+        │ A    ┆ 2021-01-01 ┆ null          │
+        │ A    ┆ 2021-01-01 ┆ null          │
+        │ D    ┆ null       ┆ null          │
+        │ D    ┆ null       ┆ null          │
+        │ E    ┆ 2021-01-03 ┆ null          │
+        │ E    ┆ 2021-01-04 ┆ 3             │
+        └──────┴────────────┴───────────────┘
         >>> fp.close()
     """
     df = pl.scan_parquet(fp)
