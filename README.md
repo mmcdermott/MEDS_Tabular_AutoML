@@ -22,7 +22,7 @@ ______________________________________________________________________
 
 This repository consists of two key pieces:
 
-1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backwards in time from a given index date.
+1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backward in time from a given index date.
 2. Running a basic XGBoost AutoML pipeline over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
 
 ## Quick Start
@@ -44,8 +44,8 @@ pip install .
 
 ## Scripts and Examples
 
-For an end to end example over MIMIC-IV, see the [MIMIC-IV companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV).
-For an end to end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
+For an end-to-end example over MIMIC-IV, see the [MIMIC-IV companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV).
+For an end-to-end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
 See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for a local example of the end-to-end pipeline being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
 
@@ -73,7 +73,7 @@ By following these steps, you can seamlessly transform your dataset, define nece
 
 ## Core CLI Scripts Overview
 
-1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code-types. It differentiates codes into the following categories:
+1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
 
    - time-series codes (codes with timestamps)
    - time-series numerical values (codes with timestamps and numerical values)
@@ -94,9 +94,9 @@ By following these steps, you can seamlessly transform your dataset, define nece
                                tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
    ```
 
-   - For the exhuastive examples of value aggregations, see [`/src/MEDS_tabular_automl/utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
+   - For the exhaustive examples of value aggregations, see [`/src/MEDS_tabular_automl/utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
 
-3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `patient_id` x `timestamp`. This stage (and the previous stage) use sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
+3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `patient_id` x `timestamp`. This stage (and the previous stage) uses sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
 
    **Example: Aggregate time-series data** on features across different `window_sizes`
 
@@ -124,7 +124,7 @@ By following these steps, you can seamlessly transform your dataset, define nece
       tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
-5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters. Permutations of `window_sizes` and `aggs` can be generated using `generate-permutations` command (See the section below for descriptions).
+5. **`meds-tab-xgboost`**: Trains an XGBoost model using user-specified parameters. Permutations of `window_sizes` and `aggs` can be generated using `generate-subsets` command (See the section below for descriptions).
 
    ```console
    meds-tab-xgboost --multirun \
@@ -132,26 +132,26 @@ By following these steps, you can seamlessly transform your dataset, define nece
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.min_code_inclusion_frequency=10 \
-      tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
+      tabularization.window_sizes=$(generate-subsets [1d,30d,365d,full]) \
       do_overwrite=False \
-      tabularization.aggs=$(generate-permutations [static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
+      tabularization.aggs=$(generate-subsets [static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
    ```
 
 ## Additional CLI Scripts
 
-1. **`generate-permutations`**: Generates and prints a sorted list of all permutations from a comma separated input. This is provided for the convenience of sweeping over all possible combinations of window sizes and aggregations.
+1. **`generate-subsets`**: Generates and prints a sorted list of all non-empty subsets from a comma-separated input. This is provided for the convenience of sweeping over all possible combinations of window sizes and aggregations.
 
-   For example you can directly call **`generate-permutations`** in the command line:
+   For example, you can directly call **`generate-subsets`** in the command line:
 
    ```console
-   generate-permutations [2,3,4] \
+   generate-subsets [2,3,4] \
    [2], [2, 3], [2, 3, 4], [2, 4], [3], [3, 4], [4]
    ```
 
    This could be used in the command line in concert with other calls. For example, the following call:
 
    ```console
-   meds-tab-xgboost --multirun tabularization.window_sizes=$(generate-permutations [1d,2d,7d,full])
+   meds-tab-xgboost --multirun tabularization.window_sizes=$(generate-subsets [1d,2d,7d,full])
    ```
 
    would resolve to:
@@ -298,7 +298,7 @@ Now that we have generated tabular features for all the events in our dataset, w
 - **Row Selection Based on Tasks**: Only the data rows that are relevant to the specific tasks are selected and cached. This reduces the memory footprint and speeds up the training process.
 - **Use of Sparse Matrices for Efficient Storage**: Sparse matrices are again employed here to store the selected data efficiently, ensuring that only non-zero data points are kept in memory, thus optimizing both storage and retrieval times.
 
-The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `patient_id`, `timestamp`, and `label` columns.
+The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard file structure as the input meds data from step (1), and the label parquets need `patient_id`, `timestamp`, and `label` columns.
 
 ## 4. XGBoost Training
 
@@ -308,7 +308,7 @@ The final stage uses the processed and cached data to train an XGBoost model. Th
 
 - **Iterator for Data Loading**: Custom iterators are designed to load sparse matrices efficiently into the XGBoost training process, which can handle sparse inputs natively, thus maintaining high computational efficiency.
 - **Training and Validation**: The model is trained using the tabular data, with evaluation steps that include early stopping to prevent overfitting and tuning of hyperparameters based on validation performance.
-- **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window sizes, and the minimimum code inclusion frequency.
+- **Hyperparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model parameters, aggregations, window sizes, and the minimum code inclusion frequency.
 
 ______________________________________________________________________
 
@@ -331,15 +331,15 @@ The benchmarking tests were conducted using the following hardware and software 
 
 ### MEDS-Tab Tabularization Technique
 
-Tabularization of time-series data, as depecited above, is commonly used in several past works. The only two libraries to our knowledge that provide a full tabularization pipeline are `tsfresh` and `catabra`. `catabra` also offers a slower but more memory efficient version of their method which we denote `catabra-mem`. Other libraries either provide only rolling window functionalities (`featuretools`) or just pivoting operations (`Temporai`/`Clairvoyance`, `sktime`, `AutoTS`). We provide a significantly faster and more memory efficient method. Our findings show that on the MIMIC-IV and eICU medical datasets we significantly outperform both above-mentioned methods that provide similar functionalities with MEDS-Tab. While `catabra` and `tsfresh` could not even run within a budget of 10 minutes on as low as 10 patient's data for eICU, our method scales to process hundreds of patients with low memory usage under the same time budget. We present the results below.
+Tabularization of time-series data, as depicted above, is commonly used in several past works. The only two libraries to our knowledge that provide a full tabularization pipeline are `tsfresh` and `catabra`. `catabra` also offers a slower but more memory-efficient version of their method which we denote `catabra-mem`. Other libraries either provide only rolling window functionalities (`featuretools`) or just pivoting operations (`Temporai`/`Clairvoyance`, `sktime`, `AutoTS`). We provide a significantly faster and more memory-efficient method. Our findings show that on the MIMIC-IV and eICU medical datasets, we significantly outperform both above-mentioned methods that provide similar functionalities with MEDS-Tab. While `catabra` and `tsfresh` could not even run within a budget of 10 minutes on as low as 10 patients' data for eICU, our method scales to process hundreds of patients with low memory usage under the same time budget. We present the results below.
 
 ## 2. Comparative Performance Analysis
 
-The tables below detail computational resource utilization across two datasets and various patient scales, emphasizing the better performance of MEDS-Tab in all of the scenarios. The tables are organized by dataset and number of patients. For the analysis, the full window sizes and the aggregation method code_count were used. Additionally, we use a budget of 10 minutes for running our tests given that for such small number of patients (10, 100, and 500 patients) data should be processed quickly. Note that `catabra-mem` is omitted from the tables as it never completed within the 10 minute budget.
+The tables below detail computational resource utilization across two datasets and various patient scales, emphasizing the better performance of MEDS-Tab in all of the scenarios. The tables are organized by dataset and number of patients. For the analysis, the full window sizes and the aggregation method code_count were used. Additionally, we use a budget of 10 minutes for running our tests given that for such a small number of patients (10, 100, and 500 patients) data should be processed quickly. Note that `catabra-mem` is omitted from the tables as it was never completed within the 10-minute budget.
 
 ### eICU Dataset
 
-The only method that was able to tabularize eICU data was MEDS-Tab. We ran our method with both 100 and 500 patients, resulting in an increment by three times in the number of codes. MEDS-Tab gave efficient results in terms of both time and memory usage.
+The only method that was able to tabularize eICU data was MEDS-Tab. We ran our method with both 100 and 500 patients, resulting in an increment of three times in the number of codes. MEDS-Tab gave efficient results in terms of both time and memory usage.
 
 a) 100 Patients
 
@@ -419,7 +419,7 @@ meds-tab-xgboost
       do_overwrite=False \
 ```
 
-This uses the defaults minimum code inclusion frequency, window sizes, and aggregations from the `launch_xgboost.yaml`:
+This uses the default minimum code inclusion frequency, window sizes, and aggregations from the `launch_xgboost.yaml`:
 
 ```yaml
 allowed_codes:      # allows all codes that meet min code inclusion frequency
@@ -486,9 +486,9 @@ meds-tab-xgboost --multirun \
       MEDS_cohort_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
-      tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
+      tabularization.window_sizes=$(generate-subsets [1d,30d,365d,full]) \
       do_overwrite=False \
-      tabularization.aggs=$(generate-permutations [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
+      tabularization.aggs=$(generate-subsets [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
 ```
 
 The model parameters were set to:
@@ -541,7 +541,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 
 #### 2.2 XGBoost Optimal Found Model Parameters
 
-Additionally, the model parameters from the highest performing run are reported below.
+Additionally, the model parameters from the highest-performing run are reported below.
 
 | Task                            | Index Timestamp   | Eta   | Lambda | Alpha | Subsample | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
 | ------------------------------- | ----------------- | ----- | ------ | ----- | --------- | -------------------- | ------------------------- | --------------------- | -------------- |
@@ -563,7 +563,7 @@ Additionally, the model parameters from the highest performing run are reported 
 
 The eICU sweep was conducted equivalently to the MIMIC-IV sweep. Please refer to the MIMIC-IV Sweep subsection above for details on the commands and sweep parameters.
 
-For more details about eICU specific task generation and running, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
+For more details about eICU-specific task generation and running, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
 
 #### 1. XGBoost Performance on eICU
 

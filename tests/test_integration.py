@@ -222,11 +222,9 @@ def test_integration():
             out_f.parent.mkdir(parents=True, exist_ok=True)
             df.write_parquet(out_f)
 
-        stderr, stdout_ws = run_command(
-            "generate-permutations", ["[30d]"], {}, "generate-permutations window_sizes"
-        )
+        stderr, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
         stderr, stdout_agg = run_command(
-            "generate-permutations", ["[static/present,static/first]"], {}, "generate-permutations aggs"
+            "generate-subsets", ["[static/present,static/first]"], {}, "generate-subsets aggs"
         )
 
         stderr, stdout = run_command(

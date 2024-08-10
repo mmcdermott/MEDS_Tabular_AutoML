@@ -398,13 +398,13 @@ class XGBoostModel(TimeableMixin):
 
     @TimeableMixin.TimeAs
     def evaluate(self) -> float:
-        """Evaluates the model on the test set.
+        """Evaluates the model on the tuning set.
 
         Returns:
             The evaluation metric as the ROC AUC score.
         """
-        y_pred = self.model.predict(self.dheld_out)
-        y_true = self.dheld_out.get_label()
+        y_pred = self.model.predict(self.dtuning)
+        y_true = self.dtuning.get_label()
         return roc_auc_score(y_true, y_pred)
 
 
