@@ -1,5 +1,4 @@
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -440,10 +439,10 @@ def main(cfg: DictConfig) -> float:
         # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
 
         # save model
-        save_dir = Path(cfg.output_dir)
-        save_dir.mkdir(parents=True, exist_ok=True)
-        model_time = datetime.now().strftime("%H%M%S%f")
-        model.model.save_model(save_dir / f"{auc:.4f}_model_{model_time}.json")
+        output_fp = Path(cfg.output_filepath)
+        output_fp.parent.mkdir(parents=True, exist_ok=True)
+
+        model.model.save_model(output_fp)
     except Exception as e:
         logger.error(f"Error occurred: {e}")
         auc = 0.0
