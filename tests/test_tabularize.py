@@ -351,12 +351,8 @@ def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test
 
 def test_xgboost_config():
     MEDS_cohort_dir = "blah"
-    stderr, stdout_ws = run_command(
-        "generate-permutations", ["[30d]"], {}, "generate-permutations window_sizes"
-    )
-    stderr, stdout_agg = run_command(
-        "generate-permutations", ["[static/present]"], {}, "generate-permutations aggs"
-    )
+    stderr, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
+    stderr, stdout_agg = run_command("generate-subsets", ["[static/present]"], {}, "generate-subsets aggs")
     xgboost_config_kwargs = {
         "MEDS_cohort_dir": MEDS_cohort_dir,
         "do_overwrite": False,
