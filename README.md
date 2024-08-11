@@ -90,11 +90,11 @@ By following these steps, you can seamlessly transform your dataset, define nece
    # $N_PATIENTS_PER_SHARD is the number of patients per shard you want to use.
    #
    MEDS_transform-reshard_to_split \
-       input_dir="$MIMICIV_MEDS_DIR" \
-       cohort_dir="$MEDS_TAB_COHORT_DIR" \
-       'stages=["reshard_to_split"]' \
-       stage="reshard_to_split" \
-       stage_configs.reshard_to_split.n_patients_per_shard=$N_PATIENTS_PER_SHARD
+      input_dir="$MIMICIV_MEDS_DIR" \
+      cohort_dir="$MEDS_TAB_COHORT_DIR" \
+      'stages=["reshard_to_split"]' \
+      stage="reshard_to_split" \
+      stage_configs.reshard_to_split.n_patients_per_shard=$N_PATIENTS_PER_SHARD
    ```
 
 1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
