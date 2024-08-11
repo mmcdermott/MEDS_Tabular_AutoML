@@ -89,7 +89,12 @@ def main(cfg: DictConfig):
     np.random.shuffle(tabularization_tasks)
 
     label_dir = Path(cfg.input_label_dir)
-    label_df = pl.scan_parquet(label_dir / "**/*.parquet").rename({"prediction_time": "time"})
+    label_df = pl.scan_parquet(label_dir / "**/*.parquet").rename(
+        {
+            "prediction_time": "time",
+            cfg.label_column: "label",
+        }
+    )
 
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
 
@@ -105,7 +110,9 @@ def main(cfg: DictConfig):
             .with_row_index("event_id")
             .select("patient_id", "time", "event_id")
         )
-        shard_label_df = label_df.join_asof(other=raw_data_df, by="patient_id", on="time")
+        shard_label_df = label_df.join(
+            raw_data_df.select("patient_id").unique(), on="patient_id", how="inner"
+        ).join_asof(other=raw_data_df, by="patient_id", on="time")
 
         shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
         rwlock_wrap(
