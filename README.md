@@ -82,19 +82,18 @@ By following these steps, you can seamlessly transform your dataset, define nece
    processed in parallel. You can easily re-shard your input MEDS cohort in the environment into which this
    package is installed with the following command:
 
-   ```bash
+   ```console
    # Re-shard pipeline
    # $MIMICIV_MEDS_DIR is the directory containing the input, MEDS v0.3 formatted MIMIC-IV data
    # $MEDS_TAB_COHORT_DIR is the directory where the re-sharded MEDS dataset will be stored, and where your model
    # will store cached files during processing by default.
    # $N_PATIENTS_PER_SHARD is the number of patients per shard you want to use.
-   #
    MEDS_transform-reshard_to_split \
-      input_dir="$MIMICIV_MEDS_DIR" \
-      cohort_dir="$MEDS_TAB_COHORT_DIR" \
-      'stages=["reshard_to_split"]' \
-      stage="reshard_to_split" \
-      stage_configs.reshard_to_split.n_patients_per_shard=$N_PATIENTS_PER_SHARD
+       input_dir="$MIMICIV_MEDS_DIR" \
+       cohort_dir="$MEDS_TAB_COHORT_DIR" \
+       'stages=["reshard_to_split"]' \
+       stage="reshard_to_split" \
+       stage_configs.reshard_to_split.n_patients_per_shard=$N_PATIENTS_PER_SHARD
    ```
 
 1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
