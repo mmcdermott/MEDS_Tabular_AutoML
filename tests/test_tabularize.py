@@ -177,11 +177,13 @@ def test_tabularize():
         for split, data in MEDS_OUTPUTS.items():
             file_path = output_cohort_dir / "data" / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
-            df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(file_path)
+            df = pl.read_csv(StringIO(data)).with_columns(
+                pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")
+            )
+            df.write_parquet(file_path)
             all_data.append(df)
 
-        all_data = pl.concat(all_data, how="diagnoal_relaxed")
+        all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["patient_id", "time"])
 
         # Check the files are not empty
         meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -297,7 +299,7 @@ def test_tabularize():
             cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
 
         # Create fake labels
-        df = get_unique_time_events_df(get_events_df(all_data, feature_columns)).collect()
+        df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
         pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
         df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
         df = df.select("patient_id", pl.col("time").alias("prediction_time"), "boolean_value")

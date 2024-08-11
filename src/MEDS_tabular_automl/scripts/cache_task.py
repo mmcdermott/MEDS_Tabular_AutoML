@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+from functools import partial
 from importlib.resources import files
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import polars as pl
 import scipy.sparse as sp
 from omegaconf import DictConfig
 
+from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..mapper import wrap as rwlock_wrap
 from ..utils import (
@@ -17,7 +19,9 @@ from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     VALUE_AGGREGATIONS,
+    get_events_df,
     get_shard_prefix,
+    get_unique_time_events_df,
     hydra_loguru_init,
     load_matrix,
     load_tqdm,
@@ -35,6 +39,10 @@ VALID_AGGREGATIONS = [
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
 ]
+
+
+def write_lazyframe(df: pl.LazyFrame, fp: Path):
+    df.collect().write_parquet(fp, use_pyarrow=True)
 
 
 def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> sp.coo_array:
@@ -80,31 +88,44 @@ def main(cfg: DictConfig):
     tabularization_tasks = list_subdir_files(cfg.input_dir, "npz")
     np.random.shuffle(tabularization_tasks)
 
+    label_dir = Path(cfg.input_label_dir)
+    label_df = pl.scan_parquet(label_dir / "**/*.parquet").rename({"prediction_time": "time"})
+
+    feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
+
     # iterate through them
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
         split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
-        label_fp = Path(cfg.input_label_dir) / split / f"{shard_num}.parquet"
-        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
-        assert label_fp.exists(), f"Output file {label_fp} does not exist."
 
-        def read_fn(fps):
-            matrix_fp, label_fp = fps
-            return load_matrix(matrix_fp), pl.scan_parquet(label_fp)
+        raw_data_fp = Path(cfg.output_cohort_dir) / "data" / split / f"{shard_num}.parquet"
+        raw_data_df = filter_parquet(raw_data_fp, cfg.tabularization._resolved_codes)
+        raw_data_df = (
+            get_unique_time_events_df(get_events_df(raw_data_df, feature_columns))
+            .with_row_index("event_id")
+            .select("patient_id", "time", "event_id")
+        )
+        shard_label_df = label_df.join_asof(other=raw_data_df, by="patient_id", on="time")
 
-        def compute_fn(shard_dfs):
-            matrix, label_df = shard_dfs
-            cache_matrix = generate_row_cached_matrix(matrix, label_df)
-            return cache_matrix
-
-        def write_fn(cache_matrix, out_fp):
-            write_df(cache_matrix, out_fp, do_overwrite=cfg.do_overwrite)
-
-        in_fps = [data_fp, label_fp]
+        shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
         rwlock_wrap(
-            in_fps,
+            raw_data_fp,
+            shard_label_fp,
+            pl.scan_parquet,
+            write_lazyframe,
+            lambda df: shard_label_df,
+            do_overwrite=cfg.do_overwrite,
+            do_return=False,
+        )
+
+        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
+        compute_fn = partial(generate_row_cached_matrix, label_df=shard_label_df)
+        write_fn = partial(write_df, do_overwrite=cfg.do_overwrite)
+
+        rwlock_wrap(
+            data_fp,
             out_fp,
-            read_fn,
+            load_matrix,
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
