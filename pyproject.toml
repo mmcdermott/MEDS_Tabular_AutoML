@@ -17,7 +17,7 @@ classifiers = [
 dependencies = [
   "polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
   "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3",
-  "MEDS-transforms==0.0.4",
+  "MEDS-transforms==0.0.5",
 ]
 
 [project.scripts]
