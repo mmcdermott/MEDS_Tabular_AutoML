@@ -35,7 +35,7 @@ logger.disable("MEDS_tabular_automl")
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 
 MEDS_TRAIN_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 239684,HEIGHT,,175.271115221764
 239684,EYE_COLOR//BROWN,,
 239684,DOB,1980-12-28T00:00:00.000000,
@@ -68,7 +68,7 @@ patient_id,code,timestamp,numerical_value
 1195293,DISCHARGE,2010-06-20T20:50:04.000000,
 """
 MEDS_TRAIN_1 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 68729,EYE_COLOR//HAZEL,,
 68729,HEIGHT,,160.3953106166676
 68729,DOB,1978-03-09T00:00:00.000000,
@@ -85,7 +85,7 @@ patient_id,code,timestamp,numerical_value
 814703,DISCHARGE,2010-02-05T07:02:30.000000,
 """
 MEDS_HELD_OUT_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 1500733,HEIGHT,,158.60131573580904
 1500733,EYE_COLOR//BROWN,,
 1500733,DOB,1986-07-20T00:00:00.000000,
@@ -99,7 +99,7 @@ patient_id,code,timestamp,numerical_value
 1500733,DISCHARGE,2010-06-03T16:44:26.000000,
 """
 MEDS_TUNING_0 = """
-patient_id,code,timestamp,numerical_value
+patient_id,code,time,numeric_value
 754281,EYE_COLOR//BROWN,,
 754281,HEIGHT,,166.22261567137025
 754281,DOB,1988-12-19T00:00:00.000000,
@@ -148,16 +148,20 @@ EXPECTED_STATIC_FILES = [
 
 def test_tabularize():
     with tempfile.TemporaryDirectory() as d:
-        MEDS_cohort_dir = Path(d) / "processed"
+        MEDS_cohort_dir = Path(d) / "MEDS_cohort_dir"
+        output_cohort_dir = Path(d) / "output_cohort_dir"
 
-        describe_codes_config = {
+        shared_config = {
             "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
+            "output_cohort_dir": str(output_cohort_dir.resolve()),
             "do_overwrite": False,
             "seed": 1,
             "hydra.verbose": True,
             "tqdm": False,
             "loguru_init": True,
         }
+
+        describe_codes_config = {**shared_config}
 
         with initialize(
             version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
@@ -166,16 +170,20 @@ def test_tabularize():
             cfg = compose(config_name="describe_codes", overrides=overrides)  # config.yaml
 
         # Create the directories
-        (MEDS_cohort_dir / "final_cohort").mkdir(parents=True, exist_ok=True)
+        (output_cohort_dir / "data").mkdir(parents=True, exist_ok=True)
 
         # Store MEDS outputs
+        all_data = []
         for split, data in MEDS_OUTPUTS.items():
-            file_path = MEDS_cohort_dir / "final_cohort" / f"{split}.parquet"
+            file_path = output_cohort_dir / "data" / f"{split}.parquet"
             file_path.parent.mkdir(exist_ok=True)
-            df = pl.read_csv(StringIO(data))
-            df.with_columns(pl.col("timestamp").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")).write_parquet(
-                file_path
+            df = pl.read_csv(StringIO(data)).with_columns(
+                pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")
             )
+            df.write_parquet(file_path)
+            all_data.append(df)
+
+        all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["patient_id", "time"])
 
         # Check the files are not empty
         meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -185,12 +193,11 @@ def test_tabularize():
         for f in meds_files:
             assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
         split_json = json.load(StringIO(SPLITS_JSON))
-        splits_fp = MEDS_cohort_dir / "splits.json"
+        splits_fp = output_cohort_dir / ".shards.json"
         json.dump(split_json, splits_fp.open("w"))
         # Step 1: Describe Codes - compute code frequencies
         describe_codes.main(cfg)
 
-        assert (Path(cfg.output_dir) / "config.yaml").is_file()
         assert Path(cfg.output_filepath).is_file()
 
         feature_columns = get_feature_columns(cfg.output_filepath)
@@ -202,12 +209,7 @@ def test_tabularize():
 
         # Step 2: Tabularization
         tabularize_static_config = {
-            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
-            "do_overwrite": False,
-            "seed": 1,
-            "hydra.verbose": True,
-            "tqdm": False,
-            "loguru_init": True,
+            **shared_config,
             "tabularization.min_code_inclusion_frequency": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
@@ -218,8 +220,11 @@ def test_tabularize():
             overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
             cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
         tabularize_static.main(cfg)
-        output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
-        actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
+
+        output_dir = Path(cfg.output_cohort_dir) / "tabularize"
+
+        output_files = list(output_dir.glob("**/static/**/*.npz"))
+        actual_files = [get_shard_prefix(output_dir, each) + ".npz" for each in output_files]
         assert set(actual_files) == set(EXPECTED_STATIC_FILES)
         # Check the files are not empty
         for f in output_files:
@@ -252,9 +257,9 @@ def test_tabularize():
         tabularize_time_series.main(cfg)
 
         # confirm summary files exist:
-        output_files = list_subdir_files(cfg.output_dir, "npz")
+        output_files = list_subdir_files(str(output_dir.resolve()), "npz")
         actual_files = [
-            get_shard_prefix(Path(cfg.output_dir), each) + ".npz"
+            get_shard_prefix(output_dir, each) + ".npz"
             for each in output_files
             if "none/static" not in str(each)
         ]
@@ -282,12 +287,7 @@ def test_tabularize():
 
         # Step 3: Cache Task data
         cache_config = {
-            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
-            "do_overwrite": False,
-            "seed": 1,
-            "hydra.verbose": True,
-            "tqdm": False,
-            "loguru_init": True,
+            **shared_config,
             "tabularization.min_code_inclusion_frequency": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
@@ -299,31 +299,19 @@ def test_tabularize():
             cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
 
         # Create fake labels
-        for f in list_subdir_files(Path(cfg.MEDS_cohort_dir) / "final_cohort", "parquet"):
-            df = pl.scan_parquet(f)
-            df = get_unique_time_events_df(get_events_df(df, feature_columns)).collect()
-            pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
-            df = df.with_columns(pl.Series(name="label", values=pseudo_labels))
-            df = df.select(pl.col(["patient_id", "timestamp", "label"]))
-            df = df.with_row_index("event_id")
+        df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
+        pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
+        df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
+        df = df.select("patient_id", pl.col("time").alias("prediction_time"), "boolean_value")
 
-            split = f.parent.stem
-            shard_num = f.stem
-            out_f = Path(cfg.input_label_dir) / Path(
-                get_shard_prefix(Path(cfg.MEDS_cohort_dir) / "final_cohort", f)
-            ).with_suffix(".parquet")
-            out_f.parent.mkdir(parents=True, exist_ok=True)
-            df.write_parquet(out_f)
+        out_fp = Path(cfg.input_label_dir) / "0.parquet"
+        out_fp.parent.mkdir(parents=True, exist_ok=True)
+        df.write_parquet(out_fp)
 
         cache_task.main(cfg)
 
         xgboost_config_kwargs = {
-            "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
-            "do_overwrite": False,
-            "seed": 1,
-            "hydra.verbose": True,
-            "tqdm": False,
-            "loguru_init": True,
+            **shared_config,
             "tabularization.min_code_inclusion_frequency": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
@@ -334,8 +322,10 @@ def test_tabularize():
             overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
             cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
 
+        output_dir = Path(cfg.output_cohort_dir) / "model"
+
         launch_xgboost.main(cfg)
-        output_files = list(Path(cfg.output_dir).glob("**/*.json"))
+        output_files = list(output_dir.glob("**/*.json"))
         assert len(output_files) == 1
 
 
@@ -355,6 +345,7 @@ def test_xgboost_config():
     stderr, stdout_agg = run_command("generate-subsets", ["[static/present]"], {}, "generate-subsets aggs")
     xgboost_config_kwargs = {
         "MEDS_cohort_dir": MEDS_cohort_dir,
+        "output_cohort_dir": "blah",
         "do_overwrite": False,
         "seed": 1,
         "hydra.verbose": True,
@@ -369,5 +360,4 @@ def test_xgboost_config():
     ):  # path to config.yaml
         overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
         cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
-    print(cfg.tabularization.window_sizes)
     assert cfg.tabularization.window_sizes

@@ -1,7 +1,7 @@
 # User inputs
 allowed_codes: null
 min_code_inclusion_frequency: 10
-filtered_code_metadata_fp: ${MEDS_cohort_dir}/tabularized_code_metadata.parquet
+filtered_code_metadata_fp: ${output_cohort_dir}/tabularized_code_metadata.parquet
 window_sizes:
   - "1d"
   - "7d"

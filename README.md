@@ -27,7 +27,8 @@ This repository consists of two key pieces:
 
 ## Quick Start
 
-To use MEDS-Tab, install the dependencies following commands below:
+To use MEDS-Tab, install the dependencies following commands below. Note that this version of MEDS-Tab is
+compatible with [MEDS v0.3](https://github.com/Medical-Event-Data-Standard/meds/releases/tag/0.3.0)
 
 **Pip Install**
 
@@ -44,10 +45,10 @@ pip install .
 
 ## Scripts and Examples
 
-For an end-to-end example over MIMIC-IV, see the [MIMIC-IV companion repository](https://github.com/mmcdermott/MEDS_TAB_MIMIC_IV).
-For an end-to-end example over Philips eICU, see the [eICU companion repository](https://github.com/mmcdermott/MEDS_TAB_EICU).
+For an end to end example, including re-sharding the input via MEDS-Transforms, see
+[this example script](https://gist.github.com/mmcdermott/34194e484d7b2a2f68967b9bbccfb35b)
 
-See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for a local example of the end-to-end pipeline being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
+See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for a local example of the end-to-end pipeline (minus re-sharding) being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
 
 ## Why MEDS-Tab?
 
@@ -72,6 +73,28 @@ MEDS-Tab leverages the recently developed, minimal, easy-to-use Medical Event Da
 By following these steps, you can seamlessly transform your dataset, define necessary criteria, and leverage powerful machine learning tools within the MEDS-Tab ecosystem. This approach not only simplifies the process but also ensures high-quality, reproducible results for your machine learning tasks for health projects. It can reliably take no more than a week of full-time human effort to perform Steps I-V on new datasets in reasonable raw formulations!
 
 ## Core CLI Scripts Overview
+
+0. First, if your data is not already sharded to the degree you want and in a manner that subdivides your
+   splits with the format `"$SPLIT_NAME/\d+.parquet"`, where `$SPLIT_NAME` does not contain slashes, you will
+   need to re-shard your data. This can be done via the
+   [MEDS-Transforms](https://github.com/mmcdermott/MEDS_transforms) library, which is not included in this
+   repository. Having data sharded by split _is a necessary step_ to ensure that the data is efficiently
+   processed in parallel. You can easily re-shard your input MEDS cohort in the environment into which this
+   package is installed with the following command:
+
+   ```console
+   # Re-shard pipeline
+   # $MIMICIV_MEDS_DIR is the directory containing the input, MEDS v0.3 formatted MIMIC-IV data
+   # $MEDS_TAB_COHORT_DIR is the directory where the re-sharded MEDS dataset will be stored, and where your model
+   # will store cached files during processing by default.
+   # $N_PATIENTS_PER_SHARD is the number of patients per shard you want to use.
+   MEDS_transform-reshard_to_split \
+       input_dir="$MIMICIV_MEDS_DIR" \
+       cohort_dir="$MEDS_TAB_COHORT_DIR" \
+       'stages=["reshard_to_split"]' \
+       stage="reshard_to_split" \
+       stage_configs.reshard_to_split.n_patients_per_shard=$N_PATIENTS_PER_SHARD
+   ```
 
 1. **`meds-tab-describe`**: This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
 

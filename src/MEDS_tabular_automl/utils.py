@@ -284,7 +284,7 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
 
 
 def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
-    """Extracts and filters an Events LazyFrame with one row per observation (timestamps can be duplicated).
+    """Extracts and filters an Events LazyFrame with one row per observation (times can be duplicated).
 
     Args:
         shard_df: The LazyFrame shard from which to extract events.
@@ -296,28 +296,26 @@ def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
     # Filter out feature_columns that were not present in the training set
     raw_feature_columns = ["/".join(c.split("/")[:-1]) for c in feature_columns]
     shard_df = shard_df.filter(pl.col("code").is_in(raw_feature_columns))
-    # Drop rows with missing timestamp or code to get events
-    ts_shard_df = shard_df.drop_nulls(subset=["timestamp", "code"])
+    # Drop rows with missing time or code to get events
+    ts_shard_df = shard_df.drop_nulls(subset=["time", "code"])
     return ts_shard_df
 
 
 def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
-    """Ensures all timestamps in the events LazyFrame are unique and sorted by patient_id and timestamp.
+    """Ensures all times in the events LazyFrame are unique and sorted by patient_id and time.
 
     Args:
         events_df: Events LazyFrame to process.
 
     Returns:
-        A LazyFrame with unique timestamps, sorted by patient_id and timestamp.
+        A LazyFrame with unique times, sorted by patient_id and time.
     """
-    assert events_df.select(pl.col("timestamp")).null_count().collect().item() == 0
+    assert events_df.select(pl.col("time")).null_count().collect().item() == 0
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
-        events_df.drop_nulls("timestamp")
-        .select(pl.col(["patient_id", "timestamp"]))
-        .unique(maintain_order=True)
+        events_df.drop_nulls("time").select(pl.col(["patient_id", "time"])).unique(maintain_order=True)
     )
-    assert events_df.sort(by=["patient_id", "timestamp"]).collect().equals(events_df.collect())
+    assert events_df.sort(by=["patient_id", "time"]).collect().equals(events_df.collect())
     return events_df
 
 
