@@ -119,7 +119,7 @@ def summarize_static_measurements(
         code_subset = df.filter(pl.col("code").is_in(static_first_codes))
         first_code_subset = code_subset.group_by(pl.col("patient_id")).first().collect()
         static_value_pivot_df = first_code_subset.pivot(
-            index=["patient_id"], columns=["code"], values=["numerical_value"], aggregate_function=None
+            index=["patient_id"], columns=["code"], values=["numeric_value"], aggregate_function=None
         )
         # rename code to feature name
         remap_cols = {

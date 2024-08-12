@@ -2,13 +2,8 @@ defaults:
   - default
   - _self_
 
-# split we wish to get metadata for
-split: train
-# Raw data, must have a subdirectory "train" with the training data split
-input_dir: ${MEDS_cohort_dir}/final_cohort/${split}
+input_dir: ${output_cohort_dir}/data
 # Where to store output code frequency data
-cache_dir: ${MEDS_cohort_dir}/.cache
-output_dir: ${MEDS_cohort_dir}
-output_filepath: ${output_dir}/code_metadata.parquet
+output_filepath: ${output_cohort_dir}/metadata/codes.parquet
 
 name: describe_codes
