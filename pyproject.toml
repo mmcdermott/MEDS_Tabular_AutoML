@@ -1,6 +1,6 @@
 [project]
 name = "meds-tab"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Matthew McDermott", email="mattmcdermott8@gmail.com" },
   { name="Nassim Oufattole", email="noufattole@gmail.com" },
