@@ -8,7 +8,7 @@ authors = [
 ]
 description = "Scalable Tabularization of MEDS format Time-Series data"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -17,7 +17,6 @@ classifiers = [
 dependencies = [
   "polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
   "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3",
-  "MEDS-transforms==0.0.5",
 ]
 
 [project.scripts]
@@ -33,6 +32,7 @@ generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
 profiling = ["mprofile", "matplotlib"]
+autogluon = ["autogluon; python_version=='3.11.*'"]  # Environment marker to restrict AutoGluon to Python 3.11
 
 [build-system]
 requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]
