@@ -1,16 +1,16 @@
-from importlib.resources import files
 from pathlib import Path
 
 import hydra
 from loguru import logger
 from omegaconf import DictConfig
 
+from ..base_model import BaseModel
 from ..utils import hydra_loguru_init
-from ..xgboost_model import XGBoostModel
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
-if not config_yaml.is_file():
-    raise FileNotFoundError("Core configuration not successfully installed!")
+# config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_basemodel.yaml")
+# if not config_yaml.is_file():
+#     raise FileNotFoundError("Core configuration not successfully installed!")
+config_yaml = Path("./src/MEDS_tabular_automl/configs/launch_basemodel.yaml")
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
@@ -28,7 +28,7 @@ def main(cfg: DictConfig) -> float:
     if not cfg.loguru_init:
         hydra_loguru_init()
     try:
-        model = XGBoostModel(cfg)
+        model = BaseModel(cfg)
         model.train()
         auc = model.evaluate()
         logger.info(f"AUC: {auc}")

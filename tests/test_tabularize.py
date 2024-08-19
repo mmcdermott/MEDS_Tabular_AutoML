@@ -17,6 +17,7 @@ from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.scripts import (
     cache_task,
     describe_codes,
+    launch_basemodel,
     launch_xgboost,
     tabularize_static,
     tabularize_time_series,
@@ -326,6 +327,44 @@ def test_tabularize():
 
         launch_xgboost.main(cfg)
         output_files = list(output_dir.glob("**/*.json"))
+        assert len(output_files) == 1
+
+        basemodel_config_kwargs = {
+            **shared_config,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.window_sizes": "[30d,365d,full]",
+        }
+
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in basemodel_config_kwargs.items()]
+            cfg = compose(config_name="launch_basemodel", overrides=overrides)  # config.yaml
+
+        output_dir = Path(cfg.output_cohort_dir) / "model"
+
+        launch_basemodel.main(cfg)
+        output_files = list(output_dir.glob("**/*.pkl"))
+        assert len(output_files) == 1
+
+        basemodel_config_kwargs = {
+            **shared_config,
+            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.window_sizes": "[30d,365d,full]",
+            "model_params.iterator.keep_data_in_memory": False,
+            "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
+        }
+
+        with initialize(
+            version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+        ):  # path to config.yaml
+            overrides = [f"{k}={v}" for k, v in basemodel_config_kwargs.items()]
+            cfg = compose(config_name="launch_basemodel", overrides=overrides)  # config.yaml
+
+        output_dir = Path(cfg.output_cohort_dir) / "model_online"
+
+        launch_basemodel.main(cfg)
+        output_files = list(output_dir.glob("**/*.pkl"))
         assert len(output_files) == 1
 
 
