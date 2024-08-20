@@ -92,9 +92,11 @@ def main(
 
     def compute_fn(_):
         filtered_feature_columns = filter_to_codes(
-            cfg.tabularization.allowed_codes,
-            cfg.tabularization.min_code_inclusion_frequency,
             cfg.input_code_metadata_fp,
+            cfg.tabularization.allowed_codes,
+            cfg.tabularization.min_code_inclusion_count,
+            cfg.tabularization.min_code_inclusion_frequency,
+            cfg.tabularization.max_included_codes,
         )
         feature_freqs = get_feature_freqs(cfg.input_code_metadata_fp)
         filtered_feature_columns_set = set(filtered_feature_columns)

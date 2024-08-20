@@ -4,13 +4,13 @@ import hydra
 from loguru import logger
 from omegaconf import DictConfig
 
-from ..base_model import BaseModel
+from ..sklearn_model import SklearnModel
 from ..utils import hydra_loguru_init
 
-# config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_basemodel.yaml")
+# config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_sklearnmodel.yaml")
 # if not config_yaml.is_file():
 #     raise FileNotFoundError("Core configuration not successfully installed!")
-config_yaml = Path("./src/MEDS_tabular_automl/configs/launch_basemodel.yaml")
+config_yaml = Path("./src/MEDS_tabular_automl/configs/launch_sklearnmodel.yaml")
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
@@ -28,7 +28,7 @@ def main(cfg: DictConfig) -> float:
     if not cfg.loguru_init:
         hydra_loguru_init()
     try:
-        model = BaseModel(cfg)
+        model = SklearnModel(cfg)
         model.train()
         auc = model.evaluate()
         logger.info(f"AUC: {auc}")

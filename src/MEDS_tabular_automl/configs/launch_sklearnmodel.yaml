@@ -30,4 +30,4 @@ model_params:
 
 log_dir: ${model_dir}/.logs/
 
-name: launch_basemodel
+name: launch_sklearnmodel

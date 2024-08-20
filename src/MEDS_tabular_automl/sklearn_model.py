@@ -11,8 +11,8 @@ from sklearn.metrics import roc_auc_score
 from .tabular_dataset import TabularDataset
 
 
-class BaseIterator(TabularDataset, TimeableMixin):
-    """BaseIterator class for loading and processing data shards for use in SciKit-Learn models.
+class SklearnIterator(TabularDataset, TimeableMixin):
+    """SklearnIterator class for loading and processing data shards for use in SciKit-Learn models.
 
     This class provides functionality for iterating through data shards, loading
     feature data and labels, and processing them based on the provided configuration.
@@ -37,7 +37,7 @@ class BaseIterator(TabularDataset, TimeableMixin):
     """
 
     def __init__(self, cfg: DictConfig, split: str):
-        """Initializes the BaseIterator with the provided configuration and data split.
+        """Initializes the SklearnIterator with the provided configuration and data split.
 
         Args:
             cfg: The configuration dictionary.
@@ -57,11 +57,11 @@ class BaseIterator(TabularDataset, TimeableMixin):
     #         function(data, labels)
 
 
-class BaseMatrix(TimeableMixin):
-    """BaseMatrix class for loading and processing data shards for use in SciKit-Learn models."""
+class SklearnMatrix(TimeableMixin):
+    """SklearnMatrix class for loading and processing data shards for use in SciKit-Learn models."""
 
     def __init__(self, data: sp.csr_matrix, labels: np.ndarray):
-        """Initializes the BaseMatrix with the provided configuration and data split.
+        """Initializes the SklearnMatrix with the provided configuration and data split.
 
         Args:
             data
@@ -77,7 +77,7 @@ class BaseMatrix(TimeableMixin):
         return self.labels
 
 
-class BaseModel(TimeableMixin):
+class SklearnModel(TimeableMixin):
     """Class for configuring, training, and evaluating an SciKit-Learn model.
 
     This class utilizes the configuration settings provided to manage the training and evaluation
@@ -178,40 +178,54 @@ class BaseModel(TimeableMixin):
     @TimeableMixin.TimeAs
     def _build_matrix_in_memory(self):
         """Builds the DMatrix from the data in memory."""
-        self.dtrain = BaseMatrix(*self.itrain.get_data())
-        self.dtuning = BaseMatrix(*self.ituning.get_data())
-        self.dheld_out = BaseMatrix(*self.iheld_out.get_data())
+        self.dtrain = SklearnMatrix(*self.itrain.get_data())
+        self.dtuning = SklearnMatrix(*self.ituning.get_data())
+        self.dheld_out = SklearnMatrix(*self.iheld_out.get_data())
 
     @TimeableMixin.TimeAs
     def _build_iterators(self):
         """Builds the iterators for training, validation, and testing."""
-        self.itrain = BaseIterator(self.cfg, split="train")
-        self.ituning = BaseIterator(self.cfg, split="tuning")
-        self.iheld_out = BaseIterator(self.cfg, split="held_out")
+        self.itrain = SklearnIterator(self.cfg, split="train")
+        self.ituning = SklearnIterator(self.cfg, split="tuning")
+        self.iheld_out = SklearnIterator(self.cfg, split="held_out")
 
     @TimeableMixin.TimeAs
-    def evaluate(self) -> float:
+    def evaluate(self, split: str = "tuning") -> float:
         """Evaluates the model on the tuning set.
 
         Returns:
             The evaluation metric as the ROC AUC score.
         """
+        # depending on split point to correct data
+        if split == "tuning":
+            dsplit = self.dtuning
+            isplit = self.ituning
+        elif split == "held_out":
+            dsplit = self.dheld_out
+            isplit = self.iheld_out
+        elif split == "train":
+            dsplit = self.dtrain
+            isplit = self.itrain
+        else:
+            raise ValueError(f"Split {split} is not valid.")
+
         # check if model has predict_proba method
         if not hasattr(self.model, "predict_proba"):
             raise ValueError(f"Model {self.model.__class__.__name__} does not have a predict_proba method.")
         # two cases: data is in memory or data is streamed
         if self.keep_data_in_memory:
-            y_pred = self.model.predict_proba(self.dtuning.get_data())[:, 1]
-            y_true = self.dtuning.get_label()
+            y_pred = self.model.predict_proba(dsplit.get_data())[:, 1]
+            y_true = dsplit.get_label()
         else:
             y_pred = []
             y_true = []
-            for shard_idx in range(len(self.ituning._data_shards)):
-                data, labels = self.ituning.get_data_shards(shard_idx)
+            for shard_idx in range(len(isplit._data_shards)):
+                data, labels = isplit.get_data_shards(shard_idx)
                 y_pred.extend(self.model.predict_proba(data)[:, 1])
                 y_true.extend(labels)
             y_pred = np.array(y_pred)
             y_true = np.array(y_true)
+            
         # check if y_pred and y_true are not empty
         if len(y_pred) == 0 or len(y_true) == 0:
             raise ValueError("Predictions or true labels are empty.")

@@ -46,15 +46,17 @@ def hydra_loguru_init() -> None:
 
 
 def filter_to_codes(
-    allowed_codes: list[str] | None,
-    min_code_inclusion_frequency: int,
     code_metadata_fp: Path,
+    allowed_codes: list[str] | None,
+    min_code_inclusion_count: int | None,
+    min_code_inclusion_frequency: float | None,
+    max_include_codes: int | None,
 ) -> list[str]:
     """Filters and returns codes based on allowed list and minimum frequency.
 
     Args:
         allowed_codes: List of allowed codes, None means all codes are allowed.
-        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
+        min_code_inclusion_count: Minimum frequency a code must have to be included.
         code_metadata_fp: Path to the metadata file containing code information.
 
     Returns:
@@ -74,7 +76,19 @@ def filter_to_codes(
     if allowed_codes is not None:
         feature_freqs = feature_freqs.filter(pl.col("code").is_in(allowed_codes))
 
-    feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_frequency)
+    if min_code_inclusion_frequency is not None:
+        pass
+        # need to consider size of the dataset vs count 
+        
+        # feature_freqs = feature_freqs.filter(pl.col("frequency") >= min_code_inclusion_frequency)
+        
+    if min_code_inclusion_count is not None:
+        feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
+
+    if max_include_codes is not None:
+        feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
+
+
     return sorted(feature_freqs["code"].to_list())
 
 

@@ -54,7 +54,6 @@ class TabularDataset(TimeableMixin):
             [shard.stem for shard in list_subdir_files(Path(cfg.input_label_dir) / split, "parquet")]
         )
         self.valid_event_ids, self.labels = None, None
-        # self.valid_event_ids, self.labels = self._load_ids_and_labels()
 
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
 
@@ -75,7 +74,7 @@ class TabularDataset(TimeableMixin):
         code_masks = {}
         for agg in set(self.cfg.tabularization.aggs):
             feature_ids = get_feature_indices(agg, feature_columns)
-            code_mask = [True if idx in codes_set else False for idx in feature_ids]
+            code_mask = [idx in codes_set for idx in feature_ids]
             code_masks[agg] = code_mask
         return code_masks
 
@@ -121,7 +120,6 @@ class TabularDataset(TimeableMixin):
             if load_ids:
                 cached_event_ids[shard] = label_df.select(pl.col("event_id")).collect().to_series()
 
-            # TODO: check this for Nan or any other case we need to worry about
             if load_labels:
                 cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
                 if self.cfg.model_params.iterator.binarize_task:
@@ -171,11 +169,46 @@ class TabularDataset(TimeableMixin):
         allowed_codes = set(self.cfg.tabularization._resolved_codes)
         codes_set = {feature_dict[code] for code in feature_dict if code in allowed_codes}
 
+        if hasattr(self.cfg.tabularization, "max_by_correlation"):
+            corrs = self._get_approximate_correlation_per_feature(self.get_data_shards(0)[0], self.get_data_shards(0)[1])
+            corrs = np.abs(corrs)
+            sorted_corrs = np.argsort(corrs)[::-1]
+            codes_set = set(sorted_corrs[: self.cfg.tabularization.max_by_correlation])
+        if hasattr(self.cfg.tabularization, "min_correlation"):
+            corrs = self._get_approximate_correlation_per_feature(self.get_data_shards(0)[0], self.get_data_shards(0)[1])
+            corrs = np.abs(corrs)
+            codes_set = set(np.where(corrs > self.cfg.tabularization.min_correlation)[0])
+
         return (
             codes_set,
             self._get_code_masks(feature_columns, codes_set),
             len(feature_columns),
         )
+    
+    def _get_approximate_correlation_per_feature(self, X: sp.csc_matrix, y: np.ndarray) -> np.ndarray:
+        """Calculates the approximate correlation of each feature with the target.
+
+        Args:
+            X: The feature data.
+            y: The target labels.
+
+        Returns:
+            The approximate correlation of each feature with the target.
+        """
+        # calculate the pearson r correlation of each feature with the target
+        # this is a very rough approximation and should be used for feature selection
+        # and not as a definitive measure of feature importance
+
+        # check that y has information
+        if len(np.unique(y)) == 1:
+            raise ValueError("Labels have no information. Cannot calculate correlation.")
+        
+        from scipy.stats import pearsonr
+        corrs = np.zeros(X.shape[1])
+        for i in range(X.shape[1]):
+            corrs[i] = pearsonr(X[:, i].toarray().flatten(), y)[0]
+        return corrs
+
 
     @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
@@ -301,99 +334,6 @@ class TabularDataset(TimeableMixin):
         """
         return self.get_data_shards(range(len(self._data_shards)))
 
-    def set_event_ids(self, event_ids=None | list[int]):
-        """Sets the valid event IDs for each shard.
-
-        Args:
-            event_ids: List of event IDs for each shard.
-        """
-        if event_ids is None:
-            self.valid_event_ids = self._load_event_ids()
-        else:
-            # parse some list of events they care about
-            pass
-
-    def set_labels(self, labels=None | list[int]):
-        """Sets the labels for each shard.
-
-        Args:
-            labels: List of labels for each shard.
-        """
-        if labels is None:
-            self.labels = self._load_labels()
-        else:
-            # parse some list of events they care about
-            pass
-
-    def set_codes(self, codes: list[str]):
-        """Sets the codes to the passed code set. Redeclares the code masks to match.
-
-        Args:
-            codes: List of codes to include.
-        """
-        self.codes_set = set(codes)
-        self.code_masks = self._get_code_masks(self.code_masks.keys(), self.codes_set)
-
-    def add_code(self, code: str):
-        """Adds a code to the set of codes to include in the data.
-
-        Args:
-            code: The code to add to the set.
-        """
-        if code not in self.codes_set:
-            self.codes_set.add(code)
-            self.code_masks = self._get_code_masks(self.code_masks.keys(), self.codes_set)
-
-    def remove_code(self, code: str):
-        """Removes a code from the set of codes to include in the data.
-
-        Args:
-            code: The code to remove from the set.
-        """
-        if code in self.codes_set:
-            self.codes_set.remove(code)
-            self.code_masks = self._get_code_masks(self.code_masks.keys(), self.codes_set)
-
-    def get_codes(self) -> set[str]:
-        """Retrieves the set of codes to include in the data.
-
-        Returns:
-            The set of codes to include.
-        """
-        return self.codes_set
-
-    def get_num_features(self) -> int:
-        """Retrieves the total number of features in the data.
-
-        Returns:
-            The total number of features.
-        """
-        return self.num_features
-
-    def get_valid_event_ids(self) -> Mapping[int, list]:
-        """Retrieves the valid event IDs for each shard.
-
-        Returns:
-            A mapping from shard indices to lists of valid event IDs.
-        """
-        return self.valid_event_ids
-
-    def get_label(self) -> Mapping[int, list]:
-        """Retrieves the labels for each shard.
-
-        Returns:
-            A mapping from shard indices to lists of labels.
-        """
-        return self.labels
-
-    def get_data_shard_list(self) -> list[str]:
-        """Retrieves the list of data shards.
-
-        Returns:
-            The list of data shards.
-        """
-        return self._data_shards
-
     def get_data_shard_count(self) -> int:
         """Retrieves the number of data shards.
 
@@ -401,14 +341,6 @@ class TabularDataset(TimeableMixin):
             The number of data shards.
         """
         return len(self._data_shards)
-
-    def get_split(self) -> str:
-        """Retrieves the data split being used.
-
-        Returns:
-            The data split being used.
-        """
-        return self.split
 
     def get_classes(self) -> int:
         """Retrieves the unique labels in the data.

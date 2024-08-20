@@ -17,7 +17,7 @@ from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.scripts import (
     cache_task,
     describe_codes,
-    launch_basemodel,
+    launch_sklearnmodel,
     launch_xgboost,
     tabularize_static,
     tabularize_time_series,
@@ -343,7 +343,7 @@ def test_tabularize():
 
         output_dir = Path(cfg.output_cohort_dir) / "model"
 
-        launch_basemodel.main(cfg)
+        launch_sklearnmodel.main(cfg)
         output_files = list(output_dir.glob("**/*.pkl"))
         assert len(output_files) == 1
 
@@ -363,7 +363,7 @@ def test_tabularize():
 
         output_dir = Path(cfg.output_cohort_dir) / "model_online"
 
-        launch_basemodel.main(cfg)
+        launch_sklearnmodel.main(cfg)
         output_files = list(output_dir.glob("**/*.pkl"))
         assert len(output_files) == 1
 
