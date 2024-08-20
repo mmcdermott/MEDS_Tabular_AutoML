@@ -27,30 +27,30 @@ def main(cfg: DictConfig) -> float:
     # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
-    # try:
-    model = XGBoostModel(cfg)
-    model.train()
-    auc = model.evaluate()
-    logger.info(f"AUC: {auc}")
+    try:
+        model = XGBoostModel(cfg)
+        model.train()
+        auc = model.evaluate()
+        logger.info(f"AUC: {auc}")
 
-    # print(
-    #     "Time Profiling for window sizes ",
-    #     f"{cfg.tabularization.window_sizes} and min ",
-    #     f"code frequency of {cfg.tabularization.min_code_inclusion_frequency}:",
-    # )
-    # print("Train Time: \n", model._profile_durations())
-    # print("Train Iterator Time: \n", model.itrain._profile_durations())
-    # print("Tuning Iterator Time: \n", model.ituning._profile_durations())
-    # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
+        # print(
+        #     "Time Profiling for window sizes ",
+        #     f"{cfg.tabularization.window_sizes} and min ",
+        #     f"code frequency of {cfg.tabularization.min_code_inclusion_frequency}:",
+        # )
+        # print("Train Time: \n", model._profile_durations())
+        # print("Train Iterator Time: \n", model.itrain._profile_durations())
+        # print("Tuning Iterator Time: \n", model.ituning._profile_durations())
+        # print("Held Out Iterator Time: \n", model.iheld_out._profile_durations())
 
-    # save model
-    output_fp = Path(cfg.output_filepath)
-    output_fp.parent.mkdir(parents=True, exist_ok=True)
+        # save model
+        output_fp = Path(cfg.output_filepath)
+        output_fp.parent.mkdir(parents=True, exist_ok=True)
 
-    model.save_model(output_fp)
-    # except Exception as e:
-    #     logger.error(f"Error occurred: {e}")
-    #     auc = 0.0
+        model.save_model(output_fp)
+    except Exception as e:
+        logger.error(f"Error occurred: {e}")
+        auc = 0.0
     return auc
 
 

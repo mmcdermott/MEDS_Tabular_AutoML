@@ -8,8 +8,8 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
-from .tabular_dataset import TabularDataset
 from .base_model import BaseModel
+from .tabular_dataset import TabularDataset
 
 
 class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):

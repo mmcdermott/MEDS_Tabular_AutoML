@@ -1,7 +1,7 @@
 defaults:
   - default
   - tabularization: default
-  - model: xgboost  # This can be changed to sgd_classifier or any other model
+  - model: xgboost # This can be changed to sgd_classifier or any other model
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
   - override hydra/launcher: joblib

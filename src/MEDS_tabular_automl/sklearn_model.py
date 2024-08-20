@@ -8,8 +8,8 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
-from .tabular_dataset import TabularDataset
 from .base_model import BaseModel
+from .tabular_dataset import TabularDataset
 
 
 class SklearnIterator(TabularDataset, TimeableMixin):

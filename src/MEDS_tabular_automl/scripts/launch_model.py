@@ -4,17 +4,12 @@ from pathlib import Path
 import hydra
 from loguru import logger
 from omegaconf import DictConfig
-from typing import Dict, Type
 
 from MEDS_tabular_automl.base_model import BaseModel
 from MEDS_tabular_automl.sklearn_model import SklearnModel
 from MEDS_tabular_automl.xgboost_model import XGBoostModel
 
-
-MODEL_CLASSES: Dict[str, Type[BaseModel]] = {
-    "xgboost": XGBoostModel,
-    "sklearn": SklearnModel
-}
+MODEL_CLASSES: dict[str, type[BaseModel]] = {"xgboost": XGBoostModel, "sklearn": SklearnModel}
 
 from ..utils import hydra_loguru_init
 
@@ -42,7 +37,7 @@ def main(cfg: DictConfig) -> float:
         ModelClass = MODEL_CLASSES.get(model_type)
         if ModelClass is None:
             raise ValueError(f"Model type {model_type} not supported.")
-        
+
         model = ModelClass(cfg)
         model.train()
         auc = model.evaluate()

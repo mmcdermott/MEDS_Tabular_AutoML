@@ -1,5 +1,4 @@
 from importlib.resources import files
-from pathlib import Path
 
 import hydra
 import pandas as pd
@@ -21,13 +20,12 @@ def main(cfg: DictConfig) -> float:
 
     Args:
         cfg: The configuration dictionary specifying model and training parameters.
-
     """
 
     # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
-   
+
     # check that autogluon is installed
     try:
         import autogluon as ag
@@ -54,7 +52,10 @@ def main(cfg: DictConfig) -> float:
 
     # launch AutoGluon
     predictor = ag.TabularPredictor(label=cfg.task_name).fit(train_data=train_df, tuning_data=tuning_df)
-    
+    # TODO: fix logging, etc.
+    auc = predictor.evaluate(held_out_df)
+    logger.info(f"AUC: {auc}")
+
 
 if __name__ == "__main__":
     main()

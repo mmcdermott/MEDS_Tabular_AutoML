@@ -1,19 +1,12 @@
-from pathlib import Path
-
-import hydra
 import numpy as np
 import scipy.sparse as sp
-from loguru import logger
 from mixins import TimeableMixin
 from omegaconf import DictConfig
-from sklearn.metrics import roc_auc_score
 
 from .tabular_dataset import TabularDataset
-from .base_model import BaseModel
 
 
 class DenseIterator(TabularDataset, TimeableMixin):
-
     def __init__(self, cfg: DictConfig, split: str):
         """Initializes the SklearnIterator with the provided configuration and data split.
 
@@ -50,5 +43,3 @@ class DenseIterator(TabularDataset, TimeableMixin):
         data = sp.vstack(data)
         labels = np.concatenate(labels, axis=0)
         return data, labels, selected_features
-
-
