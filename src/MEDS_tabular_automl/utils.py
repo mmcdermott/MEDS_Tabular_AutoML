@@ -67,7 +67,7 @@ def filter_to_codes(
         >>> from tempfile import NamedTemporaryFile
         >>> with NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes(["A", "D"], 3, f.name)
+        ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
     """
 
@@ -276,10 +276,9 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         ...     fp = Path(tmpdir) / "test.npz"
         ...     write_df(df_coo_array, fp, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
-        ...     write_df(df_coo_array, fp, do_overwrite=False)
-        Traceback (most recent call last):
-            ...
-        FileExistsError: ...test.npz exists and do_overwrite is False!
+        ...     import pytest
+        ...     with pytest.raises(FileExistsError):
+        ...         write_df(df_coo_array, fp, do_overwrite=False)
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
