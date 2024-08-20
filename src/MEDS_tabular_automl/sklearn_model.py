@@ -225,7 +225,7 @@ class SklearnModel(TimeableMixin):
                 y_true.extend(labels)
             y_pred = np.array(y_pred)
             y_true = np.array(y_true)
-            
+
         # check if y_pred and y_true are not empty
         if len(y_pred) == 0 or len(y_true) == 0:
             raise ValueError("Predictions or true labels are empty.")

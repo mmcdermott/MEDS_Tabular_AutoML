@@ -170,12 +170,16 @@ class TabularDataset(TimeableMixin):
         codes_set = {feature_dict[code] for code in feature_dict if code in allowed_codes}
 
         if hasattr(self.cfg.tabularization, "max_by_correlation"):
-            corrs = self._get_approximate_correlation_per_feature(self.get_data_shards(0)[0], self.get_data_shards(0)[1])
+            corrs = self._get_approximate_correlation_per_feature(
+                self.get_data_shards(0)[0], self.get_data_shards(0)[1]
+            )
             corrs = np.abs(corrs)
             sorted_corrs = np.argsort(corrs)[::-1]
             codes_set = set(sorted_corrs[: self.cfg.tabularization.max_by_correlation])
         if hasattr(self.cfg.tabularization, "min_correlation"):
-            corrs = self._get_approximate_correlation_per_feature(self.get_data_shards(0)[0], self.get_data_shards(0)[1])
+            corrs = self._get_approximate_correlation_per_feature(
+                self.get_data_shards(0)[0], self.get_data_shards(0)[1]
+            )
             corrs = np.abs(corrs)
             codes_set = set(np.where(corrs > self.cfg.tabularization.min_correlation)[0])
 
@@ -184,7 +188,7 @@ class TabularDataset(TimeableMixin):
             self._get_code_masks(feature_columns, codes_set),
             len(feature_columns),
         )
-    
+
     def _get_approximate_correlation_per_feature(self, X: sp.csc_matrix, y: np.ndarray) -> np.ndarray:
         """Calculates the approximate correlation of each feature with the target.
 
@@ -202,13 +206,13 @@ class TabularDataset(TimeableMixin):
         # check that y has information
         if len(np.unique(y)) == 1:
             raise ValueError("Labels have no information. Cannot calculate correlation.")
-        
+
         from scipy.stats import pearsonr
+
         corrs = np.zeros(X.shape[1])
         for i in range(X.shape[1]):
             corrs[i] = pearsonr(X[:, i].toarray().flatten(), y)[0]
         return corrs
-
 
     @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:

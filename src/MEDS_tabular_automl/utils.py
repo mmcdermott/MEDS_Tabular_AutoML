@@ -78,16 +78,15 @@ def filter_to_codes(
 
     if min_code_inclusion_frequency is not None:
         pass
-        # need to consider size of the dataset vs count 
-        
+        # need to consider size of the dataset vs count
+
         # feature_freqs = feature_freqs.filter(pl.col("frequency") >= min_code_inclusion_frequency)
-        
+
     if min_code_inclusion_count is not None:
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
         feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
-
 
     return sorted(feature_freqs["code"].to_list())
 
