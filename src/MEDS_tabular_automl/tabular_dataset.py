@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from pathlib import Path
 
+import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
@@ -56,6 +57,9 @@ class TabularDataset(TimeableMixin):
         self.valid_event_ids, self.labels = None, None
 
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
+
+        self._set_scaler()
+        self._set_imputer()
 
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
@@ -214,6 +218,54 @@ class TabularDataset(TimeableMixin):
             corrs[i] = pearsonr(X[:, i].toarray().flatten(), y)[0]
         return corrs
 
+    def _set_imputer(self):
+        """Sets the imputer for the data."""
+        if hasattr(self.cfg.model_params.iterator, "impute"):
+            imputer = hydra.utils.instantiate(self.cfg.model_params.iterator.imputer)
+            if hasattr(imputer, "partial_fit"):
+                for i in range(len(self._data_shards)):
+                    X, _ = self.get_data_shards(i)
+                    imputer.partial_fit(X)
+            elif hasattr(imputer, "fit"):
+                imputer.fit(self.get_data_shards(0)[0])
+            else:
+                raise ValueError("Imputer must have a fit or partial_fit method.")
+            self.imputer = imputer
+        else:
+            self.imputer = None
+
+    def _set_scaler(self):
+        """Sets the scaler for the data."""
+        if hasattr(self.cfg.model_params.iterator, "scaler"):
+            scaler = hydra.utils.instantiate(self.cfg.model_params.iterator.scaler)
+            if hasattr(scaler, "partial_fit"):
+                for i in range(len(self._data_shards)):
+                    X, _ = self.get_data_shards(i)
+                    scaler.partial_fit(X)
+            elif hasattr(scaler, "fit"):
+                X = self.get_data_shards(0)[0]
+                scaler.fit(X)
+            else:
+                raise ValueError("Scaler must have a fit or partial_fit method.")
+            self.scaler = scaler
+        else:
+            self.scaler = None
+
+    def _impute_and_scale_data(self, data: sp.csc_matrix) -> sp.csc_matrix:
+        """Scales the data using the fitted scaler.
+
+        Args:
+            data: The data to scale.
+
+        Returns:
+            The scaled data.
+        """
+        if self.imputer is not None:
+            data = self.imputer.transform(data)
+        if self.scaler is not None:
+            return self.scaler.transform(data)
+        return data
+
     @TimeableMixin.TimeAs
     def _load_dynamic_shard_from_file(self, path: Path, idx: int) -> sp.csc_matrix:
         """Loads a specific data shard into memory as a sparse matrix.
@@ -320,7 +372,7 @@ class TabularDataset(TimeableMixin):
             idx = [idx]
         for i in idx:
             X_, y_ = self._get_shard_by_index(i)
-            X.append(X_)
+            X.append(self._impute_and_scale_data(X_))
             y.append(y_)
         if len(X) == 0 or len(y) == 0:
             raise ValueError("No data found in the shards or labels. Please check input files.")
@@ -406,5 +458,34 @@ class TabularDataset(TimeableMixin):
                 all_feats.append(f"{feat_name}/{agg}/{window}")
 
         # filter by only those in the list of indices
-        all_feats = [all_feats[i] for i in indices]
+        if indices is not None:
+            all_feats = [all_feats[i] for i in indices]
         return all_feats
+
+    def get_columns_and_indices(self) -> tuple[list[str], list[int]]:
+        """Retrieves the names and indices of the columns in the data.
+
+        Returns:
+            A tuple containing the names of the columns and their indices.
+        """
+        raise NotImplementedError("This method is not implemented yet.")
+        files = get_model_files(self.cfg, self.split, self._data_shards[0])
+
+        def extract_name(test_file):
+            return str(Path(test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
+
+        agg_wind_combos = [extract_name(test_file) for test_file in files]
+
+        feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
+        all_feats = []
+        all_indices = []
+        for agg_wind in agg_wind_combos:
+            window, feat, agg = agg_wind.split("/")
+            feature_ids = get_feature_indices(feat + "/" + agg, feature_columns)
+            feature_names = [feature_columns[i] for i in feature_ids]
+            for feat_name in feature_names:
+                all_feats.append(f"{feat_name}/{agg}/{window}")
+            # use mask to append indices
+            all_indices.extend(feature_ids)
+
+        return all_feats, all_indices

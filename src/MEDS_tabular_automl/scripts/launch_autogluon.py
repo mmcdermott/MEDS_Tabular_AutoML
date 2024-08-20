@@ -9,7 +9,7 @@ from MEDS_tabular_automl.dense_iterator import DenseIterator
 
 from ..utils import hydra_loguru_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_autogluon.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
 
@@ -28,7 +28,7 @@ def main(cfg: DictConfig) -> float:
 
     # check that autogluon is installed
     try:
-        import autogluon as ag
+        import autogluon.tabular as ag
     except ImportError:
         logger.error("AutoGluon is not installed. Please install AutoGluon.")
 
@@ -38,23 +38,37 @@ def main(cfg: DictConfig) -> float:
     iheld_out = DenseIterator(cfg, "held_out")
 
     # collect data for AutoGluon
-    train_data, train_labels, cols = itrain.densify()
-    tuning_data, tuning_labels, _ = ituning.densify()
-    held_out_data, held_out_labels, _ = iheld_out.densify()
+    train_data, train_labels = itrain.densify()
+    tuning_data, tuning_labels = ituning.densify()
+    held_out_data, held_out_labels = iheld_out.densify()
 
     # construct dfs for AutoGluon
-    train_df = pd.DataFrame(train_data.todense(), columns=cols)
+    train_df = pd.DataFrame(train_data.todense())  # , columns=cols)
     train_df[cfg.task_name] = train_labels
-    tuning_df = pd.DataFrame(tuning_data.todense(), columns=cols)
+    tuning_df = pd.DataFrame(
+        tuning_data.todense(),
+    )  # columns=cols)
     tuning_df[cfg.task_name] = tuning_labels
-    held_out_df = pd.DataFrame(held_out_data.todense(), columns=cols)
+    held_out_df = pd.DataFrame(held_out_data.todense())  # , columns=cols)
     held_out_df[cfg.task_name] = held_out_labels
 
-    # launch AutoGluon
-    predictor = ag.TabularPredictor(label=cfg.task_name).fit(train_data=train_df, tuning_data=tuning_df)
-    # TODO: fix logging, etc.
-    auc = predictor.evaluate(held_out_df)
-    logger.info(f"AUC: {auc}")
+    train_dataset = ag.TabularDataset(train_df)
+    tuning_dataset = ag.TabularDataset(tuning_df)
+    held_out_dataset = ag.TabularDataset(held_out_df)
+
+    # train model with AutoGluon
+    predictor = ag.TabularPredictor(
+        label=cfg.task_name, log_to_file=True, log_file_path=cfg.log_filepath, path=cfg.output_filepath
+    ).fit(train_data=train_dataset, tuning_data=tuning_dataset)
+
+    # predict
+    predictions = predictor.predict(held_out_dataset.drop(columns=[cfg.task_name]))
+    print("Predictions:", predictions)
+    # evaluate
+    score = predictor.evaluate(held_out_dataset)
+    print("Test score:", score)
+
+    # TODO(model) add tests for autogluon pipeline
 
 
 if __name__ == "__main__":

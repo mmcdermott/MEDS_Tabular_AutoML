@@ -1,0 +1,28 @@
+defaults:
+  - default
+  - tabularization: default
+  - override hydra/sweeper: optuna
+  - override hydra/sweeper/sampler: tpe
+  - override hydra/launcher: joblib
+  - _self_
+
+task_name: task
+
+# Task cached data dir
+input_dir: ${output_cohort_dir}/${task_name}/task_cache
+# Directory with task labels
+input_label_dir: ${output_cohort_dir}/${task_name}/labels/
+# Where to output the model and cached data
+model_dir: ${output_cohort_dir}/autogluon/autogluon_${now:%Y-%m-%d_%H-%M-%S}
+output_filepath: ${model_dir}
+
+# Model parameters
+model_params:
+  iterator:
+    keep_data_in_memory: True
+    binarize_task: True
+
+log_dir: ${model_dir}/.logs/
+log_filepath: ${log_dir}/log.txt
+
+name: launch_autogluon
