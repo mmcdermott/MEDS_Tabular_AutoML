@@ -9,6 +9,7 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
 from .tabular_dataset import TabularDataset
+from .base_model import BaseModel
 
 
 class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):
@@ -78,7 +79,7 @@ class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):
         self._it = 0
 
 
-class XGBoostModel(TimeableMixin):
+class XGBoostModel(BaseModel, TimeableMixin):
     """Class for configuring, training, and evaluating an XGBoost model.
 
     This class utilizes the configuration settings provided to manage the training and evaluation
@@ -108,6 +109,7 @@ class XGBoostModel(TimeableMixin):
         Args:
             cfg: The configuration dictionary.
         """
+        super().__init__()
         self.cfg = cfg
         self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
 

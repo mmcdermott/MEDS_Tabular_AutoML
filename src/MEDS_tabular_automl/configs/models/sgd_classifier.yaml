@@ -1,0 +1,19 @@
+model_params:
+  epochs: 20
+  early_stopping_rounds: 5
+  model:
+    type: sklearn
+    _target_: sklearn.linear_model.SGDClassifier
+    loss: log_loss
+  iterator:
+    keep_data_in_memory: True
+    binarize_task: True
+
+hydra:
+  sweeper:
+    params:
+      +model_params.model.alpha: tag(log, interval(1e-6, 1))
+      +model_params.model.l1_ratio: interval(0, 1)
+      +model_params.model.penalty: choice(['l1', 'l2', 'elasticnet'])
+      model_params.epochs: range(10, 100)
+      model_params.early_stopping_rounds: range(1, 10)

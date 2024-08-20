@@ -9,6 +9,7 @@ from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
 from .tabular_dataset import TabularDataset
+from .base_model import BaseModel
 
 
 class SklearnIterator(TabularDataset, TimeableMixin):
@@ -77,7 +78,7 @@ class SklearnMatrix(TimeableMixin):
         return self.labels
 
 
-class SklearnModel(TimeableMixin):
+class SklearnModel(BaseModel, TimeableMixin):
     """Class for configuring, training, and evaluating an SciKit-Learn model.
 
     This class utilizes the configuration settings provided to manage the training and evaluation
@@ -86,7 +87,7 @@ class SklearnModel(TimeableMixin):
     disk using iterators.
 
     Args:
-        cfg: The configuration settings for the model, including data paths, model parameters,
+        cfg: The configuration settings for the model, including data paths, model parameters,ß
             and flags for data handling.
 
     Attributes:
@@ -107,6 +108,7 @@ class SklearnModel(TimeableMixin):
         Args:
             cfg: The configuration dictionary.
         """
+        super().__init__()
         self.cfg = cfg
         self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
 

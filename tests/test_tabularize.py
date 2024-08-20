@@ -211,7 +211,7 @@ def test_tabularize():
         # Step 2: Tabularization
         tabularize_static_config = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
 
@@ -289,7 +289,7 @@ def test_tabularize():
         # Step 3: Cache Task data
         cache_config = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
 
@@ -313,7 +313,7 @@ def test_tabularize():
 
         xgboost_config_kwargs = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
 
@@ -329,17 +329,17 @@ def test_tabularize():
         output_files = list(output_dir.glob("**/*.json"))
         assert len(output_files) == 1
 
-        basemodel_config_kwargs = {
+        sklearnmodel_config_kwargs = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
 
         with initialize(
             version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
         ):  # path to config.yaml
-            overrides = [f"{k}={v}" for k, v in basemodel_config_kwargs.items()]
-            cfg = compose(config_name="launch_basemodel", overrides=overrides)  # config.yaml
+            overrides = [f"{k}={v}" for k, v in sklearnmodel_config_kwargs.items()]
+            cfg = compose(config_name="launch_sklearnmodel", overrides=overrides)  # config.yaml
 
         output_dir = Path(cfg.output_cohort_dir) / "model"
 
@@ -347,9 +347,9 @@ def test_tabularize():
         output_files = list(output_dir.glob("**/*.pkl"))
         assert len(output_files) == 1
 
-        basemodel_config_kwargs = {
+        sklearnmodel_config_kwargs = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
             "model_params.iterator.keep_data_in_memory": False,
             "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
@@ -358,8 +358,8 @@ def test_tabularize():
         with initialize(
             version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
         ):  # path to config.yaml
-            overrides = [f"{k}={v}" for k, v in basemodel_config_kwargs.items()]
-            cfg = compose(config_name="launch_basemodel", overrides=overrides)  # config.yaml
+            overrides = [f"{k}={v}" for k, v in sklearnmodel_config_kwargs.items()]
+            cfg = compose(config_name="launch_sklearnmodel", overrides=overrides)  # config.yaml
 
         output_dir = Path(cfg.output_cohort_dir) / "model_online"
 
@@ -390,7 +390,7 @@ def test_xgboost_config():
         "hydra.verbose": True,
         "tqdm": False,
         "loguru_init": True,
-        "tabularization.min_code_inclusion_frequency": 1,
+        "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": f"{stdout_ws.strip()}",
     }
 

@@ -108,7 +108,6 @@ def load_tqdm(use_tqdm: bool):
 
         return tqdm
     else:
-
         def noop(x, **kwargs):
             return x
 

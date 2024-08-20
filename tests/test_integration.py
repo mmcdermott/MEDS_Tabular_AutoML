@@ -112,7 +112,7 @@ def test_integration():
         # Step 2: Run the static data tabularization script
         tabularize_config = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
         stderr, stdout = run_command(
@@ -161,7 +161,7 @@ def test_integration():
         # Step 3: Run the time series tabularization script
         tabularize_config = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
 
@@ -203,7 +203,7 @@ def test_integration():
         # Step 4: Run the task_specific_caching script
         cache_config = {
             **shared_config,
-            "tabularization.min_code_inclusion_frequency": 1,
+            "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
         }
         with initialize(
