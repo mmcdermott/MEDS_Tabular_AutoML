@@ -185,6 +185,8 @@ def get_flat_static_rep(
     """
     static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
     static_measurements = summarize_static_measurements(agg, static_features, df=shard_df)
+    if len(static_features) == 0:
+        raise ValueError(f"No static features found. Remove the aggregation function {agg}")
     # convert to sparse_matrix
     matrix = get_sparse_static_rep(static_features, static_measurements.lazy(), shard_df, feature_columns)
     assert matrix.shape[1] == len(

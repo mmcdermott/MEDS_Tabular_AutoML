@@ -1,9 +1,20 @@
+# @package _global_
+
+model_target:
+  _target_: MEDS_tabular_automl.xgboost_model.XGBoostModel.initialize
+  model_params: ${model_params}
+  input_dir: ${input_dir}
+  input_label_dir: ${input_label_dir}
+  model_dir: ${model_dir}
+  output_filepath: ${output_filepath}
+  log_dir: ${log_dir}
+  cache_dir: ${cache_dir}
+  # tabularization: ${tabularization} # Ideally we should define tabularization here, but there is an issue initializing with it's resolvers.
+
 model_params:
   num_boost_round: 1000
   early_stopping_rounds: 5
   model:
-    type: xgboost
-    # _target_: xgboost.XGBClassifier
     booster: gbtree
     device: cpu
     nthread: 1
