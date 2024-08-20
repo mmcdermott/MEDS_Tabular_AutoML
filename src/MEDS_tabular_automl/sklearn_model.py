@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import hydra
 import numpy as np
 import scipy.sparse as sp
 from loguru import logger
@@ -120,7 +119,7 @@ class SklearnModel(BaseModel, TimeableMixin):
         self.dtuning = None
         self.dheld_out = None
 
-        self.model = hydra.utils.call(cfg.model_params.model)
+        self.model = cfg.model_params.model
         # check that self.model is a valid model
         if not hasattr(self.model, "fit"):
             raise ValueError("Model does not have a fit method.")

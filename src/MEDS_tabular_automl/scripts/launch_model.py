@@ -3,17 +3,13 @@ from pathlib import Path
 
 import hydra
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 
 from MEDS_tabular_automl.base_model import BaseModel
-from MEDS_tabular_automl.sklearn_model import SklearnModel
-from MEDS_tabular_automl.xgboost_model import XGBoostModel
-
-MODEL_CLASSES: dict[str, type[BaseModel]] = {"xgboost": XGBoostModel, "sklearn": SklearnModel}
 
 from ..utils import hydra_loguru_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_xgboost.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
 
@@ -32,25 +28,21 @@ def main(cfg: DictConfig) -> float:
     # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
-    try:
-        model_type = cfg.model.type
-        ModelClass = MODEL_CLASSES.get(model_type)
-        if ModelClass is None:
-            raise ValueError(f"Model type {model_type} not supported.")
 
-        model = ModelClass(cfg)
-        model.train()
-        auc = model.evaluate()
-        logger.info(f"AUC: {auc}")
+    model: BaseModel = hydra.utils.instantiate(cfg.model_target)
+    # TODO - make tabularuzation be copied in the yaml instead of here
+    with open_dict(cfg):
+        model.cfg.tabularization = hydra.utils.instantiate(cfg.tabularization)
 
-        # save model
-        output_fp = Path(cfg.output_filepath)
-        output_fp.parent.mkdir(parents=True, exist_ok=True)
+    model.train()
+    auc = model.evaluate()
+    logger.info(f"AUC: {auc}")
 
-        model.save_model(output_fp)
-    except Exception as e:
-        logger.error(f"Error occurred: {e}")
-        auc = 0.0
+    # save model
+    output_fp = Path(cfg.output_filepath)
+    output_fp.parent.mkdir(parents=True, exist_ok=True)
+
+    model.save_model(output_fp)
     return auc
 
 

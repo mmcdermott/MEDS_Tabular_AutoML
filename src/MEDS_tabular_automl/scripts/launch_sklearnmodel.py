@@ -1,3 +1,4 @@
+from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -7,10 +8,9 @@ from omegaconf import DictConfig
 from ..sklearn_model import SklearnModel
 from ..utils import hydra_loguru_init
 
-# config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_sklearnmodel.yaml")
-# if not config_yaml.is_file():
-#     raise FileNotFoundError("Core configuration not successfully installed!")
-config_yaml = Path("./src/MEDS_tabular_automl/configs/launch_sklearnmodel.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_sklearnmodel.yaml")
+if not config_yaml.is_file():
+    raise FileNotFoundError("Core configuration not successfully installed!")
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
