@@ -177,9 +177,7 @@ class TabularDataset(TimeableMixin):
             hasattr(self.cfg.tabularization, "max_by_correlation")
             and self.cfg.tabularization.max_by_correlation
         ):
-            corrs = self._get_approximate_correlation_per_feature(
-                self.get_data_shards(0)[0], self.get_data_shards(0)[1]
-            )
+            corrs = self._get_approximate_correlation_per_feature(*self._get_shard_by_index(0))
             corrs = np.abs(corrs)
             sorted_corrs = np.argsort(corrs)[::-1]
 
@@ -187,9 +185,7 @@ class TabularDataset(TimeableMixin):
                 set(sorted_corrs[: self.cfg.tabularization.max_by_correlation])
             )
         if hasattr(self.cfg.tabularization, "min_correlation") and self.cfg.tabularization.min_correlation:
-            corrs = self._get_approximate_correlation_per_feature(
-                self.get_data_shards(0)[0], self.get_data_shards(0)[1]
-            )
+            corrs = self._get_approximate_correlation_per_feature(*self._get_shard_by_index(0))
             corrs = np.abs(corrs)
             codes_set = codes_set.intersection(
                 set(np.where(corrs > self.cfg.tabularization.min_correlation)[0])
@@ -356,7 +352,7 @@ class TabularDataset(TimeableMixin):
         Returns:
             The filtered data frame.
         """
-        if self.codes_set is None:
+        if not hasattr(self, "codes_set") or self.codes_set is None:
             return df
 
         ckey = f"_filter_shard_on_codes_and_freqs/{agg}"

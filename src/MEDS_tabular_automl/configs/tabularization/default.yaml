@@ -3,6 +3,8 @@ filtered_code_metadata_fp: ${output_cohort_dir}/metadata/codes.parquet
 allowed_codes: null
 min_code_inclusion_count: 10
 min_code_inclusion_frequency: null
+min_correlation: null
+max_by_correlation: null
 max_included_codes: null
 window_sizes:
   - "1d"
