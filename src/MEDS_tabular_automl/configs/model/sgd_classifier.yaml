@@ -26,6 +26,9 @@ model_params:
 
 hydra:
   sweeper:
+    direction: maximize
+    n_trials: 250
+    n_jobs: 25
     params:
       +model_params.model.alpha: tag(log, interval(1e-6, 1))
       +model_params.model.l1_ratio: interval(0, 1)

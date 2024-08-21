@@ -36,6 +36,10 @@ model_params:
 
 hydra:
   sweeper:
+    direction: maximize
+    n_trials: 250
+    n_jobs: 25
+
     params:
       model_params.model.C: tag(log, interval(1e-6, 1))
       model_params.model.penalty: choice(['l1', 'l2', 'elasticnet'])
