@@ -9,6 +9,8 @@ model_target:
   output_filepath: ${output_filepath}
   log_dir: ${log_dir}
   cache_dir: ${cache_dir}
+  imputer: ${model_params.iterator.imputer}
+  normalization: ${model_params.iterator.normalization}
 
 model_params:
   epochs: 20
@@ -19,6 +21,8 @@ model_params:
   iterator:
     keep_data_in_memory: True
     binarize_task: True
+    normalization: ${normalization}
+    imputer: ${imputer}
 
 hydra:
   sweeper:

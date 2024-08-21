@@ -9,6 +9,8 @@ model_target:
   output_filepath: ${output_filepath}
   log_dir: ${log_dir}
   cache_dir: ${cache_dir}
+  imputer: ${imputer}
+  normalization: ${normalization}
   # tabularization: ${tabularization} # Ideally we should define tabularization here, but there is an issue initializing with it's resolvers.
 
 model_params:
@@ -23,6 +25,8 @@ model_params:
   iterator:
     keep_data_in_memory: True
     binarize_task: True
+    normalization: ${normalization}
+    imputer: ${imputer}
 
 hydra:
   sweeper:

@@ -1,12 +1,12 @@
 from collections.abc import Mapping
 from pathlib import Path
 
-import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
 from mixins import TimeableMixin
 from omegaconf import DictConfig
+from scipy.stats import pearsonr
 
 from .describe_codes import get_feature_columns
 from .file_name import get_model_files, list_subdir_files
@@ -173,19 +173,27 @@ class TabularDataset(TimeableMixin):
         allowed_codes = set(self.cfg.tabularization._resolved_codes)
         codes_set = {feature_dict[code] for code in feature_dict if code in allowed_codes}
 
-        if hasattr(self.cfg.tabularization, "max_by_correlation"):
+        if (
+            hasattr(self.cfg.tabularization, "max_by_correlation")
+            and self.cfg.tabularization.max_by_correlation
+        ):
             corrs = self._get_approximate_correlation_per_feature(
                 self.get_data_shards(0)[0], self.get_data_shards(0)[1]
             )
             corrs = np.abs(corrs)
             sorted_corrs = np.argsort(corrs)[::-1]
-            codes_set = set(sorted_corrs[: self.cfg.tabularization.max_by_correlation])
-        if hasattr(self.cfg.tabularization, "min_correlation"):
+
+            codes_set = codes_set.intersection(
+                set(sorted_corrs[: self.cfg.tabularization.max_by_correlation])
+            )
+        if hasattr(self.cfg.tabularization, "min_correlation") and self.cfg.tabularization.min_correlation:
             corrs = self._get_approximate_correlation_per_feature(
                 self.get_data_shards(0)[0], self.get_data_shards(0)[1]
             )
             corrs = np.abs(corrs)
-            codes_set = set(np.where(corrs > self.cfg.tabularization.min_correlation)[0])
+            codes_set = codes_set.intersection(
+                set(np.where(corrs > self.cfg.tabularization.min_correlation)[0])
+            )
 
         return (
             codes_set,
@@ -209,19 +217,15 @@ class TabularDataset(TimeableMixin):
 
         # check that y has information
         if len(np.unique(y)) == 1:
-            raise ValueError("Labels have no information. Cannot calculate correlation.")
+            raise ValueError("Labels have only one unique value. Cannot calculate correlation.")
 
-        from scipy.stats import pearsonr
-
-        corrs = np.zeros(X.shape[1])
-        for i in range(X.shape[1]):
-            corrs[i] = pearsonr(X[:, i].toarray().flatten(), y)[0]
+        corrs = np.apply_along_axis(lambda col: pearsonr(col.flatten(), y)[0], 0, X.toarray())
         return corrs
 
     def _set_imputer(self):
         """Sets the imputer for the data."""
-        if hasattr(self.cfg.model_params.iterator, "impute"):
-            imputer = hydra.utils.instantiate(self.cfg.model_params.iterator.imputer)
+        if self.cfg.model_params.iterator.imputer.imputer_target:
+            imputer = self.cfg.model_params.iterator.imputer.imputer_target
             if hasattr(imputer, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self.get_data_shards(i)
@@ -236,8 +240,8 @@ class TabularDataset(TimeableMixin):
 
     def _set_scaler(self):
         """Sets the scaler for the data."""
-        if hasattr(self.cfg.model_params.iterator, "scaler"):
-            scaler = hydra.utils.instantiate(self.cfg.model_params.iterator.scaler)
+        if self.cfg.model_params.iterator.normalization.normalizer:
+            scaler = self.cfg.model_params.iterator.normalization.normalizer
             if hasattr(scaler, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self.get_data_shards(i)

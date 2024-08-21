@@ -35,7 +35,9 @@ def make_config_mutable(cfg):
 
 
 @pytest.mark.parametrize("model", ["xgboost", "sgd_classifier"])
-def test_model_config(model):
+@pytest.mark.parametrize("imputer", ["default", "mean_imputer", "mode_imputer", "median_imputer"])
+@pytest.mark.parametrize("normalization", ["min_max_scaler", "standard_scaler"])
+def test_model_config(model, imputer, normalization):
     MEDS_cohort_dir = "blah"
     xgboost_config_kwargs = {
         "MEDS_cohort_dir": MEDS_cohort_dir,
@@ -53,7 +55,9 @@ def test_model_config(model):
     with initialize(
         version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
     ):  # path to config.yaml
-        overrides = [f"model={model}"] + [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+        overrides = [f"model={model}", f"imputer={imputer}", f"normalization={normalization}"] + [
+            f"{k}={v}" for k, v in xgboost_config_kwargs.items()
+        ]
         cfg = compose(
             config_name="launch_model", overrides=overrides, return_hydra_config=True
         )  # config.yaml
