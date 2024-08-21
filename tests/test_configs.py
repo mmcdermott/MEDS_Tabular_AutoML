@@ -34,9 +34,12 @@ def make_config_mutable(cfg):
             make_config_mutable(cfg[key])
 
 
-@pytest.mark.parametrize("model", ["xgboost", "sgd_classifier"])
+@pytest.mark.parametrize(
+    "model",
+    ["xgboost", "sgd_classifier", "knn_classifier", "logistic_regression", "random_forest_classifier"],
+)
 @pytest.mark.parametrize("imputer", ["default", "mean_imputer", "mode_imputer", "median_imputer"])
-@pytest.mark.parametrize("normalization", ["min_max_scaler", "standard_scaler"])
+@pytest.mark.parametrize("normalization", ["standard_scaler", "max_abs_scaler"])
 def test_model_config(model, imputer, normalization):
     MEDS_cohort_dir = "blah"
     xgboost_config_kwargs = {

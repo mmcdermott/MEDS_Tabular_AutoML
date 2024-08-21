@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-from functools import partial
 from importlib.resources import files
 from pathlib import Path
 
@@ -104,35 +103,40 @@ def main(cfg: DictConfig):
         split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
 
         raw_data_fp = Path(cfg.output_cohort_dir) / "data" / split / f"{shard_num}.parquet"
-        raw_data_df = filter_parquet(raw_data_fp, cfg.tabularization._resolved_codes)
-        raw_data_df = (
-            get_unique_time_events_df(get_events_df(raw_data_df, feature_columns))
-            .with_row_index("event_id")
-            .select("patient_id", "time", "event_id")
-        )
-        shard_label_df = label_df.join(
-            raw_data_df.select("patient_id").unique(), on="patient_id", how="inner"
-        ).join_asof(other=raw_data_df, by="patient_id", on="time")
-
         shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
-        rwlock_wrap(
-            raw_data_fp,
-            shard_label_fp,
-            pl.scan_parquet,
-            write_lazyframe,
-            lambda df: shard_label_df,
-            do_overwrite=cfg.do_overwrite,
-            do_return=False,
-        )
-
         out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
-        compute_fn = partial(generate_row_cached_matrix, label_df=shard_label_df)
-        write_fn = partial(write_df, do_overwrite=cfg.do_overwrite)
+
+        def read_fn(in_fp_tuple):
+            raw_data_fp, data_fp = in_fp_tuple
+            raw_data_df = filter_parquet(raw_data_fp, cfg.tabularization._resolved_codes)
+            matrix = load_matrix(data_fp)
+            return raw_data_df, matrix
+
+        def compute_fn(input_tuple):
+            raw_data_df, matrix = input_tuple
+            raw_data_df = (
+                get_unique_time_events_df(get_events_df(raw_data_df, feature_columns))
+                .with_row_index("event_id")
+                .select("patient_id", "time", "event_id")
+            )
+            shard_label_df = label_df.join(
+                raw_data_df.select("patient_id").unique(), on="patient_id", how="inner"
+            ).join_asof(other=raw_data_df, by="patient_id", on="time")
+
+            row_cached_matrix = generate_row_cached_matrix(matrix=matrix, label_df=shard_label_df)
+
+            return shard_label_df, row_cached_matrix
+
+        def write_fn(output_tuple, out_fp):
+            shard_label_df, row_cached_matrix = output_tuple
+            Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)
+            write_lazyframe(shard_label_df, shard_label_fp)
+            write_df(row_cached_matrix, out_fp, do_overwrite=cfg.do_overwrite)
 
         rwlock_wrap(
-            data_fp,
+            (raw_data_fp, data_fp),
             out_fp,
-            load_matrix,
+            read_fn,
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
