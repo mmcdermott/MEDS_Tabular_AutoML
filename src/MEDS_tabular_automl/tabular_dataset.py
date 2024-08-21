@@ -231,10 +231,10 @@ class TabularDataset(TimeableMixin):
             imputer = self.cfg.model_params.iterator.imputer.imputer_target
             if hasattr(imputer, "partial_fit"):
                 for i in range(len(self._data_shards)):
-                    X, _ = self.get_data_shards(i)
+                    X, _ = self._get_shard_by_index(i)
                     imputer.partial_fit(X)
             elif hasattr(imputer, "fit"):
-                imputer.fit(self.get_data_shards(0)[0])
+                imputer.fit(self._get_shard_by_index(0)[0])
             else:
                 raise ValueError("Imputer must have a fit or partial_fit method.")
             self.imputer = imputer
@@ -250,10 +250,10 @@ class TabularDataset(TimeableMixin):
             scaler = self.cfg.model_params.iterator.normalization.normalizer
             if hasattr(scaler, "partial_fit"):
                 for i in range(len(self._data_shards)):
-                    X, _ = self.get_data_shards(i)
+                    X, _ = self._get_shard_by_index(i)
                     scaler.partial_fit(X)
             elif hasattr(scaler, "fit"):
-                X = self.get_data_shards(0)[0]
+                X = self._get_shard_by_index(0)[0]
                 scaler.fit(X)
             else:
                 raise ValueError("Scaler must have a fit or partial_fit method.")
@@ -337,6 +337,8 @@ class TabularDataset(TimeableMixin):
             for the given shard.
         """
         dynamic_df = self._get_dynamic_shard_by_index(idx)
+        if self.labels is None:
+            self.labels = self._load_labels()
         label_df = self.labels[self._data_shards[idx]]
         return dynamic_df, label_df
 

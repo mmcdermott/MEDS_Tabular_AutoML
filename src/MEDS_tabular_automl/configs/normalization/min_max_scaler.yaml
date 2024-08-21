@@ -1,2 +1,0 @@
-normalizer:
-  _target_: sklearn.preprocessing.MinMaxScaler

@@ -1,0 +1,2 @@
+normalizer:
+  _target_: sklearn.preprocessing.MaxAbsScaler
