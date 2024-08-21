@@ -9,8 +9,8 @@ model_target:
   output_filepath: ${output_filepath}
   log_dir: ${log_dir}
   cache_dir: ${cache_dir}
-  imputer: ${imputer}
-  normalization: ${normalization}
+  imputer: ${model_params.iterator.imputer}
+  normalization: ${model_params.iterator.normalization}
   # tabularization: ${tabularization} # Ideally we should define tabularization here, but there is an issue initializing with it's resolvers.
 
 model_params:
