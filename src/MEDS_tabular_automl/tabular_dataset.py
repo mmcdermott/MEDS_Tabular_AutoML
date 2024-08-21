@@ -224,7 +224,10 @@ class TabularDataset(TimeableMixin):
 
     def _set_imputer(self):
         """Sets the imputer for the data."""
-        if self.cfg.model_params.iterator.imputer.imputer_target:
+        if (
+            hasattr(self.cfg.model_params.iterator, "imputer")
+            and self.cfg.model_params.iterator.imputer.imputer_target
+        ):
             imputer = self.cfg.model_params.iterator.imputer.imputer_target
             if hasattr(imputer, "partial_fit"):
                 for i in range(len(self._data_shards)):
@@ -240,7 +243,10 @@ class TabularDataset(TimeableMixin):
 
     def _set_scaler(self):
         """Sets the scaler for the data."""
-        if self.cfg.model_params.iterator.normalization.normalizer:
+        if (
+            hasattr(self.cfg.model_params.iterator, "normalization")
+            and self.cfg.model_params.iterator.normalization.normalizer
+        ):
             scaler = self.cfg.model_params.iterator.normalization.normalizer
             if hasattr(scaler, "partial_fit"):
                 for i in range(len(self._data_shards)):

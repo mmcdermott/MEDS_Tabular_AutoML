@@ -2,7 +2,9 @@ import rootutils
 
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
+import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 from io import StringIO
@@ -370,25 +372,31 @@ def test_tabularize():
         output_files = list(output_dir.glob("**/*.pkl"))
         assert len(output_files) == 1
 
-        # autogluon_config_kwargs = {
-        #     **shared_config,
-        #     "tabularization.min_code_inclusion_count": 1,
-        #     "tabularization.window_sizes": "[30d,365d,full]",
-        #     "model_params.iterator.keep_data_in_memory": False,
-        #     "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
-        # }
+        if importlib.util.find_spec("autogluon") is not None:
+            import autogluon as ag
 
-        # with initialize(
-        #     version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-        # ):  # path to config.yaml
-        #     overrides = [f"{k}={v}" for k, v in sklearnmodel_config_kwargs.items()]
-        #     cfg = compose(config_name="launch_sklearnmodel", overrides=overrides)  # config.yaml
+            from MEDS_tabular_automl.scripts import launch_autogluon
 
-        # output_dir = Path(cfg.output_cohort_dir) / "model_online"
+            autogluon_config_kwargs = {
+                **shared_config,
+                "tabularization.min_code_inclusion_count": 1,
+                "tabularization.window_sizes": "[30d,365d,full]",
+                "model_params.iterator.keep_data_in_memory": False,
+                "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
+            }
 
-        # launch_model.main(cfg)
-        # output_files = list(output_dir.glob("**/*.pkl"))
-        # assert len(output_files) == 1
+            with initialize(
+                version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+            ):  # path to config.yaml
+                overrides = [f"{k}={v}" for k, v in autogluon_config_kwargs.items()]
+                cfg = compose(config_name="launch_autogluon", overrides=overrides)  # config.yaml
+
+            output_dir = Path(cfg.output_cohort_dir) / "model_online"
+
+            launch_autogluon.main(cfg)
+            output_files = list(output_dir.glob("*"))
+            most_recent_file = max(output_files, key=os.path.getmtime)
+            ag.tabular.TabularPredictor.load(most_recent_file)
 
 
 def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
@@ -421,5 +429,5 @@ def test_xgboost_config():
         version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
     ):  # path to config.yaml
         overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
-        cfg = compose(config_name="launch_xgboost", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="launch_model", overrides=overrides)  # config.yaml
     assert cfg.tabularization.window_sizes
