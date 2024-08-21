@@ -1,0 +1,5 @@
+# @package _global_
+hydra:
+  callbacks:
+    evaluation_callback:
+      _target_: MEDS_tabular_automl.evaluation_callback.EvaluationCallback
