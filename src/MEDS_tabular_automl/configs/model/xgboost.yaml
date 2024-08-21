@@ -30,6 +30,10 @@ model_params:
 
 hydra:
   sweeper:
+    direction: maximize
+    n_trials: 250
+    n_jobs: 25
+
     params:
       +model_params.model.eta: tag(log, interval(0.001, 1))
       +model_params.model.lambda: tag(log, interval(0.001, 1))

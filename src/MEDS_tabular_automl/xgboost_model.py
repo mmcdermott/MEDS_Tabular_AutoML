@@ -177,14 +177,23 @@ class XGBoostModel(BaseModel, TimeableMixin):
         self.iheld_out = XGBIterator(self.cfg, split="held_out")
 
     @TimeableMixin.TimeAs
-    def evaluate(self) -> float:
+    def evaluate(self, split="tuning") -> float:
         """Evaluates the model on the tuning set.
 
         Returns:
             The evaluation metric as the ROC AUC score.
         """
-        y_pred = self.model.predict(self.dtuning)
-        y_true = self.dtuning.get_label()
+        if split == "tuning":
+            y_pred = self.model.predict(self.dtuning)
+            y_true = self.dtuning.get_label()
+        elif split == "held_out":
+            y_pred = self.model.predict(self.dheld_out)
+            y_true = self.dheld_out.get_label()
+        elif split == "train":
+            y_pred = self.model.predict(self.dtrain)
+            y_true = self.dtrain.get_label()
+        else:
+            raise ValueError(f"Invalid split for evaluation: {split}")
         return roc_auc_score(y_true, y_pred)
 
     def save_model(self, output_fp: Path):

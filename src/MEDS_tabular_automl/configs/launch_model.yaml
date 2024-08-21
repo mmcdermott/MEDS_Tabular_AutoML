@@ -5,6 +5,7 @@ defaults:
   - model: xgboost # This can be changed to sgd_classifier or any other model
   - imputer: default
   - normalization: default
+  - override hydra/callbacks: evaluation_callback
   - override hydra/sweeper: optuna
   - override hydra/sweeper/sampler: tpe
   - override hydra/launcher: joblib
@@ -18,16 +19,16 @@ input_label_dir: ${output_cohort_dir}/${task_name}/labels/
 # Where to output the model and cached data
 model_dir: ${output_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
 output_filepath: ${model_dir}/model_metadata.json
-
-log_dir: ${model_dir}/.logs/
+model_log_dir: ${model_dir}/.logs/
+save_top_k: -1
 
 name: launch_model
 
 hydra:
   verbose: False
   job:
-    name: MEDS_TAB_${name}_${worker}_{now:%Y-%m-%d_%H-%M-%S}
+    name: MEDS_TAB_${name}_${worker}_${now:%Y-%m-%d_%H-%M-%S}
   sweep:
-    dir: ${log_dir}
+    dir: ${model_log_dir}
   run:
-    dir: ${log_dir}
+    dir: ${model_log_dir}
