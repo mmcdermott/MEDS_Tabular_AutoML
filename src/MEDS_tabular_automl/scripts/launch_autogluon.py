@@ -1,4 +1,5 @@
 from importlib.resources import files
+from pathlib import Path
 
 import hydra
 import pandas as pd
@@ -63,12 +64,17 @@ def main(cfg: DictConfig) -> float:
 
     # predict
     predictions = predictor.predict(held_out_dataset.drop(columns=[cfg.task_name]))
-    print("Predictions:", predictions)
+    logger.info("Predictions:", predictions)
     # evaluate
     score = predictor.evaluate(held_out_dataset)
-    print("Test score:", score)
+    logger.info("Test score:", score)
 
-    # TODO(model) add tests for autogluon pipeline
+    log_fp = Path(cfg.model_log_dir)
+    log_fp.mkdir(parents=True, exist_ok=True)
+    # log hyperparameters
+    out_fp = log_fp / "trial_performance_results.log"
+    with open(out_fp, "w") as f:
+        f.write(f"{cfg.output_filepath}\t{cfg.tabularization}\t{cfg.model_params}\t{None}\t{score}\n")
 
 
 if __name__ == "__main__":

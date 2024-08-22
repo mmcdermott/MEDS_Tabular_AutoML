@@ -86,7 +86,8 @@ def filter_to_codes(
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
-        feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
+        # feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
+        feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
 
     return sorted(feature_freqs["code"].to_list())
 

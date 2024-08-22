@@ -16,6 +16,7 @@ input_dir: ${output_cohort_dir}/${task_name}/task_cache
 input_label_dir: ${output_cohort_dir}/${task_name}/labels/
 # Where to output the model and cached data
 model_dir: ${output_cohort_dir}/autogluon/autogluon_${now:%Y-%m-%d_%H-%M-%S}
+model_log_dir: ${model_dir}/.logs/
 output_filepath: ${model_dir}
 
 # Model parameters
