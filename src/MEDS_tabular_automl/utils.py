@@ -315,20 +315,20 @@ def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
 
 
 def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
-    """Ensures all times in the events LazyFrame are unique and sorted by patient_id and time.
+    """Ensures all times in the events LazyFrame are unique and sorted by subject_id and time.
 
     Args:
         events_df: Events LazyFrame to process.
 
     Returns:
-        A LazyFrame with unique times, sorted by patient_id and time.
+        A LazyFrame with unique times, sorted by subject_id and time.
     """
     assert events_df.select(pl.col("time")).null_count().collect().item() == 0
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
-        events_df.drop_nulls("time").select(pl.col(["patient_id", "time"])).unique(maintain_order=True)
+        events_df.drop_nulls("time").select(pl.col(["subject_id", "time"])).unique(maintain_order=True)
     )
-    assert events_df.sort(by=["patient_id", "time"]).collect().equals(events_df.collect())
+    assert events_df.sort(by=["subject_id", "time"]).collect().equals(events_df.collect())
     return events_df
 
 

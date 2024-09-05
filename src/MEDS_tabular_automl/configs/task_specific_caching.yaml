@@ -6,7 +6,7 @@ task_name: task
 
 # Tabularized Data
 input_dir: ${output_cohort_dir}/tabularize
-# Where the labels are stored, with columns patient_id, timestamp, label
+# Where the labels are stored, with columns subject_id, timestamp, label
 input_label_dir: ${MEDS_cohort_dir}/tasks/${task_name}/
 # Where to output the task specific tabularized data
 output_dir: ${output_cohort_dir}/${task_name}/task_cache

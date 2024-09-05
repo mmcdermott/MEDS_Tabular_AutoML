@@ -76,7 +76,7 @@ def test_integration(tmp_path):
         df.write_parquet(file_path)
         all_data.append(df)
 
-    all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["patient_id", "time"])
+    all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["subject_id", "time"])
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -209,7 +209,7 @@ def test_integration(tmp_path):
     df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
     pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
     df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
-    df = df.select("patient_id", pl.col("time").alias("prediction_time"), "boolean_value")
+    df = df.select("subject_id", pl.col("time").alias("prediction_time"), "boolean_value")
 
     out_fp = Path(cfg.input_label_dir) / "0.parquet"
     out_fp.parent.mkdir(parents=True, exist_ok=True)

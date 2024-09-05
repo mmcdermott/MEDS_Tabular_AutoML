@@ -107,7 +107,7 @@ def summarize_dynamic_measurements(
         of aggregated values.
     """
     logger.info("Generating Sparse matrix for Time Series Features")
-    id_cols = ["patient_id", "time"]
+    id_cols = ["subject_id", "time"]
 
     # Confirm dataframe is sorted
     check_df = df.select(pl.col(id_cols))

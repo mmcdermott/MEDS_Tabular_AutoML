@@ -38,7 +38,7 @@ SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tun
 NUM_SHARDS = 4
 
 MEDS_TRAIN_0 = """
-patient_id,code,time,numeric_value
+subject_id,code,time,numeric_value
 239684,HEIGHT,,175.271115221764
 239684,EYE_COLOR//BROWN,,
 239684,DOB,1980-12-28T00:00:00.000000,
@@ -71,7 +71,7 @@ patient_id,code,time,numeric_value
 1195293,DISCHARGE,2010-06-20T20:50:04.000000,
 """
 MEDS_TRAIN_1 = """
-patient_id,code,time,numeric_value
+subject_id,code,time,numeric_value
 68729,EYE_COLOR//HAZEL,,
 68729,HEIGHT,,160.3953106166676
 68729,DOB,1978-03-09T00:00:00.000000,
@@ -88,7 +88,7 @@ patient_id,code,time,numeric_value
 814703,DISCHARGE,2010-02-05T07:02:30.000000,
 """
 MEDS_HELD_OUT_0 = """
-patient_id,code,time,numeric_value
+subject_id,code,time,numeric_value
 1500733,HEIGHT,,158.60131573580904
 1500733,EYE_COLOR//BROWN,,
 1500733,DOB,1986-07-20T00:00:00.000000,
@@ -102,7 +102,7 @@ patient_id,code,time,numeric_value
 1500733,DISCHARGE,2010-06-03T16:44:26.000000,
 """
 MEDS_TUNING_0 = """
-patient_id,code,time,numeric_value
+subject_id,code,time,numeric_value
 754281,EYE_COLOR//BROWN,,
 754281,HEIGHT,,166.22261567137025
 754281,DOB,1988-12-19T00:00:00.000000,
@@ -183,7 +183,7 @@ def test_tabularize(tmp_path):
         df.write_parquet(file_path)
         all_data.append(df)
 
-    all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["patient_id", "time"])
+    all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["subject_id", "time"])
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
@@ -314,7 +314,7 @@ def test_tabularize(tmp_path):
     df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
     pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
     df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
-    df = df.select("patient_id", pl.col("time").alias("prediction_time"), "boolean_value")
+    df = df.select("subject_id", pl.col("time").alias("prediction_time"), "boolean_value")
 
     out_fp = Path(cfg.input_label_dir) / "0.parquet"
     out_fp.parent.mkdir(parents=True, exist_ok=True)

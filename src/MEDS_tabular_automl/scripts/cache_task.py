@@ -98,7 +98,7 @@ def main(cfg: DictConfig):
                 cfg.label_column: "label",
             }
         )
-        .group_by(pl.col("patient_id", "time"), maintain_order=True)
+        .group_by(pl.col("subject_id", "time"), maintain_order=True)
         .first()
     )
 
@@ -124,11 +124,11 @@ def main(cfg: DictConfig):
             meds_data_df = (
                 get_unique_time_events_df(get_events_df(meds_data_df, feature_columns))
                 .with_row_index("event_id")
-                .select("patient_id", "time", "event_id")
+                .select("subject_id", "time", "event_id")
             )
             shard_label_df = label_df.join(
-                meds_data_df.select("patient_id").unique(), on="patient_id", how="inner"
-            ).join_asof(other=meds_data_df, by="patient_id", on="time")
+                meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
+            ).join_asof(other=meds_data_df, by="subject_id", on="time")
             return shard_label_df
 
         def read_fn(in_fp_tuple):
