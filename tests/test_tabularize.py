@@ -354,7 +354,7 @@ def test_tabularize(tmp_path):
     HydraConfig().set_config(cfg)
     launch_model.main(cfg)
     output_files = list(output_dir.glob("**/*.json"))
-    assert len(output_files) == 1
+    assert len(output_files) == 2
 
     sklearnmodel_config_kwargs = {
         **shared_config,
@@ -379,7 +379,7 @@ def test_tabularize(tmp_path):
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
         "model_params.iterator.keep_data_in_memory": False,
-        "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
+        "model_saving.model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
     }
 
     with initialize(
@@ -404,7 +404,7 @@ def test_tabularize(tmp_path):
             "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
             "model_params.iterator.keep_data_in_memory": False,
-            "model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
+            "model_saving.model_dir": "${output_cohort_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
         }
 
         with initialize(

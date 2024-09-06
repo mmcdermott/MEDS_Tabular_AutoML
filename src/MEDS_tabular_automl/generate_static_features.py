@@ -67,12 +67,15 @@ def get_sparse_static_rep(
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
-    # Check static_df is sorted and unique
-    assert static_df.select(pl.col("subject_id")).collect().to_series().is_sorted()
-    assert (
+    # Check static_df is sorted and unique and raise error if it is not
+    if not static_df.select(pl.col("subject_id")).collect().to_series().is_sorted():
+        raise ValueError("static_df is not sorted by subject_id.")
+    if not (
         static_df.select(pl.len()).collect().item()
         == static_df.select(pl.col("subject_id").n_unique()).collect().item()
-    )
+    ):
+        raise ValueError("static_df has duplicate subject_id values.")
+
     meds_df = get_unique_time_events_df(get_events_df(meds_df, feature_columns))
 
     # load static data as sparse matrix
@@ -189,7 +192,6 @@ def get_flat_static_rep(
         raise ValueError(f"No static features found. Remove the aggregation function {agg}")
     # convert to sparse_matrix
     matrix = get_sparse_static_rep(static_features, static_measurements.lazy(), shard_df, feature_columns)
-    assert matrix.shape[1] == len(
-        static_features
-    ), f"Expected {len(static_features)} features, got {matrix.shape[1]}"
+    if not matrix.shape[1] == len(static_features):
+        raise ValueError(f"Expected {len(static_features)} features, got {matrix.shape[1]}")
     return matrix

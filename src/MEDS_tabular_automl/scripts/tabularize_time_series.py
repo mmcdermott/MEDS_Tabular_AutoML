@@ -101,7 +101,10 @@ def main(
                 window_size,
                 agg,
             )
-            assert summary_df.shape[1] > 0, "No data found in the summarized dataframe"
+
+            if not summary_df.shape[1]:
+                raise ValueError("No data found in the summarized dataframe.")
+
             del index_df
             del sparse_matrix
             gc.collect()

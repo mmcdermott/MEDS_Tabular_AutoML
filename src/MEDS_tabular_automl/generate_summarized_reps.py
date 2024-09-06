@@ -193,13 +193,16 @@ def generate_summary(
         raise ValueError(
             f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
         )
-    assert len(feature_columns), "feature_columns must be a non-empty list"
+    if not len(feature_columns):
+        raise ValueError("No feature columns provided -- feature_columns must be a non-empty list.")
 
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
     code_type, _ = agg.split("/")
     # only iterate through code_types that exist in the dataframe columns
-    assert any([c.endswith(code_type) for c in ts_columns])
+    if not any([c.endswith(code_type) for c in ts_columns]):
+        raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
+
     logger.info(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )

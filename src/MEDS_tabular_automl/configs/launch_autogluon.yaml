@@ -3,9 +3,6 @@ defaults:
   - tabularization: default
   - imputer: default
   - normalization: default
-  - override hydra/sweeper: optuna
-  - override hydra/sweeper/sampler: tpe
-  - override hydra/launcher: joblib
   - _self_
 
 task_name: task

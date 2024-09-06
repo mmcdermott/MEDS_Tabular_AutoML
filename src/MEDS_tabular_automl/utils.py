@@ -157,7 +157,8 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
     Raises:
         AssertionError: If the input array's first dimension is not 3.
     """
-    assert array.shape[0] == 3
+    if not array.shape[0] == 3:
+        raise AssertionError("Array must have 3 dimensions: [data, row, col], currently has", array.shape[0])
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
 
@@ -323,12 +324,14 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
     Returns:
         A LazyFrame with unique times, sorted by subject_id and time.
     """
-    assert events_df.select(pl.col("time")).null_count().collect().item() == 0
+    if not events_df.select(pl.col("time")).null_count().collect().item() == 0:
+        raise ValueError("Time column must not have null values for time series data.")
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
         events_df.drop_nulls("time").select(pl.col(["subject_id", "time"])).unique(maintain_order=True)
     )
-    assert events_df.sort(by=["subject_id", "time"]).collect().equals(events_df.collect())
+    if not events_df.sort(by=["subject_id", "time"]).collect().equals(events_df.collect()):
+        raise ValueError("Data frame must be sorted by subject_id and time")
     return events_df
 
 
@@ -392,3 +395,30 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     file_name = relative_path.name.split(".")[0]
 
     return str(relative_parent / file_name)
+
+
+def log_to_logfile(model, cfg, output_fp):
+    """Log model hyperparameters and performance to two log files.
+
+    Args:
+        model: The model to log.
+        cfg: The configuration dictionary.
+        output_fp: The relative output file path.
+    """
+    log_fp = Path(cfg.model_logging.model_log_dir)
+
+    # make a folder to log everything for this model
+    out_fp = log_fp / output_fp
+    out_fp.mkdir(parents=True, exist_ok=True)
+
+    # config as a json
+    config_fp = out_fp / f"{cfg.model_logging.config_log_stem}.json"
+    with open(config_fp, "w") as f:
+        f.write(OmegaConf.to_yaml(cfg))
+
+    model_performance_fp = out_fp / f"{cfg.model_logging.performance_log_stem}.csv"
+    with open(model_performance_fp, "w") as f:
+        f.write("model_fp,tuning_auc,test_auc\n")
+        f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")
+
+    logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")

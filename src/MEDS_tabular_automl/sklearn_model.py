@@ -3,7 +3,6 @@ from pathlib import Path
 import numpy as np
 import scipy.sparse as sp
 from loguru import logger
-from mixins import TimeableMixin
 from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
@@ -11,7 +10,7 @@ from .base_model import BaseModel
 from .tabular_dataset import TabularDataset
 
 
-class SklearnIterator(TabularDataset, TimeableMixin):
+class SklearnIterator(TabularDataset):
     """SklearnIterator class for loading and processing data shards for use in SciKit-Learn models.
 
     This class provides functionality for iterating through data shards, loading
@@ -43,21 +42,14 @@ class SklearnIterator(TabularDataset, TimeableMixin):
             cfg: The configuration dictionary.
             split: The data split to use.
         """
-        TabularDataset.__init__(self, cfg=cfg, split=split)
-        TimeableMixin.__init__(self)
+        super().__init__(cfg=cfg, split=split)
         self.valid_event_ids, self.labels = self._load_ids_and_labels()
         # check if the labels are empty
         if len(self.labels) == 0:
             raise ValueError("No labels found.")
-        # self._it = 0
-
-    # def iterate(self, function):
-    #     for shard_idx in range(len(self._data_shards)):
-    #         data, labels = self.get_data_shards(shard_idx)
-    #         function(data, labels)
 
 
-class SklearnMatrix(TimeableMixin):
+class SklearnMatrix:
     """SklearnMatrix class for loading and processing data shards for use in SciKit-Learn models."""
 
     def __init__(self, data: sp.csr_matrix, labels: np.ndarray):
@@ -77,24 +69,24 @@ class SklearnMatrix(TimeableMixin):
         return self.labels
 
 
-class SklearnModel(BaseModel, TimeableMixin):
+class SklearnModel(BaseModel):
     """Class for configuring, training, and evaluating an SciKit-Learn model.
 
     This class utilizes the configuration settings provided to manage the training and evaluation
-    process of an XGBoost model, ensuring the model is trained and validated using specified parameters
+    process of an SKlearn model, ensuring the model is trained and validated using specified parameters
     and data splits. It supports training with in-memory data handling as well as direct streaming from
     disk using iterators.
 
     Args:
-        cfg: The configuration settings for the model, including data paths, model parameters,ß
+        cfg: The configuration settings for the model, including data paths, model parameters,
             and flags for data handling.
 
     Attributes:
         cfg: Configuration object containing all settings required for model operation.
-        model: The XGBoost model after being trained.
-        dtrain: The training dataset in DMatrix format.
-        dtuning: The tuning (validation) dataset in DMatrix format.
-        dheld_out: The held-out (test) dataset in DMatrix format.
+        model: The SKlearn model.
+        dtrain: The training dataset in Matrix format.
+        dtuning: The tuning (validation) dataset in Matrix format.
+        dheld_out: The held-out (test) dataset in Matrix format.
         itrain: Iterator for the training dataset.
         ituning: Iterator for the tuning dataset.
         iheld_out: Iterator for the held-out dataset.
@@ -102,7 +94,7 @@ class SklearnModel(BaseModel, TimeableMixin):
     """
 
     def __init__(self, cfg: DictConfig):
-        """Initializes the XGBoostClassifier with the provided configuration.
+        """Initializes the SklearnClassifier with the provided configuration.
 
         Args:
             cfg: The configuration dictionary.
@@ -124,7 +116,6 @@ class SklearnModel(BaseModel, TimeableMixin):
         if not hasattr(self.model, "fit"):
             raise ValueError("Model does not have a fit method.")
 
-    @TimeableMixin.TimeAs
     def _build_data(self):
         """Builds necessary data structures for training."""
         if self.keep_data_in_memory:
@@ -146,11 +137,6 @@ class SklearnModel(BaseModel, TimeableMixin):
             # train on each all data
             for shard_idx in range(len(self.itrain._data_shards)):
                 data, labels = self.itrain.get_data_shards(shard_idx)
-                # if self.model.shuffle: # TODO: check this for speed
-                #     # shuffle data
-                #     indices = np.random.permutation(len(labels))
-                #     data = data[indices]
-                #     labels = labels[indices]
                 self.model.partial_fit(data, labels, classes=classes)
             # evaluate on tuning set
             auc = self.evaluate()
@@ -161,36 +147,30 @@ class SklearnModel(BaseModel, TimeableMixin):
             if epoch - best_epoch > self.cfg.model_params.early_stopping_rounds:
                 break
 
-    @TimeableMixin.TimeAs
     def _train(self):
         """Trains the model."""
-        # two cases: data is in memory or data is streamed
         if self.keep_data_in_memory:
             self.model.fit(self.dtrain.get_data(), self.dtrain.get_label())
         else:
             self._fit_from_partial()
 
-    @TimeableMixin.TimeAs
     def train(self):
         """Trains the model."""
         self._build_data()
         self._train()
 
-    @TimeableMixin.TimeAs
     def _build_matrix_in_memory(self):
         """Builds the DMatrix from the data in memory."""
         self.dtrain = SklearnMatrix(*self.itrain.get_data())
         self.dtuning = SklearnMatrix(*self.ituning.get_data())
         self.dheld_out = SklearnMatrix(*self.iheld_out.get_data())
 
-    @TimeableMixin.TimeAs
     def _build_iterators(self):
         """Builds the iterators for training, validation, and testing."""
         self.itrain = SklearnIterator(self.cfg, split="train")
         self.ituning = SklearnIterator(self.cfg, split="tuning")
         self.iheld_out = SklearnIterator(self.cfg, split="held_out")
 
-    @TimeableMixin.TimeAs
     def evaluate(self, split: str = "tuning") -> float:
         """Evaluates the model on the tuning set.
 
@@ -213,6 +193,7 @@ class SklearnModel(BaseModel, TimeableMixin):
         # check if model has predict_proba method
         if not hasattr(self.model, "predict_proba"):
             raise ValueError(f"Model {self.model.__class__.__name__} does not have a predict_proba method.")
+
         # two cases: data is in memory or data is streamed
         if self.keep_data_in_memory:
             y_pred = self.model.predict_proba(dsplit.get_data())[:, 1]

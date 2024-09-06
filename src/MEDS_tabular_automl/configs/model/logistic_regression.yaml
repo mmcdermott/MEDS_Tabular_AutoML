@@ -5,8 +5,9 @@ model_target:
   model_params: ${model_params}
   input_dir: ${input_dir}
   input_label_dir: ${input_label_dir}
-  model_dir: ${model_dir}
-  output_filepath: ${output_filepath}
+  model_dir: ${model_saving.model_dir}
+  model_file_stem: ${model_saving.model_file_stem}
+  model_file_extension: ${model_saving.model_file_extension}
   log_dir: ${log_dir}
   cache_dir: ${cache_dir}
   imputer: ${model_params.iterator.imputer}

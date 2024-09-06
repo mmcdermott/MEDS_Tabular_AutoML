@@ -116,7 +116,7 @@ def main(cfg: DictConfig):
             if "numeric_value" not in pl.scan_parquet(meds_data_fp).columns:
                 raise ValueError(
                     f"'numeric_value' column not found in raw data {meds_data_fp}. "
-                    "You are maybe loading labels instead or meds data"
+                    "You are maybe loading labels instead of meds data"
                 )
             return filter_parquet(meds_data_fp, cfg.tabularization._resolved_codes)
 
@@ -133,7 +133,6 @@ def main(cfg: DictConfig):
 
         def read_fn(in_fp_tuple):
             meds_data_fp, data_fp = in_fp_tuple
-            assert "data" in str(meds_data_fp)
             # TODO: replace this with more intelligent locking
             if not Path(shard_label_fp).exists():
                 logger.info(f"Extracting labels for {shard_label_fp}")

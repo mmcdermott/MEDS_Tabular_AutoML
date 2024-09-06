@@ -4,7 +4,6 @@ from pathlib import Path
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
-from mixins import TimeableMixin
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
@@ -12,7 +11,7 @@ from .base_model import BaseModel
 from .tabular_dataset import TabularDataset
 
 
-class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):
+class XGBIterator(xgb.DataIter, TabularDataset):
     """XGBIterator class for loading and processing data shards for use in XGBoost models.
 
     This class provides functionality for iterating through data shards, loading
@@ -46,14 +45,12 @@ class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):
         """
         xgb.DataIter.__init__(self, cache_prefix=Path(cfg.cache_dir))
         TabularDataset.__init__(self, cfg=cfg, split=split)
-        TimeableMixin.__init__(self)
         self.valid_event_ids, self.labels = self._load_ids_and_labels()
         # check if the labels are empty
         if self.labels is None:
             raise ValueError("No labels found.")
         self._it = 0
 
-    @TimeableMixin.TimeAs
     def next(self, input_data: Callable) -> int:
         """Advances the XGBIterator by one step and provides data to XGBoost for DMatrix construction.
 
@@ -73,13 +70,12 @@ class XGBIterator(xgb.DataIter, TabularDataset, TimeableMixin):
 
         return 1
 
-    @TimeableMixin.TimeAs
     def reset(self):
         """Resets the XGBIterator to its beginning."""
         self._it = 0
 
 
-class XGBoostModel(BaseModel, TimeableMixin):
+class XGBoostModel(BaseModel):
     """Class for configuring, training, and evaluating an XGBoost model.
 
     This class utilizes the configuration settings provided to manage the training and evaluation
@@ -123,7 +119,6 @@ class XGBoostModel(BaseModel, TimeableMixin):
 
         self.model = None
 
-    @TimeableMixin.TimeAs
     def _build(self):
         """Builds necessary data structures for training."""
         if self.keep_data_in_memory:
@@ -133,7 +128,6 @@ class XGBoostModel(BaseModel, TimeableMixin):
             self._build_iterators()
             self._build_dmatrix_from_iterators()
 
-    @TimeableMixin.TimeAs
     def _train(self):
         """Trains the model."""
         self.model = xgb.train(
@@ -146,13 +140,11 @@ class XGBoostModel(BaseModel, TimeableMixin):
             verbose_eval=0,
         )
 
-    @TimeableMixin.TimeAs
     def train(self):
         """Trains the model."""
         self._build()
         self._train()
 
-    @TimeableMixin.TimeAs
     def _build_dmatrix_in_memory(self):
         """Builds the DMatrix from the data in memory."""
         X_train, y_train = self.itrain.get_data()
@@ -162,21 +154,18 @@ class XGBoostModel(BaseModel, TimeableMixin):
         self.dtuning = xgb.DMatrix(X_tuning, label=y_tuning)
         self.dheld_out = xgb.DMatrix(X_held_out, label=y_held_out)
 
-    @TimeableMixin.TimeAs
     def _build_dmatrix_from_iterators(self):
         """Builds the DMatrix from the iterators."""
         self.dtrain = xgb.DMatrix(self.itrain)
         self.dtuning = xgb.DMatrix(self.ituning)
         self.dheld_out = xgb.DMatrix(self.iheld_out)
 
-    @TimeableMixin.TimeAs
     def _build_iterators(self):
         """Builds the iterators for training, validation, and testing."""
         self.itrain = XGBIterator(self.cfg, split="train")
         self.ituning = XGBIterator(self.cfg, split="tuning")
         self.iheld_out = XGBIterator(self.cfg, split="held_out")
 
-    @TimeableMixin.TimeAs
     def evaluate(self, split="tuning") -> float:
         """Evaluates the model on the tuning set.
 
