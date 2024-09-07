@@ -412,11 +412,11 @@ def log_to_logfile(model, cfg, output_fp):
     out_fp.mkdir(parents=True, exist_ok=True)
 
     # config as a json
-    config_fp = out_fp / f"{cfg.model_logging.config_log_stem}.json"
+    config_fp = out_fp / f"{cfg.model_logging.config_log_stem}.log"
     with open(config_fp, "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
-    model_performance_fp = out_fp / f"{cfg.model_logging.performance_log_stem}.csv"
+    model_performance_fp = out_fp / f"{cfg.model_logging.performance_log_stem}.log"
     with open(model_performance_fp, "w") as f:
         f.write("model_fp,tuning_auc,test_auc\n")
         f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")

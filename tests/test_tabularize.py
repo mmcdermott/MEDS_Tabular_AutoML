@@ -354,7 +354,11 @@ def test_tabularize(tmp_path):
     HydraConfig().set_config(cfg)
     launch_model.main(cfg)
     output_files = list(output_dir.glob("**/*.json"))
-    assert len(output_files) == 2
+    assert len(output_files) == 1
+
+    log_dir = Path(cfg.model_logging.model_log_dir)
+    log_csv = list(log_dir.glob("**/*.log"))
+    assert len(log_csv) == 2
 
     sklearnmodel_config_kwargs = {
         **shared_config,

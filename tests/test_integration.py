@@ -229,3 +229,17 @@ def test_integration(tmp_path):
         cache_config,
         "task_specific_caching",
     )
+    stderr, stdout = run_command(
+        "meds-tab-model",
+        [
+            "--multirun",
+            f"tabularization.window_sizes={stdout_ws.strip()}",
+            f"tabularization.aggs={stdout_agg.strip()}",
+            "hydra.sweeper.n_jobs=5",
+            "hydra.sweeper.n_trials=10",
+        ],
+        cache_config,
+        "xgboost-model",
+    )
+    assert "The best model can be found at" in stderr
+    assert "Performance of the best model:" in stderr
