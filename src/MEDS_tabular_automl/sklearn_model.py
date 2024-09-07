@@ -1,4 +1,5 @@
 from pathlib import Path
+from pickle import dump
 
 import numpy as np
 import scipy.sparse as sp
@@ -224,9 +225,9 @@ class SklearnModel(BaseModel):
         if not hasattr(self.model, "save_model"):
             logger.info(f"Model {self.model.__class__.__name__} does not have a save_model method.")
             logger.info("Model will be saved using pickle dump.")
-            from pickle import dump
-
-            with open(output_fp.parent / "model.pkl", "wb") as f:
+            if not output_fp.endswith(".pkl"):
+                raise ValueError("Model file extension must be .pkl.")
+            with open(output_fp, "wb") as f:
                 dump(self.model, f, protocol=5)
         else:
             self.model.save_model(output_fp)

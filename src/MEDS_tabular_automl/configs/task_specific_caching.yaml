@@ -2,7 +2,7 @@ defaults:
   - default
   - tabularization: default
   - _self_
-task_name: task
+task_name: ???
 
 # Tabularized Data
 input_dir: ${output_cohort_dir}/tabularize

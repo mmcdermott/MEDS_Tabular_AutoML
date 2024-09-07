@@ -26,6 +26,7 @@ from ..utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
+    tabularize_init,
     write_df,
 )
 
@@ -64,6 +65,7 @@ def main(
         FileNotFoundError: If specified directories or files in the configuration are not found.
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
+    tabularize_init(cfg)
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

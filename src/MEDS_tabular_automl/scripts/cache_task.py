@@ -25,6 +25,7 @@ from ..utils import (
     hydra_loguru_init,
     load_matrix,
     load_tqdm,
+    tabularize_init,
     write_df,
 )
 
@@ -79,6 +80,7 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
+    tabularize_init(cfg)
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

@@ -3,26 +3,25 @@ defaults:
   - tabularization: default
   - imputer: default
   - normalization: default
+  - model_launcher: autogluon
   - _self_
 
-task_name: task
+task_name: ???
 
 # Task cached data dir
 input_dir: ${output_cohort_dir}/${task_name}/task_cache
 # Directory with task labels
 input_label_dir: ${output_cohort_dir}/${task_name}/labels/
 # Where to output the model and cached data
-model_dir: ${output_cohort_dir}/autogluon/autogluon_${now:%Y-%m-%d_%H-%M-%S}
-model_log_dir: ${model_dir}/.logs/
-output_filepath: ${model_dir}
-
-# Model parameters
-model_params:
-  iterator:
-    keep_data_in_memory: True
-    binarize_task: True
-
-log_dir: ${model_dir}/.logs/
-log_filepath: ${log_dir}/log.txt
+output_dir: ???
 
 name: launch_autogluon
+
+hydra:
+  verbose: False
+  job:
+    name: MEDS_TAB_${name}_${worker}_${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: ${model_log_dir}
+  run:
+    dir: ${model_log_dir}

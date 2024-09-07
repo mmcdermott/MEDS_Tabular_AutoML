@@ -1,21 +1,15 @@
-"""The base class for core dataset processing logic.
-
-Attributes:
-    INPUT_DF_T: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
-        dataframes, etc.
-    DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
-"""
+"""The base class for core dataset processing logic and script utilities."""
 import os
+import sys
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from scipy.sparse import coo_array
 
-DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
 
@@ -422,3 +416,95 @@ def log_to_logfile(model, cfg, output_fp):
         f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
+
+
+def current_script_name() -> str:
+    """Returns the name of the module that called this function."""
+
+    main_module = sys.modules["__main__"]
+    main_func = getattr(main_module, "main", None)
+    if main_func and callable(main_func):
+        func_module = main_func.__module__
+        if func_module == "__main__":
+            return Path(sys.argv[0]).stem
+        else:
+            return func_module.split(".")[-1]
+
+    logger.warning("Can't find main function in __main__ module. Using sys.argv[0] as a fallback.")
+    return Path(sys.argv[0]).stem
+
+
+def tabularize_init(cfg: DictConfig):
+    """Initializes the stage by logging the configuration and the stage-specific paths.
+
+    Args:
+        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
+            stage specific configuration.
+
+    Returns: The data input directory, stage output directory, and metadata input directory.
+    """
+    hydra_loguru_init()
+
+    logger.info(
+        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
+    )
+
+    input_dir = Path(cfg.data_input_dir)
+    output_dir = Path(cfg.stage_cfg.output_dir)
+    metadata_input_dir = Path(cfg.stage_cfg.metadata_input_dir)
+
+    def chk(x: Path):
+        return "✅" if x.exists() else "❌"
+
+    paths_strs = [
+        f"  - {k}: {chk(v)} {str(v.resolve())}"
+        for k, v in {
+            "input_dir": input_dir,
+            "output_dir": output_dir,
+            "metadata_input_dir": metadata_input_dir,
+        }.items()
+    ]
+
+    logger_strs = [
+        f"Stage config:\n{OmegaConf.to_yaml(cfg.stage_cfg)}",
+        "Paths: (checkbox indicates if it exists)",
+    ]
+    logger.debug("\n".join(logger_strs + paths_strs))
+
+
+def launch_model_init(cfg: DictConfig):
+    """Initializes the stage by logging the configuration and the stage-specific paths.
+
+    Args:
+        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
+            stage specific configuration.
+
+    Returns: The data input directory, stage output directory, and metadata input directory.
+    """
+    hydra_loguru_init()
+
+    logger.info(
+        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
+    )
+
+    input_dir = Path(cfg.data_input_dir)
+    output_dir = Path(cfg.stage_cfg.output_dir)
+    metadata_input_dir = Path(cfg.stage_cfg.metadata_input_dir)
+
+    def chk(x: Path):
+        return "✅" if x.exists() else "❌"
+
+    paths_strs = [
+        f"  - {k}: {chk(v)} {str(v.resolve())}"
+        for k, v in {
+            "input_dir": input_dir,
+            "output_dir": output_dir,
+            "metadata_input_dir": metadata_input_dir,
+        }.items()
+    ]
+
+    logger_strs = [
+        f"Stage config:\n{OmegaConf.to_yaml(cfg.stage_cfg)}",
+        "Paths: (checkbox indicates if it exists)",
+    ]
+    logger.debug("\n".join(logger_strs + paths_strs))

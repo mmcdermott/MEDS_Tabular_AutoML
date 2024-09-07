@@ -6,13 +6,25 @@ import pandas as pd
 from loguru import logger
 from omegaconf import DictConfig
 
+try:
+    import autogluon.tabular as ag
+except ImportError:
+    ag = None
+
 from MEDS_tabular_automl.dense_iterator import DenseIterator
 
-from ..utils import hydra_loguru_init
+from ..utils import hydra_loguru_init, launch_model_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_autogluon.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
+
+
+def check_autogluon():
+    if ag is None:
+        raise ImportError(
+            "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
+        )
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
@@ -22,16 +34,10 @@ def main(cfg: DictConfig) -> float:
     Args:
         cfg: The configuration dictionary specifying model and training parameters.
     """
-
-    # print(OmegaConf.to_yaml(cfg))
+    check_autogluon()
+    launch_model_init(cfg)
     if not cfg.loguru_init:
         hydra_loguru_init()
-
-    # check that autogluon is installed
-    try:
-        import autogluon.tabular as ag
-    except ImportError:
-        logger.error("AutoGluon is not installed. Please install AutoGluon.")
 
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")
@@ -44,13 +50,13 @@ def main(cfg: DictConfig) -> float:
     held_out_data, held_out_labels = iheld_out.densify()
 
     # construct dfs for AutoGluon
-    train_df = pd.DataFrame(train_data.todense())  # , columns=cols)
+    train_df = pd.DataFrame(train_data.todense())
     train_df[cfg.task_name] = train_labels
     tuning_df = pd.DataFrame(
         tuning_data.todense(),
-    )  # columns=cols)
+    )
     tuning_df[cfg.task_name] = tuning_labels
-    held_out_df = pd.DataFrame(held_out_data.todense())  # , columns=cols)
+    held_out_df = pd.DataFrame(held_out_data.todense())
     held_out_df[cfg.task_name] = held_out_labels
 
     train_dataset = ag.TabularDataset(train_df)

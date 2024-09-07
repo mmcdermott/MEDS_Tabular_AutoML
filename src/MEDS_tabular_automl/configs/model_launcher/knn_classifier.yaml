@@ -1,0 +1,31 @@
+defaults:
+  - default
+  - hydra/sweeper: default
+  - _self_
+
+_target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+
+model:
+  _target_: sklearn.neighbors.KNeighborsClassifier
+  weights: "distance"
+  leaf_size: 30
+  p: 2
+  metric: "minkowski"
+
+training_params:
+  epochs: 20
+  early_stopping_rounds: 5
+
+path:
+  model_file_extension: .pkl
+
+hydra:
+  sweeper:
+    +params:
+      model.n_neighbors: range(1, 20)
+      model.weights: choice(['uniform', 'distance'])
+      model.leaf_size: range(10, 50)
+      model.p: choice([1, 2])
+      model.metric: choice(['minkowski', 'euclidean', 'manhattan'])
+      epochs: range(10, 100)
+      early_stopping_rounds: range(1, 10)

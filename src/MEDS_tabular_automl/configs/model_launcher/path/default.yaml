@@ -1,0 +1,10 @@
+input_dir: ${input_dir}
+input_label_dir: ${input_label_dir}
+output_dir: ${output_dir}
+model_file_stem: model
+model_file_extension: .json
+log_dir: ${log_dir}
+cache_dir: ${cache_dir}
+model_log_dir: ${output_dir}/.logs/
+performance_log_stem: performance
+config_log_stem: config

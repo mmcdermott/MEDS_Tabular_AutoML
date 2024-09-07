@@ -1,0 +1,7 @@
+defaults:
+  - path: default
+  - data_processing_params: default
+  - data_loading_params: default
+  - _self_
+
+tabularization: ${tabularization}

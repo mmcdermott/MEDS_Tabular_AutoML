@@ -19,6 +19,8 @@ dependencies = [
   "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3.3", "meds-transforms==0.0.7",
 ]
 
+[tool.setuptools_scm]
+
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
 meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"

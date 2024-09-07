@@ -1,0 +1,5 @@
+hydra:
+  sweeper:
+    direction: maximize
+    n_trials: 250
+    n_jobs: 25

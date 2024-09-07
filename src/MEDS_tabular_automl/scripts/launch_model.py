@@ -3,11 +3,11 @@ from importlib.resources import files
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig
 
 from MEDS_tabular_automl.base_model import BaseModel
 
-from ..utils import hydra_loguru_init, log_to_logfile
+from ..utils import hydra_loguru_init, launch_model_init, log_to_logfile
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
@@ -24,25 +24,21 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
+    launch_model_init(cfg)
 
-    # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
 
     model: BaseModel = hydra.utils.instantiate(cfg.model_target)
-    # TODO - make tabularuzation be copied in the yaml instead of here
-    with open_dict(cfg):
-        model.cfg.tabularization = hydra.utils.instantiate(cfg.tabularization)
 
     model.train()
     auc = model.evaluate()
-    # logger.info(f"AUC: {auc}")
 
     # save model
     output_fp = Path(cfg.model_saving.model_dir)
     output_fp = (
         output_fp.parent
-        / f"{cfg.model_saving.model_file_stem}_{auc:.4f}_{time.time()}{cfg.model_saving.model_file_extension}"
+        / f"{cfg.model_saving.model_file_stem}_{auc:.4f}_{time.time()}{cfg.model_target.model_file_extension}"
     )
     output_fp.parent.mkdir(parents=True, exist_ok=True)
 
