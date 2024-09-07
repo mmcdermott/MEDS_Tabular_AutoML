@@ -242,4 +242,4 @@ def test_integration(tmp_path):
         "xgboost-model",
     )
     assert "The best model can be found at" in stderr
-    assert "Performance of the best model:" in stderr
+    assert "Performance of best model:" in stderr

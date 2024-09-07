@@ -37,9 +37,10 @@ class EvaluationCallback(Callback):
 
     def log_performance(self, perf):
         """logger.info performance of the best model with nice formatting."""
+        tuning_auc = perf["tuning_auc"][0]
+        test_auc = perf["test_auc"][0]
         logger.info(
-            "\nPerformance of the best model:\n",
-            f"Tuning AUC: {perf['tuning_auc'][0]}\nTest AUC: {perf['test_auc'][0]}",
+            f"\nPerformance of best model:\nTuning AUC: {tuning_auc}\nTest AUC: {test_auc}",
         )
 
     def log_hyperparams(self, best_params_fp):
