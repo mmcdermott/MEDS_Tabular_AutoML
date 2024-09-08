@@ -1,24 +1,25 @@
+# @package _global_
 defaults:
   - default
-  - hydra/sweeper: default
   - _self_
 
-_target_: MEDS_tabular_automl.xgboost_model.XGBoostModel.initialize
+model_launcher:
+  _target_: MEDS_tabular_automl.xgboost_model.XGBoostModel.initialize
 
-model:
-  booster: gbtree
-  device: cpu
-  nthread: 1
-  tree_method: hist
-  objective: binary:logistic
+  model:
+    booster: gbtree
+    device: cpu
+    nthread: 1
+    tree_method: hist
+    objective: binary:logistic
 
-training_params:
-  num_boost_round: 1000
-  early_stopping_rounds: 5
+  training_params:
+    num_boost_round: 1000
+    early_stopping_rounds: 5
 
 hydra:
   sweeper:
-    +params:
+    params:
       model.eta: tag(log, interval(0.001, 1))
       model.lambda: tag(log, interval(0.001, 1))
       model.alpha: tag(log, interval(0.001, 1))

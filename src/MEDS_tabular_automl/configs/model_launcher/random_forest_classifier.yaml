@@ -1,32 +1,35 @@
+# @package _global_
+
 defaults:
   - default
-  - hydra/sweeper: default
+  - training_params: default
   - _self_
 
-_target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+model_launcher:
+  _target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
 
-model:
-  _target_: sklearn.ensemble.RandomForestClassifier
-  criterion: "gini"
-  max_depth: null
-  min_samples_split: 2
-  min_samples_leaf: 1
-  min_weight_fraction_leaf: 0.0
-  max_features: "sqrt"
-  max_leaf_nodes: null
-  min_impurity_decrease: 0.0
-  bootstrap: True
+  model:
+    _target_: sklearn.ensemble.RandomForestClassifier
+    criterion: "gini"
+    max_depth: null
+    min_samples_split: 2
+    min_samples_leaf: 1
+    min_weight_fraction_leaf: 0.0
+    max_features: "sqrt"
+    max_leaf_nodes: null
+    min_impurity_decrease: 0.0
+    bootstrap: True
 
-training_params:
-  epochs: 20
-  early_stopping_rounds: 5
+  training_params:
+    epochs: 20
+    early_stopping_rounds: 5
 
-path:
-  model_file_extension: .pkl
+  path:
+    model_file_extension: .pkl
 
 hydra:
   sweeper:
-    +params:
+    params:
       model.n_estimators: range(50, 300, 50)
       model.max_depth: choice([null, 10, 20, 30, 40, 50])
       model.min_samples_split: range(2, 11)

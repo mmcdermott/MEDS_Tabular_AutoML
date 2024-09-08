@@ -1,27 +1,26 @@
+# @package _global_
+
 defaults:
   - default
-  - hydra/sweeper: default
+  - training_params: default
   - _self_
 
-_target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+model_launcher:
+  _target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
 
-model:
-  _target_: sklearn.neighbors.KNeighborsClassifier
-  weights: "distance"
-  leaf_size: 30
-  p: 2
-  metric: "minkowski"
+  model:
+    _target_: sklearn.neighbors.KNeighborsClassifier
+    weights: "distance"
+    leaf_size: 30
+    p: 2
+    metric: "minkowski"
 
-training_params:
-  epochs: 20
-  early_stopping_rounds: 5
-
-path:
-  model_file_extension: .pkl
+  path:
+    model_file_extension: .pkl
 
 hydra:
   sweeper:
-    +params:
+    params:
       model.n_neighbors: range(1, 20)
       model.weights: choice(['uniform', 'distance'])
       model.leaf_size: range(10, 50)

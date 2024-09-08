@@ -13,7 +13,7 @@ except ImportError:
 
 from MEDS_tabular_automl.dense_iterator import DenseIterator
 
-from ..utils import hydra_loguru_init, launch_model_init
+from ..utils import hydra_loguru_init, stage_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_autogluon.yaml")
 if not config_yaml.is_file():
@@ -35,7 +35,9 @@ def main(cfg: DictConfig) -> float:
         cfg: The configuration dictionary specifying model and training parameters.
     """
     check_autogluon()
-    launch_model_init(cfg)
+    stage_init(
+        cfg, ["input_dir", "input_label_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+    )
     if not cfg.loguru_init:
         hydra_loguru_init()
 

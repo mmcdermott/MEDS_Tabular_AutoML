@@ -102,7 +102,7 @@ class SklearnModel(BaseModel):
         """
         super().__init__()
         self.cfg = cfg
-        self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
+        self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
 
         self.itrain = None
         self.ituning = None
@@ -112,7 +112,7 @@ class SklearnModel(BaseModel):
         self.dtuning = None
         self.dheld_out = None
 
-        self.model = cfg.model_params.model
+        self.model = cfg.model
         # check that self.model is a valid model
         if not hasattr(self.model, "fit"):
             raise ValueError("Model does not have a fit method.")
@@ -134,7 +134,7 @@ class SklearnModel(BaseModel):
         classes = self.itrain.get_classes()
         best_auc = 0
         best_epoch = 0
-        for epoch in range(self.cfg.model_params.epochs):
+        for epoch in range(self.cfg.training_params.epochs):
             # train on each all data
             for shard_idx in range(len(self.itrain._data_shards)):
                 data, labels = self.itrain.get_data_shards(shard_idx)
@@ -145,7 +145,7 @@ class SklearnModel(BaseModel):
             if auc > best_auc:
                 best_auc = auc
                 best_epoch = epoch
-            if epoch - best_epoch > self.cfg.model_params.early_stopping_rounds:
+            if epoch - best_epoch > self.cfg.training_params.early_stopping_rounds:
                 break
 
     def _train(self):

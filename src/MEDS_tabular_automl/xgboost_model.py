@@ -107,7 +107,7 @@ class XGBoostModel(BaseModel):
         """
         super().__init__()
         self.cfg = cfg
-        self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
+        self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
 
         self.itrain = None
         self.ituning = None
@@ -132,10 +132,10 @@ class XGBoostModel(BaseModel):
         """Trains the model."""
         self.model = self.cfg.model
         self.model = self.model.train(
-            OmegaConf.to_container(self.cfg.model_params.model),
+            OmegaConf.to_container(self.cfg.model),
             self.dtrain,
-            num_boost_round=self.cfg.model_params.num_boost_round,
-            early_stopping_rounds=self.cfg.model_params.early_stopping_rounds,
+            num_boost_round=self.cfg.training_params.num_boost_round,
+            early_stopping_rounds=self.cfg.training_params.early_stopping_rounds,
             # nthreads=self.cfg.nthreads,
             evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
             verbose_eval=0,

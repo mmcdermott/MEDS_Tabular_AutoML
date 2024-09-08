@@ -126,7 +126,7 @@ class TabularDataset(TimeableMixin):
 
             if load_labels:
                 cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
-                if self.cfg.model_params.iterator.binarize_task:
+                if self.cfg.data_loading_params.binarize_task:
                     cached_labels[shard] = cached_labels[shard].map_elements(
                         lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8
                     )
@@ -221,10 +221,10 @@ class TabularDataset(TimeableMixin):
     def _set_imputer(self):
         """Sets the imputer for the data."""
         if (
-            hasattr(self.cfg.model_params.iterator, "imputer")
-            and self.cfg.model_params.iterator.imputer.imputer_target
+            hasattr(self.cfg.data_loading_params, "imputer")
+            and self.cfg.data_loading_params.imputer.imputer_target
         ):
-            imputer = self.cfg.model_params.iterator.imputer.imputer_target
+            imputer = self.cfg.data_loading_params.imputer.imputer_target
             if hasattr(imputer, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self._get_shard_by_index(i)
@@ -240,10 +240,10 @@ class TabularDataset(TimeableMixin):
     def _set_scaler(self):
         """Sets the scaler for the data."""
         if (
-            hasattr(self.cfg.model_params.iterator, "normalization")
-            and self.cfg.model_params.iterator.normalization.normalizer
+            hasattr(self.cfg.data_loading_params, "normalization")
+            and self.cfg.data_loading_params.normalization.normalizer
         ):
-            scaler = self.cfg.model_params.iterator.normalization.normalizer
+            scaler = self.cfg.data_loading_params.normalization.normalizer
             if hasattr(scaler, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self._get_shard_by_index(i)

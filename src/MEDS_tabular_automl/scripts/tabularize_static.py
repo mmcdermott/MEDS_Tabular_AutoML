@@ -30,7 +30,7 @@ from ..utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
-    tabularize_init,
+    stage_init,
     write_df,
 )
 
@@ -82,7 +82,9 @@ def main(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
-    tabularize_init(cfg)
+    stage_init(
+        cfg, ["input_code_metadata_fp", "input_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+    )
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

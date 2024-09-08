@@ -17,13 +17,7 @@ from ..describe_codes import (
 )
 from ..file_name import list_subdir_files
 from ..mapper import wrap as rwlock_wrap
-from ..utils import (
-    get_shard_prefix,
-    hydra_loguru_init,
-    load_tqdm,
-    tabularize_init,
-    write_df,
-)
+from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
 if not config_yaml.is_file():
@@ -38,7 +32,7 @@ def main(cfg: DictConfig):
         cfg: The configuration object for the tabularization process, loaded from a Hydra
             YAML configuration file.
     """
-    tabularize_init(cfg)
+    stage_init(cfg, ["input_dir", "output_filepath"])
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

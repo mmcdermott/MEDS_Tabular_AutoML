@@ -7,7 +7,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from scipy.sparse import coo_array
 
 WRITE_USE_PYARROW = True
@@ -45,7 +45,7 @@ def filter_to_codes(
     min_code_inclusion_count: int | None,
     min_code_inclusion_frequency: float | None,
     max_include_codes: int | None,
-) -> list[str]:
+) -> ListConfig[str]:
     """Filters and returns codes based on allowed list and minimum frequency.
 
     Args:
@@ -63,8 +63,14 @@ def filter_to_codes(
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
+        Traceback (most recent call last):
+        ...
+        ValueError: Code filtering criteria ...
+        ...
     """
-
     feature_freqs = pl.read_parquet(code_metadata_fp)
 
     if allowed_codes is not None:
@@ -72,18 +78,23 @@ def filter_to_codes(
 
     if min_code_inclusion_frequency is not None:
         pass
-        # need to consider size of the dataset vs count
-
-        # feature_freqs = feature_freqs.filter(pl.col("frequency") >= min_code_inclusion_frequency)
 
     if min_code_inclusion_count is not None:
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
-        # feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
         feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
 
-    return sorted(feature_freqs["code"].to_list())
+    if len(feature_freqs["code"]) == 0:
+        raise ValueError(
+            f"Code filtering criteria leaves only 0 codes. Note that {feature_freqs.shape[0]} "
+            "codes are read in, try modifying the following kwargs:"
+            f"\n- tabularization.allowed_codes: {allowed_codes}"
+            f"\n- tabularization.min_code_inclusion_count: {min_code_inclusion_count}"
+            f"\n- tabularization.min_code_inclusion_frequency: {min_code_inclusion_frequency}"
+            f"\n- tabularization.max_include_codes: {max_include_codes}"
+        )
+    return ListConfig(sorted(feature_freqs["code"].to_list()))
 
 
 OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
@@ -434,7 +445,7 @@ def current_script_name() -> str:
     return Path(sys.argv[0]).stem
 
 
-def tabularize_init(cfg: DictConfig):
+def stage_init(cfg: DictConfig, keys: list[str]):
     """Initializes the stage by logging the configuration and the stage-specific paths.
 
     Args:
@@ -449,59 +460,12 @@ def tabularize_init(cfg: DictConfig):
         f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
     )
 
-    input_dir = Path(cfg.data_input_dir)
-    output_dir = Path(cfg.stage_cfg.output_dir)
-    metadata_input_dir = Path(cfg.stage_cfg.metadata_input_dir)
+    chk_kwargs = {k: cfg[k] for k in keys}
 
     def chk(x: Path):
         return "✅" if x.exists() else "❌"
 
-    paths_strs = [
-        f"  - {k}: {chk(v)} {str(v.resolve())}"
-        for k, v in {
-            "input_dir": input_dir,
-            "output_dir": output_dir,
-            "metadata_input_dir": metadata_input_dir,
-        }.items()
-    ]
-
-    logger_strs = [
-        f"Stage config:\n{OmegaConf.to_yaml(cfg.stage_cfg)}",
-        "Paths: (checkbox indicates if it exists)",
-    ]
-    logger.debug("\n".join(logger_strs + paths_strs))
-
-
-def launch_model_init(cfg: DictConfig):
-    """Initializes the stage by logging the configuration and the stage-specific paths.
-
-    Args:
-        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
-            stage specific configuration.
-
-    Returns: The data input directory, stage output directory, and metadata input directory.
-    """
-    hydra_loguru_init()
-
-    logger.info(
-        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
-    )
-
-    input_dir = Path(cfg.data_input_dir)
-    output_dir = Path(cfg.stage_cfg.output_dir)
-    metadata_input_dir = Path(cfg.stage_cfg.metadata_input_dir)
-
-    def chk(x: Path):
-        return "✅" if x.exists() else "❌"
-
-    paths_strs = [
-        f"  - {k}: {chk(v)} {str(v.resolve())}"
-        for k, v in {
-            "input_dir": input_dir,
-            "output_dir": output_dir,
-            "metadata_input_dir": metadata_input_dir,
-        }.items()
-    ]
+    paths_strs = [f"  - {k}: {chk(v)} {str(v.resolve())}" for k, v in chk_kwargs.items()]
 
     logger_strs = [
         f"Stage config:\n{OmegaConf.to_yaml(cfg.stage_cfg)}",
