@@ -475,34 +475,6 @@ class TabularDataset(TimeableMixin):
             all_feats = [all_feats[i] for i in indices]
         return all_feats
 
-    def get_columns_and_indices(self) -> tuple[list[str], list[int]]:
-        """Retrieves the names and indices of the columns in the data.
-
-        Returns:
-            A tuple containing the names of the columns and their indices.
-        """
-        raise NotImplementedError("This method is not implemented yet.")
-        files = get_model_files(self.cfg, self.split, self._data_shards[0])
-
-        def extract_name(test_file):
-            return str(Path(test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
-
-        agg_wind_combos = [extract_name(test_file) for test_file in files]
-
-        feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
-        all_feats = []
-        all_indices = []
-        for agg_wind in agg_wind_combos:
-            window, feat, agg = agg_wind.split("/")
-            feature_ids = get_feature_indices(feat + "/" + agg, feature_columns)
-            feature_names = [feature_columns[i] for i in feature_ids]
-            for feat_name in feature_names:
-                all_feats.append(f"{feat_name}/{agg}/{window}")
-            # use mask to append indices
-            all_indices.extend(feature_ids)
-
-        return all_feats, all_indices
-
     def densify(self) -> np.ndarray:
         """Builds the data as a dense matrix based on column subselection."""
 
