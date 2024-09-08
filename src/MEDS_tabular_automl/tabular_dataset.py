@@ -61,6 +61,11 @@ class TabularDataset(TimeableMixin):
         self._set_scaler()
         self._set_imputer()
 
+        self.valid_event_ids, self.labels = self._load_ids_and_labels()
+        # check if the labels are empty
+        if len(self.labels) == 0:
+            raise ValueError("No labels found.")
+
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
         """Creates boolean masks for filtering features.
@@ -497,3 +502,17 @@ class TabularDataset(TimeableMixin):
             all_indices.extend(feature_ids)
 
         return all_feats, all_indices
+
+    def densify(self) -> np.ndarray:
+        """Builds the data as a dense matrix based on column subselection."""
+
+        # get the dense matrix by iterating through the data shards
+        data = []
+        labels = []
+        for shard_idx in range(len(self._data_shards)):
+            shard_data, shard_labels = self.get_data_shards(shard_idx)
+            data.append(shard_data)
+            labels.append(shard_labels)
+        data = sp.vstack(data)
+        labels = np.concatenate(labels, axis=0)
+        return data, labels

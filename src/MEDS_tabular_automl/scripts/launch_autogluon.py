@@ -6,7 +6,7 @@ import pandas as pd
 from loguru import logger
 from omegaconf import DictConfig
 
-from MEDS_tabular_automl.dense_iterator import DenseIterator
+from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
 from ..utils import hydra_loguru_init
 

@@ -45,10 +45,7 @@ class XGBIterator(xgb.DataIter, TabularDataset):
         """
         xgb.DataIter.__init__(self, cache_prefix=Path(cfg.cache_dir))
         TabularDataset.__init__(self, cfg=cfg, split=split)
-        self.valid_event_ids, self.labels = self._load_ids_and_labels()
-        # check if the labels are empty
-        if self.labels is None:
-            raise ValueError("No labels found.")
+
         self._it = 0
 
     def next(self, input_data: Callable) -> int:

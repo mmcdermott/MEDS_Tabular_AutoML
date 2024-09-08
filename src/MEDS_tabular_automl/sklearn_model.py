@@ -7,46 +7,7 @@ from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
 from .base_model import BaseModel
-from .tabular_dataset import TabularDataset
-
-
-class SklearnIterator(TabularDataset):
-    """SklearnIterator class for loading and processing data shards for use in SciKit-Learn models.
-
-    This class provides functionality for iterating through data shards, loading
-    feature data and labels, and processing them based on the provided configuration.
-
-    Args:
-        cfg: A configuration dictionary containing parameters for
-            data processing, feature selection, and other settings.
-        split: The data split to use, which can be one of "train", "tuning",
-            or "held_out". This determines which subset of the data is loaded and processed.
-
-    Attributes:
-        cfg: Configuration dictionary containing parameters for
-            data processing, feature selection, and other settings.
-        file_name_resolver: Object for resolving file names and paths based on the configuration.
-        split: The data split being used for loading and processing data shards.
-        _data_shards: List of data shard names.
-        valid_event_ids: Dictionary mapping shard number to a list of valid event IDs.
-        labels: Dictionary mapping shard number to a list of labels for the corresponding event IDs.
-        codes_set: Set of codes to include in the data.
-        code_masks: Dictionary of code masks for filtering features based on aggregation.
-        num_features: Total number of features in the data.
-    """
-
-    def __init__(self, cfg: DictConfig, split: str):
-        """Initializes the SklearnIterator with the provided configuration and data split.
-
-        Args:
-            cfg: The configuration dictionary.
-            split: The data split to use.
-        """
-        super().__init__(cfg=cfg, split=split)
-        self.valid_event_ids, self.labels = self._load_ids_and_labels()
-        # check if the labels are empty
-        if len(self.labels) == 0:
-            raise ValueError("No labels found.")
+from .tabular_dataset import TabularDataset as SklearnIterator
 
 
 class SklearnMatrix:
