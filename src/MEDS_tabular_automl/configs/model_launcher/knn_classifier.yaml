@@ -21,10 +21,10 @@ model_launcher:
 hydra:
   sweeper:
     params:
-      model.n_neighbors: range(1, 20)
-      model.weights: choice(['uniform', 'distance'])
-      model.leaf_size: range(10, 50)
-      model.p: choice([1, 2])
-      model.metric: choice(['minkowski', 'euclidean', 'manhattan'])
-      epochs: range(10, 100)
-      early_stopping_rounds: range(1, 10)
+      +model_launcher.model.n_neighbors: range(1, 20)
+      model_launcher.model.weights: choice('uniform', 'distance')
+      model_launcher.model.leaf_size: range(10, 50)
+      model_launcher.model.p: choice(1, 2)
+      model_launcher.model.metric: choice('minkowski', 'euclidean', 'manhattan')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

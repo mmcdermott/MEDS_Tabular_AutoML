@@ -20,22 +20,18 @@ model_launcher:
     min_impurity_decrease: 0.0
     bootstrap: True
 
-  training_params:
-    epochs: 20
-    early_stopping_rounds: 5
-
   path:
     model_file_extension: .pkl
 
 hydra:
   sweeper:
     params:
-      model.n_estimators: range(50, 300, 50)
-      model.max_depth: choice([null, 10, 20, 30, 40, 50])
-      model.min_samples_split: range(2, 11)
-      model.min_samples_leaf: range(1, 5)
-      model.max_features: choice(['sqrt', 'log2', null])
-      model.bootstrap: choice([True, False])
-      model.criterion: choice(['gini', 'entropy'])
-      epochs: range(10, 100)
-      early_stopping_rounds: range(1, 10)
+      +model_launcher.model.n_estimators: range(50, 300, 50)
+      model_launcher.model.max_depth: choice(10, 20, 30, 40, 50)
+      model_launcher.model.min_samples_split: range(2, 11)
+      model_launcher.model.min_samples_leaf: range(1, 5)
+      model_launcher.model.max_features: choice('sqrt', 'log2')
+      model_launcher.model.bootstrap: choice(True, False)
+      model_launcher.model.criterion: choice('gini', 'entropy')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

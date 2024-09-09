@@ -85,9 +85,8 @@ def main(cfg: DictConfig):
         [
             "input_dir",
             "input_label_dir",
+            "input_tabularized_dir",
             "output_dir",
-            "output_tabularized_cache_dir",
-            "output_label_cache_dir",
             "tabularization.filtered_code_metadata_fp",
         ],
     )

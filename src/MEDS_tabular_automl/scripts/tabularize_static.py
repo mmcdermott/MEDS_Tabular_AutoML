@@ -87,7 +87,6 @@ def main(
         [
             "input_code_metadata_fp",
             "input_dir",
-            "output_tabularized_dir",
             "tabularization.filtered_code_metadata_fp",
         ],
     )

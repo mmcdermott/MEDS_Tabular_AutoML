@@ -11,18 +11,14 @@ model_launcher:
     _target_: sklearn.linear_model.SGDClassifier
     loss: log_loss
 
-  training_params:
-    epochs: 20
-    early_stopping_rounds: 5
-
   path:
     model_file_extension: .pkl
 
 hydra:
   sweeper:
     params:
-      model.alpha: tag(log, interval(1e-6, 1))
-      model.l1_ratio: interval(0, 1)
-      model.penalty: choice(['l1', 'l2', 'elasticnet'])
-      epochs: range(10, 100)
-      early_stopping_rounds: range(1, 10)
+      +model_launcher.model.alpha: tag(log, interval(1e-6, 1))
+      +model_launcher.model.l1_ratio: interval(0, 1)
+      +model_launcher.model.penalty: choice('l1', 'l2', 'elasticnet')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

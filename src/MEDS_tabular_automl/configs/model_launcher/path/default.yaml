@@ -1,4 +1,3 @@
-# input_dir: ${input_dir}
 input_tabularized_cache_dir: ${input_tabularized_cache_dir}
 input_label_cache_dir: ${input_label_cache_dir}
 output_model_dir: ${output_model_dir}

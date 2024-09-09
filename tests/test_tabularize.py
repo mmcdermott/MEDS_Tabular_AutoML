@@ -187,7 +187,7 @@ def test_tabularize(tmp_path):
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
     assert (
-        len(list_subdir_files(Path(cfg.input_dir).parent, "parquet")) == 4
+        len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4
     ), "MEDS train split Data Files Should be 4!"
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
@@ -293,7 +293,6 @@ def test_tabularize(tmp_path):
     )
     expected_num_static_tabs = NUM_SHARDS * 2
     assert len(list_subdir_files(cfg.output_dir, "npz")) == expected_num_time_tabs + expected_num_static_tabs
-    cfg.output_dir
     # Step 3: Cache Task data
     cache_config = {
         **shared_config,

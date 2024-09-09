@@ -13,6 +13,7 @@ from test_tabularize import (
     CODE_COLS,
     EXPECTED_STATIC_FILES,
     MEDS_OUTPUTS,
+    NUM_SHARDS,
     SPLITS_JSON,
     STATIC_FIRST_COLS,
     STATIC_PRESENT_COLS,
@@ -45,6 +46,8 @@ def test_integration(tmp_path):
     # Step 0: Setup Environment
     input_dir = Path(tmp_path) / "input_dir"
     output_dir = Path(tmp_path) / "output_dir"
+    input_label_dir = Path(tmp_path) / "label_dir"
+    output_model_dir = Path(tmp_path) / "output_model_dir"
 
     shared_config = {
         "input_dir": str(input_dir.resolve()),
@@ -68,23 +71,24 @@ def test_integration(tmp_path):
     # Store MEDS outputs
     all_data = []
     for split, data in MEDS_OUTPUTS.items():
-        file_path = output_dir / f"{split}.parquet"
-        file_path.parent.mkdir(exist_ok=True)
+        file_path = input_dir / f"{split}.parquet"
+        file_path.parent.mkdir(exist_ok=True, parents=True)
         df = pl.read_csv(StringIO(data)).with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f"))
         df.write_parquet(file_path)
         all_data.append(df)
+        assert file_path.exists()
 
     all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["subject_id", "time"])
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
     assert (
-        len(list_subdir_files(Path(cfg.input_dir).parent, "parquet")) == 4
+        len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4
     ), "MEDS train split Data Files Should be 4!"
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
-    splits_fp = output_dir / ".shards.json"
+    splits_fp = input_dir / ".shards.json"
     json.dump(split_json, splits_fp.open("w"))
 
     # Step 1: Run the describe_codes script
@@ -94,6 +98,7 @@ def test_integration(tmp_path):
         describe_codes_config,
         "describe_codes",
     )
+
     assert Path(cfg.output_filepath).is_file()
 
     feature_columns = get_feature_columns(cfg.output_filepath)
@@ -104,7 +109,7 @@ def test_integration(tmp_path):
         assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
 
     # Step 2: Run the static data tabularization script
-    tabularize_config = {
+    tabularize_static_config = {
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
@@ -112,15 +117,17 @@ def test_integration(tmp_path):
     stderr, stdout = run_command(
         "meds-tab-tabularize-static",
         [],
-        tabularize_config,
+        tabularize_static_config,
         "tabularization",
     )
     with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
-        overrides = [f"{k}={v}" for k, v in tabularize_config.items()]
+        overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
         cfg = compose(config_name="tabularization", overrides=overrides)
 
-    output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
-    actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
+    output_dir = Path(cfg.output_dir) / "tabularize"
+
+    output_files = list(output_dir.glob("**/static/**/*.npz"))
+    actual_files = [get_shard_prefix(output_dir, each) + ".npz" for each in output_files]
     assert set(actual_files) == set(EXPECTED_STATIC_FILES)
     # Check the files are not empty
     for f in output_files:
@@ -164,11 +171,9 @@ def test_integration(tmp_path):
     )
 
     # confirm summary files exist:
-    output_files = list_subdir_files(cfg.output_dir, "npz")
+    output_files = list_subdir_files(str(output_dir.resolve()), "npz")
     actual_files = [
-        get_shard_prefix(Path(cfg.output_dir), each) + ".npz"
-        for each in output_files
-        if "none/static" not in str(each)
+        get_shard_prefix(output_dir, each) + ".npz" for each in output_files if "none/static" not in str(each)
     ]
     assert len(actual_files) > 0
     for f in output_files:
@@ -190,16 +195,36 @@ def test_integration(tmp_path):
         assert ts_matrix.shape[0] == expected_num_rows, (
             f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
         )
+    output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
+    for split in split_json.keys():
+        for window in cfg.tabularization.window_sizes:
+            for agg in cfg.tabularization.aggs:
+                if agg.startswith("static"):
+                    if window != cfg.tabularization.window_sizes[0]:
+                        continue
+                    expected_fp = Path(cfg.output_tabularized_dir) / split / "none" / f"{agg}.npz"
+                else:
+                    expected_fp = Path(cfg.output_tabularized_dir) / split / window / f"{agg}.npz"
+                assert expected_fp in output_files, f"Missing {expected_fp}"
+    expected_num_time_tabs = (
+        NUM_SHARDS * len(cfg.tabularization.window_sizes) * (len(cfg.tabularization.aggs) - 2)
+    )
+    expected_num_static_tabs = NUM_SHARDS * 2
+    assert len(list_subdir_files(cfg.output_dir, "npz")) == expected_num_time_tabs + expected_num_static_tabs
+
     # Step 4: Run the task_specific_caching script
     cache_config = {
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "input_label_dir": str(input_label_dir.resolve()),
     }
     with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in cache_config.items()]
         cfg = compose(config_name="task_specific_caching", overrides=overrides)
 
+    # Create fake labels
     df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
     pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
     df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
@@ -223,3 +248,54 @@ def test_integration(tmp_path):
         cache_config,
         "task_specific_caching",
     )
+    for split in split_json.keys():
+        for window in cfg.tabularization.window_sizes:
+            for agg in cfg.tabularization.aggs:
+                if agg.startswith("static"):
+                    if window != cfg.tabularization.window_sizes[0]:
+                        continue
+                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / "none" / f"{agg}.npz"
+                else:
+                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / window / f"{agg}.npz"
+                output_files = list_subdir_files(str(Path(cfg.output_tabularized_cache_dir).resolve()), "npz")
+                assert expected_fp in output_files, f"Missing {expected_fp}"
+    [each for each in output_files if "0/30d" in str(each) and "code/count" in str(each)]
+    assert (
+        len(list_subdir_files(cfg.output_tabularized_cache_dir, "npz"))
+        == expected_num_time_tabs + expected_num_static_tabs
+    )
+
+    stderr, stdout = run_command(
+        "meds-tab-cache-task",
+        [
+            "--multirun",
+            f"tabularization.aggs={stdout_agg.strip()}",
+        ],
+        cache_config,
+        "task_specific_caching",
+    )
+
+    for model in [
+        "xgboost",
+        "knn_classifier",
+        "logistic_regression",
+        "random_forest_classifier",
+        "sgd_classifier",
+    ]:
+        model_config = {
+            **shared_config,
+            "tabularization.min_code_inclusion_count": 1,
+            "tabularization.window_sizes": "[30d,365d,full]",
+            "task_name": "test_task",
+            "output_model_dir": str(output_model_dir.resolve()),
+            "model_launcher": model,
+            "hydra.sweeper.n_trials": 1,
+        }
+        overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
+        if model == "autogluon":
+            script = "meds-tab-autogluon"
+        else:
+            script = "meds-tab-model"
+            overrides = ["--multirun"] + overrides
+
+        stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")

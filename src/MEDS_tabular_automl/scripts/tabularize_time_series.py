@@ -66,7 +66,12 @@ def main(
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
     stage_init(
-        cfg, ["input_code_metadata_fp", "input_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+        cfg,
+        [
+            "input_code_metadata_fp",
+            "input_dir",
+            "tabularization.filtered_code_metadata_fp",
+        ],
     )
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:

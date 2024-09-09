@@ -21,18 +21,13 @@ model_launcher:
     solver: "lbfgs"
     max_iter: 100
 
-  training_params:
-    epochs: 20
-    early_stopping_rounds: 5
-
   path:
     model_file_extension: .pkl
 
 hydra:
   sweeper:
     params:
-      model.C: tag(log, interval(1e-6, 1))
-      model.penalty: choice(['l1', 'l2', 'elasticnet'])
-      model.solver: choice(['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'])
-      epochs: range(10, 100)
-      early_stopping_rounds: range(1, 10)
+      model_launcher.model.C: tag(log, interval(1e-6, 1))
+      model_launcher.model.solver: choice('lbfgs', 'sag', 'saga')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)
