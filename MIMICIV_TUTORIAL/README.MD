@@ -49,7 +49,7 @@ done
 export N_PARALLEL_WORKERS=48 # Set number of workers
 export RESHARD_DIR=??? # set to directory to output reshareded meds data
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
-    ["long_los","icu_mortality"] $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
+    "long_los,icu_mortality" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
     "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
 ```
