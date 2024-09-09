@@ -1,0 +1,2 @@
+keep_data_in_memory: True
+binarize_task: True

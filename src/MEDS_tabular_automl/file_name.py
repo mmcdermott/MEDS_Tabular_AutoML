@@ -73,7 +73,7 @@ def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
 
     Examples:
         >>> cfg = DictConfig({
-        ...     "input_dir": "data",
+        ...     "path": DictConfig({"input_tabularized_cache_dir" : "data"}),
         ...     "tabularization": {
         ...         "window_sizes": ["1d", "7d"],
         ...         "aggs": ["code/count", "value/sum", "static/present"],
@@ -94,7 +94,7 @@ def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
     """
     window_sizes = cfg.tabularization.window_sizes
     aggs = cfg.tabularization.aggs
-    shard_dir = Path(cfg.input_dir) / split / shard
+    shard_dir = Path(cfg.path.input_tabularized_cache_dir) / split / shard
     # Given a shard number, returns the model files
     model_files = []
     for window_size in window_sizes:

@@ -1,39 +1,30 @@
 defaults:
-  - _self_
   - default
   - tabularization: default
-  - model: xgboost # This can be changed to sgd_classifier or any other model
-  - imputer: default
-  - normalization: default
-  - override hydra/callbacks: evaluation_callback
+  - model_launcher: xgboost
   - override hydra/sweeper: optuna
-  - override hydra/sweeper/sampler: tpe
+  - override hydra/callbacks: evaluation_callback
   - override hydra/launcher: joblib
+  - _self_
 
-task_name: task
+task_name: ???
 
-# Task cached data dir
-input_dir: ${output_cohort_dir}/${task_name}/task_cache
-# Directory with task labels
-input_label_dir: ${output_cohort_dir}/${task_name}/labels/
+# Location of task, split, and shard specific tabularized data
+input_tabularized_cache_dir: ${output_dir}/${task_name}/task_cache
+# Location of  task, split, and shard specific label data
+input_label_cache_dir: ${output_dir}/${task_name}/labels
 # Where to output the model and cached data
-model_saving:
-  model_dir: ${output_cohort_dir}/model/model_${now:%Y-%m-%d_%H-%M-%S}
-  model_file_stem: model
-  model_file_extension: .json
-  delete_below_top_k: -1
-model_logging:
-  model_log_dir: ${model_saving.model_dir}/.logs/
-  performance_log_stem: performance
-  config_log_stem: config
+output_model_dir: ???
+
+delete_below_top_k: -1
 
 name: launch_model
 
 hydra:
-  verbose: False
-  job:
-    name: MEDS_TAB_${name}_${worker}_${now:%Y-%m-%d_%H-%M-%S}
   sweep:
-    dir: ${model_log_dir}
+    dir: ${output_model_dir}/sweeps/{now:%Y-%m-%d-%H-%M-%S}/
+    subdir: "1"
   run:
-    dir: ${model_log_dir}
+    dir: ${path.model_log_dir}
+  sweeper:
+    direction: "maximize"

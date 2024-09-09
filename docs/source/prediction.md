@@ -14,7 +14,7 @@ A single XGBoost run was completed to profile time and memory usage. This was do
 
 ```console
 meds-tab-xgboost
-      MEDS_cohort_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       do_overwrite=False \
@@ -84,7 +84,7 @@ The XGBoost sweep was run using the following command for each `$TASK`:
 
 ```console
 meds-tab-xgboost --multirun \
-      MEDS_cohort_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
@@ -107,14 +107,14 @@ The hydra sweeper swept over the parameters:
 
 ```yaml
 params:
-  +model_params.model.eta: tag(log, interval(0.001, 1))
-  +model_params.model.lambda: tag(log, interval(0.001, 1))
-  +model_params.model.alpha: tag(log, interval(0.001, 1))
-  +model_params.model.subsample: interval(0.5, 1)
-  +model_params.model.min_child_weight: interval(1e-2, 100)
-  +model_params.model.max_depth: range(2, 16)
-  model_params.num_boost_round: range(100, 1000)
-  model_params.early_stopping_rounds: range(1, 10)
+  model.eta: tag(log, interval(0.001, 1))
+  model.lambda: tag(log, interval(0.001, 1))
+  model.alpha: tag(log, interval(0.001, 1))
+  model.subsample: interval(0.5, 1)
+  model.min_child_weight: interval(1e-2, 100)
+  model.max_depth: range(2, 16)
+  num_boost_round: range(100, 1000)
+  early_stopping_rounds: range(1, 10)
   tabularization.min_code_inclusion_frequency: tag(log, range(10, 1000000))
 ```
 

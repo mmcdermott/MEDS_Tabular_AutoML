@@ -9,6 +9,8 @@ T = TypeVar("T")
 
 
 class BaseModel(ABC, TimeableMixin):
+    """Defines the interface for a model that can be trained and evaluated via the launch_model script."""
+
     @abstractmethod
     def __init__(self):
         pass

@@ -15,9 +15,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "polars", "pyarrow", "loguru", "hydra-core==1.3.2", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
+  "polars==1.6.0", "pyarrow", "loguru", "hydra-core==1.3.2", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
   "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3.3", "meds-transforms==0.0.7",
 ]
+
+[tool.setuptools_scm]
 
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"

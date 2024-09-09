@@ -25,6 +25,7 @@ from ..utils import (
     hydra_loguru_init,
     load_matrix,
     load_tqdm,
+    stage_init,
     write_df,
 )
 
@@ -79,17 +80,36 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
+    stage_init(
+        cfg,
+        [
+            "input_dir",
+            "input_label_dir",
+            "input_tabularized_dir",
+            "output_dir",
+            "tabularization.filtered_code_metadata_fp",
+        ],
+    )
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
     # Produce ts representation
 
     # shuffle tasks
-    tabularization_tasks = list_subdir_files(cfg.input_dir, "npz")
+    tabularization_tasks = list_subdir_files(cfg.input_tabularized_dir, "npz")
+    if len(tabularization_tasks) == 0:
+        raise FileNotFoundError(
+            f"No tabularized data found, `input_tabularized_dir`: {cfg.input_tabularized_dir}, "
+            "is likely incorrect"
+        )
 
     np.random.shuffle(tabularization_tasks)
 
     label_dir = Path(cfg.input_label_dir)
+    if not label_dir.exists():
+        raise FileNotFoundError(
+            f"Label directory {label_dir} does not exist, please check the `input_label_dir` kwarg"
+        )
     label_df = (
         pl.scan_parquet(label_dir / "**/*.parquet")
         .rename(
@@ -108,9 +128,11 @@ def main(cfg: DictConfig):
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
         split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
-        meds_data_in_fp = Path(cfg.output_cohort_dir) / "data" / split / f"{shard_num}.parquet"
-        shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
-        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
+        meds_data_in_fp = Path(cfg.input_dir) / split / f"{shard_num}.parquet"
+        shard_label_fp = Path(cfg.output_label_cache_dir) / split / f"{shard_num}.parquet"
+        out_fp = (
+            Path(cfg.output_tabularized_cache_dir) / get_shard_prefix(cfg.input_tabularized_dir, data_fp)
+        ).with_suffix(".npz")
 
         def read_meds_data_df(meds_data_fp):
             if "numeric_value" not in pl.scan_parquet(meds_data_fp).columns:

@@ -1,4 +1,5 @@
 from pathlib import Path
+from pickle import dump
 
 import numpy as np
 import scipy.sparse as sp
@@ -62,7 +63,7 @@ class SklearnModel(BaseModel):
         """
         super().__init__()
         self.cfg = cfg
-        self.keep_data_in_memory = cfg.model_params.iterator.keep_data_in_memory
+        self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
 
         self.itrain = None
         self.ituning = None
@@ -72,7 +73,7 @@ class SklearnModel(BaseModel):
         self.dtuning = None
         self.dheld_out = None
 
-        self.model = cfg.model_params.model
+        self.model = cfg.model
         # check that self.model is a valid model
         if not hasattr(self.model, "fit"):
             raise ValueError("Model does not have a fit method.")
@@ -94,7 +95,7 @@ class SklearnModel(BaseModel):
         classes = self.itrain.get_classes()
         best_auc = 0
         best_epoch = 0
-        for epoch in range(self.cfg.model_params.epochs):
+        for epoch in range(self.cfg.training_params.epochs):
             # train on each all data
             for shard_idx in range(len(self.itrain._data_shards)):
                 data, labels = self.itrain.get_data_shards(shard_idx)
@@ -105,7 +106,7 @@ class SklearnModel(BaseModel):
             if auc > best_auc:
                 best_auc = auc
                 best_epoch = epoch
-            if epoch - best_epoch > self.cfg.model_params.early_stopping_rounds:
+            if epoch - best_epoch > self.cfg.training_params.early_stopping_rounds:
                 break
 
     def _train(self):
@@ -185,9 +186,9 @@ class SklearnModel(BaseModel):
         if not hasattr(self.model, "save_model"):
             logger.info(f"Model {self.model.__class__.__name__} does not have a save_model method.")
             logger.info("Model will be saved using pickle dump.")
-            from pickle import dump
-
-            with open(output_fp.parent / "model.pkl", "wb") as f:
+            if not str(output_fp.resolve()).endswith(".pkl"):
+                raise ValueError("Model file extension must be .pkl.")
+            with open(output_fp, "wb") as f:
                 dump(self.model, f, protocol=5)
         else:
             self.model.save_model(output_fp)

@@ -5,8 +5,8 @@ defaults:
 
 # Raw data
 # Where the code metadata is stored
-input_code_metadata_fp: ${output_cohort_dir}/metadata/codes.parquet
-input_dir: ${output_cohort_dir}/data
-output_dir: ${output_cohort_dir}/tabularize
+input_code_metadata_fp: ${output_dir}/metadata/codes.parquet
+input_dir: ${input_dir}
+output_tabularized_dir: ${output_dir}/tabularize
 
 name: tabularization
