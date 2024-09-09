@@ -57,7 +57,7 @@ def main(
 
     Args:
         cfg:
-            MEDS_cohort_dir: directory of MEDS format dataset that is ingested.
+            meds_dir: directory of MEDS format dataset that is ingested.
             tabularized_data_dir: output directory of tabularized data.
             min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
                 what features can be included in the flat representation. It can either be a float, in which

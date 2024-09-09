@@ -56,10 +56,10 @@ def make_config_mutable(cfg):
 @pytest.mark.parametrize("imputer", ["default", "mean_imputer", "mode_imputer", "median_imputer"])
 @pytest.mark.parametrize("normalization", ["standard_scaler", "max_abs_scaler"])
 def test_model_config(model_launcher_override, imputer, normalization, tmp_path):
-    MEDS_cohort_dir = "/foo/"
+    meds_dir = "/foo/"
     code_metadata_fp = f"/{str(tmp_path)}/codes.parquet"
     model_launcher_config_kwargs = {
-        "MEDS_cohort_dir": MEDS_cohort_dir,
+        "meds_dir": meds_dir,
         "tabularized_dir": "/bar/",
         "output_model_dir": "/baz/",
         "++tabularization.filtered_code_metadata_fp": code_metadata_fp,
@@ -91,4 +91,28 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
             assert isinstance(
                 model_launcher, SklearnModel
             ), "model_launcher should be an instance of SklearnModel"
+    assert cfg.tabularization.window_sizes
+
+
+def test_generate_subsets_configs():
+    meds_dir = "blah"
+    stderr, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
+    stderr, stdout_agg = run_command("generate-subsets", ["[static/present]"], {}, "generate-subsets aggs")
+    xgboost_config_kwargs = {
+        "meds_dir": meds_dir,
+        "tabularized_dir": "blah",
+        "do_overwrite": False,
+        "seed": 1,
+        "hydra.verbose": True,
+        "tqdm": False,
+        "loguru_init": True,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": f"{stdout_ws.strip()}",
+    }
+
+    with initialize(
+        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
+    ):  # path to config.yaml
+        overrides = [f"{k}={v}" for k, v in xgboost_config_kwargs.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides)  # config.yaml
     assert cfg.tabularization.window_sizes

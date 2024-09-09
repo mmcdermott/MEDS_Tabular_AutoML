@@ -454,21 +454,25 @@ def stage_init(cfg: DictConfig, keys: list[str]):
 
     Returns: The data input directory, stage output directory, and metadata input directory.
     """
-    hydra_loguru_init()
-
     logger.info(
         f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
     )
 
-    chk_kwargs = {k: cfg[k] for k in keys}
+    chk_kwargs = {k: OmegaConf.select(cfg, k) for k in keys}
 
-    def chk(x: Path):
-        return "✅" if x.exists() else "❌"
+    def chk(x: Path | None) -> str:
+        if x is None:
+            return "❌"
+        return "✅" if x.exists() and str(x) != "" else "❌"
 
-    paths_strs = [f"  - {k}: {chk(v)} {str(v.resolve())}" for k, v in chk_kwargs.items()]
+    paths_strs = [
+        f"  - {k}: {chk(Path(v) if v is not None else None)} "
+        f"{str(Path(v).resolve()) if v is not None else 'None'}"
+        for k, v in chk_kwargs.items()
+    ]
 
     logger_strs = [
-        f"Stage config:\n{OmegaConf.to_yaml(cfg.stage_cfg)}",
+        f"Stage config:\n{OmegaConf.to_yaml(cfg)}",
         "Paths: (checkbox indicates if it exists)",
     ]
     logger.debug("\n".join(logger_strs + paths_strs))

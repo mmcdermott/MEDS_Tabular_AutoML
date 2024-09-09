@@ -1,13 +1,13 @@
-MEDS_cohort_dir: ???
-output_cohort_dir: ???
+meds_dir: ???
+tabularized_dir: ???
 do_overwrite: False
 seed: 1
 tqdm: False
 worker: 0
 loguru_init: False
 
-log_dir: ${output_cohort_dir}/.logs/
-cache_dir: ${output_cohort_dir}/.cache
+log_dir: ${tabularized_dir}/.logs/
+cache_dir: ${tabularized_dir}/.cache
 
 hydra:
   verbose: False

@@ -47,13 +47,17 @@ class TabularDataset(TimeableMixin):
             split: The data split to use, which can be one of "train", "tuning",
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
-        super().__init__(cache_prefix=Path(cfg.cache_dir))
+        super().__init__(cache_prefix=Path(cfg.path.cache_dir))
         self.cfg = cfg
         self.split = split
         # Load shards for this split
         self._data_shards = sorted(
-            [shard.stem for shard in list_subdir_files(Path(cfg.input_label_dir) / split, "parquet")]
+            [shard.stem for shard in list_subdir_files(Path(cfg.path.input_label_dir) / split, "parquet")]
         )
+        if len(self._data_shards) == 0:
+            raise ValueError(
+                f"No labels found in the `input_label_dir` {str(Path(cfg.path.input_label_dir).resolve())}"
+            )
         self.valid_event_ids, self.labels = None, None
 
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()

@@ -9,18 +9,12 @@ defaults:
 
 task_name: ???
 
-# Directory of meds data
-MEDS_cohort_dir: ???
-# directory of tabularized data
-tabularized_dir: ???
-# Task cached data dir
-input_dir: ${tabularized_dir}/${task_name}/task_cache
-# Directory with task labels
-input_label_dir: ???
+# Location of task, split, and shard specific tabularized data
+input_tabularized_cache_dir: ${tabularized_dir}/${task_name}/task_cache
+# Location of  task, split, and shard specific label data
+input_label_cache_dir: ${tabularized_dir}/${task_name}/labels
 # Where to output the model and cached data
 output_model_dir: ???
-
-output_cohort_dir: ${tabularized_dir}
 
 delete_below_top_k: -1
 

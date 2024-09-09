@@ -31,23 +31,22 @@ def main(cfg: DictConfig) -> float:
     if not cfg.loguru_init:
         hydra_loguru_init()
 
-    model: BaseModel = hydra.utils.instantiate(cfg.model_target)
+    model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
 
-    model.train()
-    auc = model.evaluate()
+    model_launcher.train()
+    auc = model_launcher.evaluate()
 
     # save model
-    output_fp = Path(cfg.model_saving.model_dir)
-    output_fp = (
-        output_fp.parent
-        / f"{cfg.model_saving.model_file_stem}_{auc:.4f}_{time.time()}{cfg.model_target.model_file_extension}"
-    )
-    output_fp.parent.mkdir(parents=True, exist_ok=True)
+    output_model_dir = Path(cfg.output_model_dir)
+    path_cfg = model_launcher.cfg.path
+    model_filename = f"{path_cfg.model_file_stem}_{auc:.4f}_{time.time()}{path_cfg.model_file_extension}"
+    output_fp = output_model_dir / model_filename
+    output_model_dir.parent.mkdir(parents=True, exist_ok=True)
 
     # log to logfile
-    log_to_logfile(model, cfg, output_fp.stem)
+    log_to_logfile(model_launcher, cfg, output_fp.stem)
 
-    model.save_model(output_fp)
+    model_launcher.save_model(output_fp)
     return auc
 
 

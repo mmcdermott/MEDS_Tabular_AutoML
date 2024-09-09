@@ -2,8 +2,8 @@ defaults:
   - default
   - _self_
 
-input_dir: ${MEDS_cohort_dir}/data
+input_dir: ${meds_dir}
 # Where to store output code frequency data
-output_filepath: ${output_cohort_dir}/metadata/codes.parquet
+output_filepath: ${tabularized_dir}/metadata/codes.parquet
 
 name: describe_codes

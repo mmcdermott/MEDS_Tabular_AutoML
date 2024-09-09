@@ -32,7 +32,7 @@ def main(cfg: DictConfig):
         cfg: The configuration object for the tabularization process, loaded from a Hydra
             YAML configuration file.
     """
-    stage_init(cfg, ["input_dir", "output_filepath"])
+    stage_init(cfg, ["input_dir", "meds_dir"])
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

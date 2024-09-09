@@ -43,12 +43,12 @@ def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test
 
 def test_integration(tmp_path):
     # Step 0: Setup Environment
-    MEDS_cohort_dir = Path(tmp_path) / "MEDS_cohort_dir"
-    output_cohort_dir = Path(tmp_path) / "output_cohort_dir"
+    meds_dir = Path(tmp_path) / "meds_dir"
+    tabularized_dir = Path(tmp_path) / "tabularized_dir"
 
     shared_config = {
-        "MEDS_cohort_dir": str(MEDS_cohort_dir.resolve()),
-        "output_cohort_dir": str(output_cohort_dir.resolve()),
+        "meds_dir": str(meds_dir.resolve()),
+        "tabularized_dir": str(tabularized_dir.resolve()),
         "do_overwrite": False,
         "seed": 1,
         "hydra.verbose": True,
@@ -65,12 +65,12 @@ def test_integration(tmp_path):
         cfg = compose(config_name="describe_codes", overrides=overrides)  # config.yaml
 
     # Create the directories
-    (output_cohort_dir / "data").mkdir(parents=True, exist_ok=True)
+    (tabularized_dir).mkdir(parents=True, exist_ok=True)
 
     # Store MEDS outputs
     all_data = []
     for split, data in MEDS_OUTPUTS.items():
-        file_path = output_cohort_dir / "data" / f"{split}.parquet"
+        file_path = tabularized_dir / f"{split}.parquet"
         file_path.parent.mkdir(exist_ok=True)
         df = pl.read_csv(StringIO(data)).with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f"))
         df.write_parquet(file_path)
@@ -86,7 +86,7 @@ def test_integration(tmp_path):
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
-    splits_fp = output_cohort_dir / ".shards.json"
+    splits_fp = tabularized_dir / ".shards.json"
     json.dump(split_json, splits_fp.open("w"))
 
     # Step 1: Run the describe_codes script
