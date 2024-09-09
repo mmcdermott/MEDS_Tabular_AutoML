@@ -9,16 +9,6 @@ from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
-from test_tabularize import (
-    CODE_COLS,
-    EXPECTED_STATIC_FILES,
-    MEDS_OUTPUTS,
-    NUM_SHARDS,
-    SPLITS_JSON,
-    STATIC_FIRST_COLS,
-    STATIC_PRESENT_COLS,
-    VALUE_COLS,
-)
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -29,6 +19,16 @@ from MEDS_tabular_automl.utils import (
     get_shard_prefix,
     get_unique_time_events_df,
     load_matrix,
+)
+from tests.test_tabularize import (
+    CODE_COLS,
+    EXPECTED_STATIC_FILES,
+    MEDS_OUTPUTS,
+    NUM_SHARDS,
+    SPLITS_JSON,
+    STATIC_FIRST_COLS,
+    STATIC_PRESENT_COLS,
+    VALUE_COLS,
 )
 
 

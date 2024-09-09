@@ -10,7 +10,6 @@ from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
-from loguru import logger
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -29,8 +28,6 @@ from MEDS_tabular_automl.utils import (
     get_unique_time_events_df,
     load_matrix,
 )
-
-logger.disable("MEDS_tabular_automl")
 
 SPLITS_JSON = """{"train/0": [239684, 1195293], "train/1": [68729, 814703], "tuning/0": [754281], "held_out/0": [1500733]}"""  # noqa: E501
 NUM_SHARDS = 4

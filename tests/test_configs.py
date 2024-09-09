@@ -2,44 +2,16 @@ import rootutils
 
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
-import subprocess
 
 import hydra
 import polars as pl
 import pytest
 from hydra import compose, initialize
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig
 
 from MEDS_tabular_automl.sklearn_model import SklearnModel
 from MEDS_tabular_automl.xgboost_model import XGBoostModel
-
-
-def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
-    command_parts = [script] + args + [f"{k}={v}" for k, v in hydra_kwargs.items()]
-    command_out = subprocess.run(" ".join(command_parts), shell=True, capture_output=True)
-    stderr = command_out.stderr.decode()
-    stdout = command_out.stdout.decode()
-    if command_out.returncode != 0:
-        raise AssertionError(f"{test_name} failed!\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    return stderr, stdout
-
-
-def make_config_mutable(cfg):
-    if OmegaConf.is_config(cfg):
-        OmegaConf.set_readonly(cfg, False)
-        for key in cfg.keys():
-            print(key)
-            # try:
-            cfg[key] = make_config_mutable(cfg[key])
-            # except:
-            #     import pdb; pdb.set_trace()
-        return cfg
-    # elif isinstance(cfg, list):
-    #     return [make_config_mutable(item) for item in cfg]
-    # elif isinstance(cfg, dict):
-    #     return {key: make_config_mutable(value) for key, value in cfg.items()}
-    else:
-        return cfg
+from tests.test_integration import run_command
 
 
 @pytest.mark.parametrize(
