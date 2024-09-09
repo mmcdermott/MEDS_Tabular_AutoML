@@ -275,7 +275,7 @@ def test_tabularize(tmp_path):
             f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
         )
     output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):

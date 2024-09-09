@@ -12,7 +12,7 @@ try:
 except ImportError:
     ag = None
 
-from MEDS_tabular_automl.dense_iterator import DenseIterator
+from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
 from ..utils import hydra_loguru_init, stage_init
 
