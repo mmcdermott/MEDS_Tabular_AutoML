@@ -14,7 +14,7 @@ class EvaluationCallback(Callback):
         try:
             performance = pl.read_csv(log_fp / f"*/*{config.model_logging.performance_log_stem}.log")
         except Exception as e:
-            raise FileNotFoundError(f"Log files incomplete or not found at {log_fp}, exception {e}.")
+            raise FileNotFoundError(f"Log files incomplete or not found at {log_fp}") from e
 
         performance = performance.sort("tuning_auc", descending=True, nulls_last=True)
         logger.info(f"\nPerformance of the top 10 models:\n{performance.head(10)}")
