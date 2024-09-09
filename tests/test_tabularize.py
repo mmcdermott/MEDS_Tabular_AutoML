@@ -2,13 +2,14 @@ import rootutils
 
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
+import importlib
 import json
+import shutil
 from io import StringIO
 from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
-from hydra.core.hydra_config import HydraConfig
 from loguru import logger
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
@@ -147,14 +148,14 @@ EXPECTED_STATIC_FILES = [
 
 
 def test_tabularize(tmp_path):
-    meds_dir = Path(tmp_path) / "meds_dir"
-    tabularized_dir = Path(tmp_path) / "tabularized_dir"
+    input_dir = Path(tmp_path) / "input_dir"
+    output_dir = Path(tmp_path) / "output_dir"
     input_label_dir = Path(tmp_path) / "label_dir"
     output_model_dir = Path(tmp_path) / "output_model_dir"
 
     shared_config = {
-        "meds_dir": str(meds_dir.resolve()),
-        "tabularized_dir": str(tabularized_dir.resolve()),
+        "input_dir": str(input_dir.resolve()),
+        "output_dir": str(output_dir.resolve()),
         "do_overwrite": False,
         "seed": 1,
         "hydra.verbose": True,
@@ -164,19 +165,17 @@ def test_tabularize(tmp_path):
 
     describe_codes_config = {**shared_config}
 
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in describe_codes_config.items()]
-        cfg = compose(config_name="describe_codes", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="describe_codes", overrides=overrides)
 
     # Create the directories
-    (tabularized_dir).mkdir(parents=True, exist_ok=True)
+    (output_dir).mkdir(parents=True, exist_ok=True)
 
     # Store MEDS outputs
     all_data = []
     for split, data in MEDS_OUTPUTS.items():
-        file_path = meds_dir / f"{split}.parquet"
+        file_path = input_dir / f"{split}.parquet"
         file_path.parent.mkdir(exist_ok=True, parents=True)
         df = pl.read_csv(StringIO(data)).with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f"))
         df.write_parquet(file_path)
@@ -193,7 +192,7 @@ def test_tabularize(tmp_path):
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
-    splits_fp = meds_dir / ".shards.json"
+    splits_fp = input_dir / ".shards.json"
     json.dump(split_json, splits_fp.open("w"))
     # Step 1: Describe Codes - compute code frequencies
     describe_codes.main(cfg)
@@ -214,14 +213,12 @@ def test_tabularize(tmp_path):
         "tabularization.window_sizes": "[30d,365d,full]",
     }
 
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in tabularize_static_config.items()]
-        cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="tabularization", overrides=overrides)
     tabularize_static.main(cfg)
 
-    output_dir = Path(cfg.tabularized_dir) / "tabularize"
+    output_dir = Path(cfg.output_dir) / "tabularize"
 
     output_files = list(output_dir.glob("**/static/**/*.npz"))
     actual_files = [get_shard_prefix(output_dir, each) + ".npz" for each in output_files]
@@ -280,16 +277,16 @@ def test_tabularize(tmp_path):
         assert ts_matrix.shape[0] == expected_num_rows, (
             f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
         )
-    output_files = list_subdir_files(str(output_dir.resolve()), "npz")
+    output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
     for split in split_json.keys():
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
                     if window != cfg.tabularization.window_sizes[0]:
                         continue
-                    expected_fp = Path(cfg.output_dir) / split / "none" / f"{agg}.npz"
+                    expected_fp = Path(cfg.output_tabularized_dir) / split / "none" / f"{agg}.npz"
                 else:
-                    expected_fp = Path(cfg.output_dir) / split / window / f"{agg}.npz"
+                    expected_fp = Path(cfg.output_tabularized_dir) / split / window / f"{agg}.npz"
                 assert expected_fp in output_files, f"Missing {expected_fp}"
     expected_num_time_tabs = (
         NUM_SHARDS * len(cfg.tabularization.window_sizes) * (len(cfg.tabularization.aggs) - 2)
@@ -303,15 +300,12 @@ def test_tabularize(tmp_path):
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
         "task_name": "test_task",
-        "tabularized_dir": str(tabularized_dir.resolve()),
         "input_label_dir": str(input_label_dir.resolve()),
     }
 
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in cache_config.items()]
-        cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="task_specific_caching", overrides=overrides)
 
     # Create fake labels
     df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
@@ -330,102 +324,98 @@ def test_tabularize(tmp_path):
                 if agg.startswith("static"):
                     if window != cfg.tabularization.window_sizes[0]:
                         continue
-                    expected_fp = Path(cfg.output_dir) / split / "none" / f"{agg}.npz"
+                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / "none" / f"{agg}.npz"
                 else:
-                    expected_fp = Path(cfg.output_dir) / split / window / f"{agg}.npz"
-                output_files = list_subdir_files(str(Path(cfg.output_dir).resolve()), "npz")
+                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / window / f"{agg}.npz"
+                output_files = list_subdir_files(str(Path(cfg.output_tabularized_cache_dir).resolve()), "npz")
                 assert expected_fp in output_files, f"Missing {expected_fp}"
     [each for each in output_files if "0/30d" in str(each) and "code/count" in str(each)]
-    assert len(list_subdir_files(cfg.output_dir, "npz")) == expected_num_time_tabs + expected_num_static_tabs
+    assert (
+        len(list_subdir_files(cfg.output_tabularized_cache_dir, "npz"))
+        == expected_num_time_tabs + expected_num_static_tabs
+    )
 
     xgboost_config = {
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
         "task_name": "test_task",
-        "tabularized_dir": str(tabularized_dir.resolve()),
-        "input_label_dir": str(input_label_dir.resolve()),
         "output_model_dir": str(output_model_dir.resolve()),
     }
 
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in xgboost_config.items()]
-        cfg = compose(
-            config_name="launch_model", overrides=overrides, return_hydra_config=True
-        )  # config.yaml
+        cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
 
-    output_dir = Path(cfg.tabularized_dir) / "model"
-
-    HydraConfig().set_config(cfg)
     launch_model.main(cfg)
-    output_files = list(output_dir.glob("**/*.json"))
+
+    expected_output_dir = Path(cfg.output_model_dir)
+    output_files = list(expected_output_dir.glob("**/*.json"))
     assert len(output_files) == 2
+    shutil.rmtree(expected_output_dir)
 
-    # sklearnmodel_config = {
-    #     **shared_config,
-    #     "tabularization.min_code_inclusion_count": 1,
-    #     "tabularization.window_sizes": "[30d,365d,full]",
-    #     "task_name": "test_task",
-    # }
+    sklearnmodel_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "output_model_dir": str(output_model_dir.resolve()),
+    }
 
-    # with initialize(
-    #     version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    # ):  # path to config.yaml
-    #     overrides = ["model_launcher=sgd_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
-    #     cfg = compose(config_name="launch_model", overrides=overrides)  # config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=sgd_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides)
 
-    # output_dir = Path(cfg.tabularized_dir) / "model"
+    launch_model.main(cfg)
 
-    # launch_model.main(cfg)
-    # output_files = list(output_dir.glob("**/*.pkl"))
-    # assert len(output_files) == 1
+    expected_output_dir = Path(cfg.output_model_dir)
+    output_files = list(expected_output_dir.glob("**/*.pkl"))
+    assert len(output_files) == 1
+    shutil.rmtree(expected_output_dir)
 
-    # sklearnmodel_config = {
-    #     **shared_config,
-    #     "tabularization.min_code_inclusion_count": 1,
-    #     "tabularization.window_sizes": "[30d,365d,full]",
-    #     "model_params.iterator.keep_data_in_memory": False,
-    #     "model_saving.model_dir": "${tabularized_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
-    #     "task_name": "test_task",
-    # }
+    sklearnmodel_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "data_loading_params.keep_data_in_memory": False,
+        "task_name": "test_task",
+        "output_model_dir": str(output_model_dir.resolve()),
+    }
 
-    # with initialize(
-    #     version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    # ):  # path to config.yaml
-    #     overrides = ["model_launcher=sgd_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
-    #     cfg = compose(config_name="launch_model", overrides=overrides)  # config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=sgd_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides)
+        assert not cfg.data_loading_params.keep_data_in_memory
+        assert cfg.model_launcher.data_loading_params.binarize_task
 
-    # output_dir = Path(cfg.tabularized_dir) / "model_online"
+    output_dir = Path(cfg.output_dir) / "model_online"
 
-    # launch_model.main(cfg)
-    # output_files = list(output_dir.glob("**/*.pkl"))
-    # assert len(output_files) == 1
+    launch_model.main(cfg)
 
-    # if importlib.util.find_spec("autogluon") is not None:
-    #     import autogluon as ag
+    expected_output_dir = Path(cfg.output_model_dir)
+    output_files = list(expected_output_dir.glob("**/*.pkl"))
+    assert len(output_files) == 1
+    shutil.rmtree(expected_output_dir)
 
-    #     from MEDS_tabular_automl.scripts import launch_autogluon
+    if importlib.util.find_spec("autogluon") is not None:
+        import autogluon as ag
 
-    #     autogluon_config = {
-    #         **shared_config,
-    #         "tabularization.min_code_inclusion_count": 1,
-    #         "tabularization.window_sizes": "[30d,365d,full]",
-    #         "model_params.iterator.keep_data_in_memory": False,
-    #         "model_saving.model_dir": "${tabularized_dir}/model_online/model_${now:%Y-%m-%d_%H-%M-%S}",
-    #         "task_name": "test_task",
-    #     }
+        from MEDS_tabular_automl.scripts import launch_autogluon
 
-    #     with initialize(
-    #         version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    #     ):  # path to config.yaml
-    #         overrides = [f"{k}={v}" for k, v in autogluon_config.items()]
-    #         cfg = compose(config_name="launch_autogluon", overrides=overrides)  # config.yaml
+        autogluon_config = {
+            **shared_config,
+            "tabularization.min_code_inclusion_count": 1,
+            "tabularization.window_sizes": "[30d,365d,full]",
+            "task_name": "test_task",
+            "output_model_dir": str(output_model_dir.resolve()),
+        }
 
-    #     output_dir = Path(cfg.tabularized_dir) / "model_online"
+        with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+            overrides = ["model_launcher=autogluon"] + [f"{k}={v}" for k, v in autogluon_config.items()]
+            cfg = compose(config_name="launch_model", overrides=overrides)
 
-    #     launch_autogluon.main(cfg)
-    #     output_files = list(output_dir.glob("*"))
-    #     most_recent_file = max(output_files, key=os.path.getmtime)
-    #     ag.tabular.TabularPredictor.load(most_recent_file)
+        launch_autogluon.main(cfg)
+
+        expected_output_filepath = Path(cfg.output_model_dir) / "predictor.pkl"
+        assert expected_output_filepath.is_file()
+        ag.tabular.TabularPredictor.load(cfg.output_model_dir)

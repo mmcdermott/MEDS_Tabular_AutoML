@@ -10,9 +10,9 @@ defaults:
 task_name: ???
 
 # Location of task, split, and shard specific tabularized data
-input_tabularized_cache_dir: ${tabularized_dir}/${task_name}/task_cache
+input_tabularized_cache_dir: ${output_dir}/${task_name}/task_cache
 # Location of  task, split, and shard specific label data
-input_label_cache_dir: ${tabularized_dir}/${task_name}/labels
+input_label_cache_dir: ${output_dir}/${task_name}/labels
 # Where to output the model and cached data
 output_model_dir: ???
 

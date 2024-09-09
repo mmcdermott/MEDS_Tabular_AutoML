@@ -1,10 +1,11 @@
+import json
 from importlib.resources import files
 from pathlib import Path
 
 import hydra
 import pandas as pd
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 try:
     import autogluon.tabular as ag
@@ -15,7 +16,7 @@ from MEDS_tabular_automl.dense_iterator import DenseIterator
 
 from ..utils import hydra_loguru_init, stage_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_autogluon.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
 
@@ -36,7 +37,7 @@ def main(cfg: DictConfig) -> float:
     """
     check_autogluon()
     stage_init(
-        cfg, ["input_dir", "input_label_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
     )
     if not cfg.loguru_init:
         hydra_loguru_init()
@@ -66,8 +67,13 @@ def main(cfg: DictConfig) -> float:
     held_out_dataset = ag.TabularDataset(held_out_df)
 
     # train model with AutoGluon
+    log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.config_log_stem}_log.txt"
+
     predictor = ag.TabularPredictor(
-        label=cfg.task_name, log_to_file=True, log_file_path=cfg.log_filepath, path=cfg.output_filepath
+        label=cfg.task_name,
+        log_to_file=True,
+        log_file_path=str(log_filepath.resolve()),
+        path=cfg.output_model_dir,
     ).fit(train_data=train_dataset, tuning_data=tuning_dataset)
 
     # predict
@@ -77,12 +83,17 @@ def main(cfg: DictConfig) -> float:
     score = predictor.evaluate(held_out_dataset)
     logger.info("Test score:", score)
 
-    log_fp = Path(cfg.model_log_dir)
-    log_fp.mkdir(parents=True, exist_ok=True)
-    # log hyperparameters
-    out_fp = log_fp / "trial_performance_results.log"
-    with open(out_fp, "w") as f:
-        f.write(f"{cfg.output_filepath}\t{cfg.tabularization}\t{cfg.model_params}\t{None}\t{score}\n")
+    model_performance_log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.performance_log_stem}.json"
+    model_performance_log_filepath.parent.mkdir(parents=True, exist_ok=True)
+    # store results
+    performance_dict = {
+        "output_model_dir": cfg.path.output_model_dir,
+        "tabularization": OmegaConf.to_container(cfg.tabularization),
+        "model_launcher": OmegaConf.to_container(cfg.model_launcher),
+        "score": score,
+    }
+    with open(model_performance_log_filepath, "w") as f:
+        json.dump(performance_dict, f)
 
 
 if __name__ == "__main__":

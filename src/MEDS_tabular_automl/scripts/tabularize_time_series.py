@@ -87,7 +87,7 @@ def main(
     # iterate through them
     for shard_fp, window_size, agg in iter_wrapper(tabularization_tasks):
         out_fp = (
-            Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / window_size / agg
+            Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / window_size / agg
         ).with_suffix(".npz")
 
         def read_fn(in_fp):

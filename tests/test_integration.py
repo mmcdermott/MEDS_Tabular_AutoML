@@ -43,12 +43,12 @@ def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test
 
 def test_integration(tmp_path):
     # Step 0: Setup Environment
-    meds_dir = Path(tmp_path) / "meds_dir"
-    tabularized_dir = Path(tmp_path) / "tabularized_dir"
+    input_dir = Path(tmp_path) / "input_dir"
+    output_dir = Path(tmp_path) / "output_dir"
 
     shared_config = {
-        "meds_dir": str(meds_dir.resolve()),
-        "tabularized_dir": str(tabularized_dir.resolve()),
+        "input_dir": str(input_dir.resolve()),
+        "output_dir": str(output_dir.resolve()),
         "do_overwrite": False,
         "seed": 1,
         "hydra.verbose": True,
@@ -58,19 +58,17 @@ def test_integration(tmp_path):
 
     describe_codes_config = {**shared_config}
 
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in describe_codes_config.items()]
-        cfg = compose(config_name="describe_codes", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="describe_codes", overrides=overrides)
 
     # Create the directories
-    (tabularized_dir).mkdir(parents=True, exist_ok=True)
+    (output_dir).mkdir(parents=True, exist_ok=True)
 
     # Store MEDS outputs
     all_data = []
     for split, data in MEDS_OUTPUTS.items():
-        file_path = tabularized_dir / f"{split}.parquet"
+        file_path = output_dir / f"{split}.parquet"
         file_path.parent.mkdir(exist_ok=True)
         df = pl.read_csv(StringIO(data)).with_columns(pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f"))
         df.write_parquet(file_path)
@@ -86,7 +84,7 @@ def test_integration(tmp_path):
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
-    splits_fp = tabularized_dir / ".shards.json"
+    splits_fp = output_dir / ".shards.json"
     json.dump(split_json, splits_fp.open("w"))
 
     # Step 1: Run the describe_codes script
@@ -117,11 +115,9 @@ def test_integration(tmp_path):
         tabularize_config,
         "tabularization",
     )
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in tabularize_config.items()]
-        cfg = compose(config_name="tabularization", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="tabularization", overrides=overrides)
 
     output_files = list(Path(cfg.output_dir).glob("**/static/**/*.npz"))
     actual_files = [get_shard_prefix(Path(cfg.output_dir), each) + ".npz" for each in output_files]
@@ -200,11 +196,9 @@ def test_integration(tmp_path):
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
     }
-    with initialize(
-        version_base=None, config_path="../src/MEDS_tabular_automl/configs/"
-    ):  # path to config.yaml
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         overrides = [f"{k}={v}" for k, v in cache_config.items()]
-        cfg = compose(config_name="task_specific_caching", overrides=overrides)  # config.yaml
+        cfg = compose(config_name="task_specific_caching", overrides=overrides)
 
     df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
     pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])

@@ -86,7 +86,8 @@ def main(cfg: DictConfig):
             "input_dir",
             "input_label_dir",
             "output_dir",
-            "output_label_dir",
+            "output_tabularized_cache_dir",
+            "output_label_cache_dir",
             "tabularization.filtered_code_metadata_fp",
         ],
     )
@@ -99,7 +100,8 @@ def main(cfg: DictConfig):
     tabularization_tasks = list_subdir_files(cfg.input_tabularized_dir, "npz")
     if len(tabularization_tasks) == 0:
         raise FileNotFoundError(
-            f"No tabularized data found, `tabularized_dir`: {cfg.input_tabularized_dir}, is likely incorrect"
+            f"No tabularized data found, `input_tabularized_dir`: {cfg.input_tabularized_dir}, "
+            "is likely incorrect"
         )
 
     np.random.shuffle(tabularization_tasks)
@@ -127,11 +129,11 @@ def main(cfg: DictConfig):
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
         split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
-        meds_data_in_fp = Path(cfg.meds_dir) / split / f"{shard_num}.parquet"
-        shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
-        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_tabularized_dir, data_fp)).with_suffix(
-            ".npz"
-        )
+        meds_data_in_fp = Path(cfg.input_dir) / split / f"{shard_num}.parquet"
+        shard_label_fp = Path(cfg.output_label_cache_dir) / split / f"{shard_num}.parquet"
+        out_fp = (
+            Path(cfg.output_tabularized_cache_dir) / get_shard_prefix(cfg.input_tabularized_dir, data_fp)
+        ).with_suffix(".npz")
 
         def read_meds_data_df(meds_data_fp):
             if "numeric_value" not in pl.scan_parquet(meds_data_fp).columns:

@@ -84,12 +84,12 @@ By following these steps, you can seamlessly transform your dataset, define nece
 
    ```console
    # Re-shard pipeline
-   # $MIMICIV_MEDS_DIR is the directory containing the input, MEDS v0.3 formatted MIMIC-IV data
+   # $MIMICIV_input_dir is the directory containing the input, MEDS v0.3 formatted MIMIC-IV data
    # $MEDS_TAB_COHORT_DIR is the directory where the re-sharded MEDS dataset will be stored, and where your model
    # will store cached files during processing by default.
    # $N_PATIENTS_PER_SHARD is the number of patients per shard you want to use.
    MEDS_transform-reshard_to_split \
-       input_dir="$MIMICIV_MEDS_DIR" \
+       input_dir="$MIMICIV_input_dir" \
        cohort_dir="$MEDS_TAB_COHORT_DIR" \
        'stages=["reshard_to_split"]' \
        stage="reshard_to_split" \
@@ -103,14 +103,14 @@ By following these steps, you can seamlessly transform your dataset, define nece
    - static codes (codes without timestamps)
    - static numerical codes (codes without timestamps but with numerical values).
 
-   This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `meds_dir` argument specified as a hydra-style command line argument.
+   This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `input_dir` argument specified as a hydra-style command line argument.
 
 2. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the frequency of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
 
    **Example: Tabularizing static data** with the minimum code frequency of 10, window sizes of `[1d, 30d,  365d, full]`, and value aggregation methods of `[static/present, static/first, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
 
    ```console
-   meds-tab-tabularize-static meds_dir="path_to_data" \
+   meds-tab-tabularize-static input_dir="path_to_data" \
                                tabularization.min_code_inclusion_frequency=10 \
                                tabularization.window_sizes=[1d,30d,365d,full] \
                                do_overwrite=False \
@@ -127,19 +127,19 @@ By following these steps, you can seamlessly transform your dataset, define nece
    meds-tab-tabularize-time-series --multirun \
       worker="range(0,$N_PARALLEL_WORKERS)" \
       hydra/launcher=joblib \
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       tabularization.min_code_inclusion_frequency=10 \
       do_overwrite=False \
       tabularization.window_sizes=[1d,30d,365d,full] \
       tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
-4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `meds_dir`.
+4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
 
    **Example: Align tabularized data** for a specific task `$TASK` and labels that has pulled from [ACES](https://github.com/justin13601/ACES)
 
    ```console
-   meds-tab-cache-task meds_dir="path_to_data" \
+   meds-tab-cache-task input_dir="path_to_data" \
       task_name=$TASK \
       tabularization.min_code_inclusion_frequency=10 \
       do_overwrite=False \
@@ -151,7 +151,7 @@ By following these steps, you can seamlessly transform your dataset, define nece
 
    ```console
    meds-tab-xgboost --multirun \
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.min_code_inclusion_frequency=10 \
@@ -436,7 +436,7 @@ A single XGBoost run was completed to profile time and memory usage. This was do
 
 ```console
 meds-tab-xgboost
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       do_overwrite=False \
@@ -506,7 +506,7 @@ The XGBoost sweep was run using the following command for each `$TASK`:
 
 ```console
 meds-tab-xgboost --multirun \
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.window_sizes=$(generate-subsets [1d,30d,365d,full]) \

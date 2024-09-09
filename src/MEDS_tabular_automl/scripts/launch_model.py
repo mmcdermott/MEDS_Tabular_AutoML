@@ -25,7 +25,7 @@ def main(cfg: DictConfig) -> float:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
     stage_init(
-        cfg, ["input_dir", "input_label_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
     )
 
     if not cfg.loguru_init:

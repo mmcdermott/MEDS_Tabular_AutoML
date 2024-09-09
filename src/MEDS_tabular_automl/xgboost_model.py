@@ -130,13 +130,11 @@ class XGBoostModel(BaseModel):
 
     def _train(self):
         """Trains the model."""
-        self.model = self.cfg.model
-        self.model = self.model.train(
+        self.model = xgb.train(
             OmegaConf.to_container(self.cfg.model),
             self.dtrain,
             num_boost_round=self.cfg.training_params.num_boost_round,
             early_stopping_rounds=self.cfg.training_params.early_stopping_rounds,
-            # nthreads=self.cfg.nthreads,
             evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
             verbose_eval=0,
         )

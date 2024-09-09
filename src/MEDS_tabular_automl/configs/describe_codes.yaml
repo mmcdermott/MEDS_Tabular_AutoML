@@ -2,8 +2,7 @@ defaults:
   - default
   - _self_
 
-input_dir: ${meds_dir}
 # Where to store output code frequency data
-output_filepath: ${tabularized_dir}/metadata/codes.parquet
+output_filepath: ${output_dir}/metadata/codes.parquet
 
 name: describe_codes

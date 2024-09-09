@@ -52,11 +52,15 @@ class TabularDataset(TimeableMixin):
         self.split = split
         # Load shards for this split
         self._data_shards = sorted(
-            [shard.stem for shard in list_subdir_files(Path(cfg.path.input_label_dir) / split, "parquet")]
+            [
+                shard.stem
+                for shard in list_subdir_files(Path(cfg.path.input_label_cache_dir) / split, "parquet")
+            ]
         )
         if len(self._data_shards) == 0:
             raise ValueError(
-                f"No labels found in the `input_label_dir` {str(Path(cfg.path.input_label_dir).resolve())}"
+                "No labels found in the `input_label_cache_dir` "
+                + str(Path(cfg.path.input_label_cache_dir).resolve())
             )
         self.valid_event_ids, self.labels = None, None
 
@@ -118,7 +122,7 @@ class TabularDataset(TimeableMixin):
             to lists of corresponding labels.
         """
         label_fps = {
-            shard: (Path(self.cfg.input_label_dir) / self.split / shard).with_suffix(".parquet")
+            shard: (Path(self.cfg.path.input_label_cache_dir) / self.split / shard).with_suffix(".parquet")
             for shard in self._data_shards
             for shard in self._data_shards
         }

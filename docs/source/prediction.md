@@ -14,7 +14,7 @@ A single XGBoost run was completed to profile time and memory usage. This was do
 
 ```console
 meds-tab-xgboost
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       do_overwrite=False \
@@ -84,7 +84,7 @@ The XGBoost sweep was run using the following command for each `$TASK`:
 
 ```console
 meds-tab-xgboost --multirun \
-      meds_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \

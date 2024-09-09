@@ -1,5 +1,5 @@
 # User inputs
-filtered_code_metadata_fp: ${tabularized_dir}/metadata/codes.parquet
+filtered_code_metadata_fp: ${output_dir}/metadata/codes.parquet
 allowed_codes: null
 min_code_inclusion_count: 10
 min_code_inclusion_frequency: null
