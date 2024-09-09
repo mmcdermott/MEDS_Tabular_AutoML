@@ -136,7 +136,7 @@ By following these steps, you can seamlessly transform your dataset, define nece
 
 4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
 
-   **Example: Align tabularized data** for a specific task `$TASK` and labels that has pulled from [ACES](https://github.com/justin13601/ACES)
+   **Example: Align tabularized data** for a specific task `$TASK` and labels that have been pulled from [ACES](https://github.com/justin13601/ACES)
 
    ```console
    meds-tab-cache-task input_dir="path_to_data" \
