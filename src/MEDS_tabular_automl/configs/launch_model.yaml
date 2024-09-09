@@ -26,3 +26,5 @@ hydra:
     subdir: "1"
   run:
     dir: ${path.model_log_dir}
+  sweeper:
+    direction: "maximize"

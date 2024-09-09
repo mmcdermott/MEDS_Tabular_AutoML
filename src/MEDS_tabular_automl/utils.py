@@ -49,9 +49,14 @@ def filter_to_codes(
     """Filters and returns codes based on allowed list and minimum frequency.
 
     Args:
-        allowed_codes: List of allowed codes, None means all codes are allowed.
-        min_code_inclusion_count: Minimum frequency a code must have to be included.
         code_metadata_fp: Path to the metadata file containing code information.
+        allowed_codes: List of allowed codes, None means all codes are allowed.
+        min_code_inclusion_count: Minimum count a code must have to be included.
+        min_code_inclusion_frequency: The minimum frequency a code must have,
+            normalized by dividing its count by the total number of observations
+            across all codes in the dataset, to be included.
+        max_include_codes: Maximum number of codes to include (selecting the most
+            prevelent codes).
 
     Returns:
         Sorted list of the intersection of allowed codes (if they are specified) and filters based on
@@ -63,6 +68,14 @@ def filter_to_codes(
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, .35, None)
+        ['E']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, None, 1)
+        ['E']
         >>> with NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
@@ -77,7 +90,10 @@ def filter_to_codes(
         feature_freqs = feature_freqs.filter(pl.col("code").is_in(allowed_codes))
 
     if min_code_inclusion_frequency is not None:
-        pass
+        if min_code_inclusion_frequency < 0 or min_code_inclusion_frequency > 1:
+            raise ValueError("min_code_inclusion_frequency must be between 0 and 1.")
+        dataset_size = feature_freqs["count"].sum()
+        feature_freqs = feature_freqs.filter((pl.col("count") / dataset_size) >= min_code_inclusion_frequency)
 
     if min_code_inclusion_count is not None:
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)

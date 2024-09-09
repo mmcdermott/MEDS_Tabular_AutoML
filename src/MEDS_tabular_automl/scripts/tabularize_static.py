@@ -59,7 +59,7 @@ def main(
         cfg:
             input_dir: directory of MEDS format dataset that is ingested.
             tabularized_data_dir: output directory of tabularized data.
-            min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
+            min_code_inclusion_count: The base feature inclusion count that should be used to dictate
                 what features can be included in the flat representation. It can either be a float, in which
                 case it applies across all measurements, or `None`, in which case no filtering is applied, or
                 a dictionary from measurement type to a float dictating a per-measurement-type inclusion

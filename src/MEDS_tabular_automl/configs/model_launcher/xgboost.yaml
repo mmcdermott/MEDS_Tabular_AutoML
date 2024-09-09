@@ -28,4 +28,4 @@ hydra:
       +model_launcher.model.max_depth: range(2, 16)
       model_launcher.training_params.num_boost_round: range(100, 1000)
       model_launcher.training_params.early_stopping_rounds: range(1, 10)
-      tabularization.min_code_inclusion_frequency: tag(log, range(10, 1000000))
+      tabularization.min_code_inclusion_count: tag(log, range(10, 1000000))
