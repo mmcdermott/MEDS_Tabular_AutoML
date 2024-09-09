@@ -17,7 +17,7 @@ IFS=',' read -r -a TASK_ARRAY <<< "$TASKS"
 
 MEDS_transform-reshard_to_split \
   --multirun \
-  worker="range(0,$N_PARALLEL_WORKERS)" \
+  worker="range(0,6)" \
   hydra/launcher=joblib \
   input_dir="$MIMICIV_MEDS_DIR" \
   cohort_dir="$MIMICIV_MEDS_RESHARD_DIR" \
