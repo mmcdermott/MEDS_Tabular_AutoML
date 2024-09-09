@@ -353,6 +353,10 @@ def test_tabularize(tmp_path):
     assert len(output_files) == 2
     shutil.rmtree(expected_output_dir)
 
+    log_dir = Path(cfg.path.model_log_dir)
+    log_csv = list(log_dir.glob("**/*.log"))
+    assert len(log_csv) == 2
+
     sklearnmodel_config = {
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,

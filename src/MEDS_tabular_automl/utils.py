@@ -421,7 +421,7 @@ def log_to_logfile(model, cfg, output_fp):
     with open(config_fp, "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
-    model_performance_fp = out_fp / f"{cfg.path.performance_log_stem}.csv"
+    model_performance_fp = out_fp / f"{cfg.path.performance_log_stem}.log"
     with open(model_performance_fp, "w") as f:
         f.write("model_fp,tuning_auc,test_auc\n")
         f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")
