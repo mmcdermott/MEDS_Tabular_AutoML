@@ -3,11 +3,11 @@ from importlib.resources import files
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig
 
 from MEDS_tabular_automl.base_model import BaseModel
 
-from ..utils import hydra_loguru_init, log_to_logfile
+from ..utils import hydra_loguru_init, log_to_logfile, stage_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
@@ -24,32 +24,29 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
+    stage_init(
+        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+    )
 
-    # print(OmegaConf.to_yaml(cfg))
     if not cfg.loguru_init:
         hydra_loguru_init()
 
-    model: BaseModel = hydra.utils.instantiate(cfg.model_target)
-    # TODO - make tabularuzation be copied in the yaml instead of here
-    with open_dict(cfg):
-        model.cfg.tabularization = hydra.utils.instantiate(cfg.tabularization)
+    model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
 
-    model.train()
-    auc = model.evaluate()
-    # logger.info(f"AUC: {auc}")
+    model_launcher.train()
+    auc = model_launcher.evaluate()
 
     # save model
-    output_fp = Path(cfg.model_saving.model_dir)
-    output_fp = (
-        output_fp.parent
-        / f"{cfg.model_saving.model_file_stem}_{auc:.4f}_{time.time()}{cfg.model_saving.model_file_extension}"
-    )
-    output_fp.parent.mkdir(parents=True, exist_ok=True)
+    output_model_dir = Path(cfg.output_model_dir)
+    path_cfg = model_launcher.cfg.path
+    model_filename = f"{path_cfg.model_file_stem}_{auc:.4f}_{time.time()}{path_cfg.model_file_extension}"
+    output_fp = output_model_dir / model_filename
+    output_model_dir.parent.mkdir(parents=True, exist_ok=True)
 
     # log to logfile
-    log_to_logfile(model, cfg, output_fp.stem)
+    log_to_logfile(model_launcher, cfg, output_fp.stem)
 
-    model.save_model(output_fp)
+    model_launcher.save_model(output_fp)
     return auc
 
 

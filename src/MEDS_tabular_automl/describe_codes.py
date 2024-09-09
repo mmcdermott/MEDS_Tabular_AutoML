@@ -2,7 +2,7 @@ from pathlib import Path
 
 import polars as pl
 
-from MEDS_tabular_automl.utils import DF_T, get_feature_names
+from MEDS_tabular_automl.utils import get_feature_names
 
 
 def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
@@ -65,7 +65,7 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
     return dict(df.collect().iter_rows())
 
 
-def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
+def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
     """Generates a DataFrame containing the frequencies of codes and numerical values under different
     aggregations by computing frequency counts for certain attributes and organizing the results into specific
     categories based on the dataset's features.

@@ -30,6 +30,7 @@ from ..utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
+    stage_init,
     write_df,
 )
 
@@ -56,7 +57,7 @@ def main(
 
     Args:
         cfg:
-            MEDS_cohort_dir: directory of MEDS format dataset that is ingested.
+            input_dir: directory of MEDS format dataset that is ingested.
             tabularized_data_dir: output directory of tabularized data.
             min_code_inclusion_frequency: The base feature inclusion frequency that should be used to dictate
                 what features can be included in the flat representation. It can either be a float, in which
@@ -81,6 +82,14 @@ def main(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
+    stage_init(
+        cfg,
+        [
+            "input_code_metadata_fp",
+            "input_dir",
+            "tabularization.filtered_code_metadata_fp",
+        ],
+    )
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
@@ -130,7 +139,7 @@ def main(
     np.random.shuffle(tabularization_tasks)
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
         out_fp = (
-            Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
+            Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
         ).with_suffix(".npz")
         if out_fp.exists() and not cfg.do_overwrite:
             raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {out_fp} exists!")

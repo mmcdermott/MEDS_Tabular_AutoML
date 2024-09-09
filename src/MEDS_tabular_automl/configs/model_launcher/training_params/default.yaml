@@ -1,0 +1,6 @@
+# @package _global_
+
+model_launcher:
+  training_params:
+    epochs: 20
+    early_stopping_rounds: 5

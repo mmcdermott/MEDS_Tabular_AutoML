@@ -47,13 +47,21 @@ class TabularDataset(TimeableMixin):
             split: The data split to use, which can be one of "train", "tuning",
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
-        super().__init__(cache_prefix=Path(cfg.cache_dir))
+        super().__init__(cache_prefix=Path(cfg.path.cache_dir))
         self.cfg = cfg
         self.split = split
         # Load shards for this split
         self._data_shards = sorted(
-            [shard.stem for shard in list_subdir_files(Path(cfg.input_label_dir) / split, "parquet")]
+            [
+                shard.stem
+                for shard in list_subdir_files(Path(cfg.path.input_label_cache_dir) / split, "parquet")
+            ]
         )
+        if len(self._data_shards) == 0:
+            raise ValueError(
+                "No labels found in the `input_label_cache_dir` "
+                + str(Path(cfg.path.input_label_cache_dir).resolve())
+            )
         self.valid_event_ids, self.labels = None, None
 
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
@@ -114,7 +122,7 @@ class TabularDataset(TimeableMixin):
             to lists of corresponding labels.
         """
         label_fps = {
-            shard: (Path(self.cfg.input_label_dir) / self.split / shard).with_suffix(".parquet")
+            shard: (Path(self.cfg.path.input_label_cache_dir) / self.split / shard).with_suffix(".parquet")
             for shard in self._data_shards
             for shard in self._data_shards
         }
@@ -126,7 +134,7 @@ class TabularDataset(TimeableMixin):
 
             if load_labels:
                 cached_labels[shard] = label_df.select(pl.col("label")).collect().to_series()
-                if self.cfg.model_params.iterator.binarize_task:
+                if self.cfg.data_loading_params.binarize_task:
                     cached_labels[shard] = cached_labels[shard].map_elements(
                         lambda x: 1 if x > 0 else 0, return_dtype=pl.Int8
                     )
@@ -221,10 +229,10 @@ class TabularDataset(TimeableMixin):
     def _set_imputer(self):
         """Sets the imputer for the data."""
         if (
-            hasattr(self.cfg.model_params.iterator, "imputer")
-            and self.cfg.model_params.iterator.imputer.imputer_target
+            hasattr(self.cfg.data_loading_params, "imputer")
+            and self.cfg.data_loading_params.imputer.imputer_target
         ):
-            imputer = self.cfg.model_params.iterator.imputer.imputer_target
+            imputer = self.cfg.data_loading_params.imputer.imputer_target
             if hasattr(imputer, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self._get_shard_by_index(i)
@@ -240,10 +248,10 @@ class TabularDataset(TimeableMixin):
     def _set_scaler(self):
         """Sets the scaler for the data."""
         if (
-            hasattr(self.cfg.model_params.iterator, "normalization")
-            and self.cfg.model_params.iterator.normalization.normalizer
+            hasattr(self.cfg.data_loading_params, "normalization")
+            and self.cfg.data_loading_params.normalization.normalizer
         ):
-            scaler = self.cfg.model_params.iterator.normalization.normalizer
+            scaler = self.cfg.data_loading_params.normalization.normalizer
             if hasattr(scaler, "partial_fit"):
                 for i in range(len(self._data_shards)):
                     X, _ = self._get_shard_by_index(i)

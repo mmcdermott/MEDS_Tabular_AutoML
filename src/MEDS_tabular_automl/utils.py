@@ -1,21 +1,15 @@
-"""The base class for core dataset processing logic.
-
-Attributes:
-    INPUT_DF_T: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
-        dataframes, etc.
-    DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
-"""
+"""The base class for core dataset processing logic and script utilities."""
 import os
+import sys
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from scipy.sparse import coo_array
 
-DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
 
@@ -51,7 +45,7 @@ def filter_to_codes(
     min_code_inclusion_count: int | None,
     min_code_inclusion_frequency: float | None,
     max_include_codes: int | None,
-) -> list[str]:
+) -> ListConfig[str]:
     """Filters and returns codes based on allowed list and minimum frequency.
 
     Args:
@@ -69,8 +63,14 @@ def filter_to_codes(
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
+        Traceback (most recent call last):
+        ...
+        ValueError: Code filtering criteria ...
+        ...
     """
-
     feature_freqs = pl.read_parquet(code_metadata_fp)
 
     if allowed_codes is not None:
@@ -78,18 +78,23 @@ def filter_to_codes(
 
     if min_code_inclusion_frequency is not None:
         pass
-        # need to consider size of the dataset vs count
-
-        # feature_freqs = feature_freqs.filter(pl.col("frequency") >= min_code_inclusion_frequency)
 
     if min_code_inclusion_count is not None:
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
-        # feature_freqs = feature_freqs.sort("count", reverse=True).head(max_include_codes)
         feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
 
-    return sorted(feature_freqs["code"].to_list())
+    if len(feature_freqs["code"]) == 0:
+        raise ValueError(
+            f"Code filtering criteria leaves only 0 codes. Note that {feature_freqs.shape[0]} "
+            "codes are read in, try modifying the following kwargs:"
+            f"\n- tabularization.allowed_codes: {allowed_codes}"
+            f"\n- tabularization.min_code_inclusion_count: {min_code_inclusion_count}"
+            f"\n- tabularization.min_code_inclusion_frequency: {min_code_inclusion_frequency}"
+            f"\n- tabularization.max_include_codes: {max_include_codes}"
+        )
+    return ListConfig(sorted(feature_freqs["code"].to_list()))
 
 
 OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
@@ -405,20 +410,69 @@ def log_to_logfile(model, cfg, output_fp):
         cfg: The configuration dictionary.
         output_fp: The relative output file path.
     """
-    log_fp = Path(cfg.model_logging.model_log_dir)
+    log_fp = Path(cfg.path.model_log_dir)
 
     # make a folder to log everything for this model
     out_fp = log_fp / output_fp
     out_fp.mkdir(parents=True, exist_ok=True)
 
     # config as a json
-    config_fp = out_fp / f"{cfg.model_logging.config_log_stem}.log"
+    config_fp = out_fp / f"{cfg.path.config_log_stem}.json"
     with open(config_fp, "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 
-    model_performance_fp = out_fp / f"{cfg.model_logging.performance_log_stem}.log"
+    model_performance_fp = out_fp / f"{cfg.path.performance_log_stem}.log"
     with open(model_performance_fp, "w") as f:
         f.write("model_fp,tuning_auc,test_auc\n")
         f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
+
+
+def current_script_name() -> str:
+    """Returns the name of the module that called this function."""
+
+    main_module = sys.modules["__main__"]
+    main_func = getattr(main_module, "main", None)
+    if main_func and callable(main_func):
+        func_module = main_func.__module__
+        if func_module == "__main__":
+            return Path(sys.argv[0]).stem
+        else:
+            return func_module.split(".")[-1]
+
+    logger.warning("Can't find main function in __main__ module. Using sys.argv[0] as a fallback.")
+    return Path(sys.argv[0]).stem
+
+
+def stage_init(cfg: DictConfig, keys: list[str]):
+    """Initializes the stage by logging the configuration and the stage-specific paths.
+
+    Args:
+        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
+            stage specific configuration.
+
+    Returns: The data input directory, stage output directory, and metadata input directory.
+    """
+    logger.info(
+        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
+    )
+
+    chk_kwargs = {k: OmegaConf.select(cfg, k) for k in keys}
+
+    def chk(x: Path | None) -> str:
+        if x is None:
+            return "❌"
+        return "✅" if x.exists() and str(x) != "" else "❌"
+
+    paths_strs = [
+        f"  - {k}: {chk(Path(v) if v is not None else None)} "
+        f"{str(Path(v).resolve()) if v is not None else 'None'}"
+        for k, v in chk_kwargs.items()
+    ]
+
+    logger_strs = [
+        f"Stage config:\n{OmegaConf.to_yaml(cfg)}",
+        "Paths: (checkbox indicates if it exists)",
+    ]
+    logger.debug("\n".join(logger_strs + paths_strs))

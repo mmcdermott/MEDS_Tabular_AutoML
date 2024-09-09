@@ -1,18 +1,31 @@
+import json
 from importlib.resources import files
 from pathlib import Path
 
 import hydra
 import pandas as pd
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+
+try:
+    import autogluon.tabular as ag
+except ImportError:
+    ag = None
 
 from MEDS_tabular_automl.dense_iterator import DenseIterator
 
-from ..utils import hydra_loguru_init
+from ..utils import hydra_loguru_init, stage_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_autogluon.yaml")
+config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
     raise FileNotFoundError("Core configuration not successfully installed!")
+
+
+def check_autogluon():
+    if ag is None:
+        raise ImportError(
+            "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
+        )
 
 
 @hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
@@ -22,16 +35,12 @@ def main(cfg: DictConfig) -> float:
     Args:
         cfg: The configuration dictionary specifying model and training parameters.
     """
-
-    # print(OmegaConf.to_yaml(cfg))
+    check_autogluon()
+    stage_init(
+        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
+    )
     if not cfg.loguru_init:
         hydra_loguru_init()
-
-    # check that autogluon is installed
-    try:
-        import autogluon.tabular as ag
-    except ImportError:
-        logger.error("AutoGluon is not installed. Please install AutoGluon.")
 
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")
@@ -44,13 +53,13 @@ def main(cfg: DictConfig) -> float:
     held_out_data, held_out_labels = iheld_out.densify()
 
     # construct dfs for AutoGluon
-    train_df = pd.DataFrame(train_data.todense())  # , columns=cols)
+    train_df = pd.DataFrame(train_data.todense())
     train_df[cfg.task_name] = train_labels
     tuning_df = pd.DataFrame(
         tuning_data.todense(),
-    )  # columns=cols)
+    )
     tuning_df[cfg.task_name] = tuning_labels
-    held_out_df = pd.DataFrame(held_out_data.todense())  # , columns=cols)
+    held_out_df = pd.DataFrame(held_out_data.todense())
     held_out_df[cfg.task_name] = held_out_labels
 
     train_dataset = ag.TabularDataset(train_df)
@@ -58,8 +67,13 @@ def main(cfg: DictConfig) -> float:
     held_out_dataset = ag.TabularDataset(held_out_df)
 
     # train model with AutoGluon
+    log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.config_log_stem}_log.txt"
+
     predictor = ag.TabularPredictor(
-        label=cfg.task_name, log_to_file=True, log_file_path=cfg.log_filepath, path=cfg.output_filepath
+        label=cfg.task_name,
+        log_to_file=True,
+        log_file_path=str(log_filepath.resolve()),
+        path=cfg.output_model_dir,
     ).fit(train_data=train_dataset, tuning_data=tuning_dataset)
 
     # predict
@@ -69,12 +83,17 @@ def main(cfg: DictConfig) -> float:
     score = predictor.evaluate(held_out_dataset)
     logger.info("Test score:", score)
 
-    log_fp = Path(cfg.model_log_dir)
-    log_fp.mkdir(parents=True, exist_ok=True)
-    # log hyperparameters
-    out_fp = log_fp / "trial_performance_results.log"
-    with open(out_fp, "w") as f:
-        f.write(f"{cfg.output_filepath}\t{cfg.tabularization}\t{cfg.model_params}\t{None}\t{score}\n")
+    model_performance_log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.performance_log_stem}.json"
+    model_performance_log_filepath.parent.mkdir(parents=True, exist_ok=True)
+    # store results
+    performance_dict = {
+        "output_model_dir": cfg.path.output_model_dir,
+        "tabularization": OmegaConf.to_container(cfg.tabularization),
+        "model_launcher": OmegaConf.to_container(cfg.model_launcher),
+        "score": score,
+    }
+    with open(model_performance_log_filepath, "w") as f:
+        json.dump(performance_dict, f)
 
 
 if __name__ == "__main__":
