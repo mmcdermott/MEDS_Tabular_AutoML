@@ -1,0 +1,32 @@
+defaults:
+  - default
+  - tabularization: default
+  - model_launcher: xgboost
+  - override hydra/sweeper: optuna
+  - override hydra/callbacks: evaluation_callback
+  - override hydra/launcher: joblib
+  - _self_
+
+task_name: ???
+
+# Location of task, split, and shard specific tabularized data
+input_tabularized_cache_dir: ${output_dir}/${task_name}/task_cache
+# Location of  task, split, and shard specific label data
+input_label_cache_dir: ${output_dir}/${task_name}/labels
+# Where to output the model and cached data
+output_model_dir: ???
+
+time_output_model_dir: ${output_model_dir}/${now:%Y-%m-%d_%H-%M-%S}
+
+delete_below_top_k: -1
+
+name: launch_model
+
+hydra:
+  sweep:
+    dir: ${time_output_model_dir}/hydra/
+    subdir: "1"
+  run:
+    dir: ${path.sweep_results_dir}
+  sweeper:
+    direction: "maximize"

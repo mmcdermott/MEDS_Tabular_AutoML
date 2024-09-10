@@ -1,0 +1,34 @@
+# @package _global_
+defaults:
+  - default
+  - _self_
+
+model_launcher:
+  _target_: MEDS_tabular_automl.xgboost_model.XGBoostModel.initialize
+
+  model:
+    booster: gbtree
+    device: cpu
+    nthread: 1
+    tree_method: hist
+    objective: binary:logistic
+
+  training_params:
+    num_boost_round: 1000
+    early_stopping_rounds: 5
+
+path:
+  model_file_stem: "xgboost"
+
+hydra:
+  sweeper:
+    params:
+      +model_launcher.model.eta: tag(log, interval(0.001, 1))
+      +model_launcher.model.lambda: tag(log, interval(0.001, 1))
+      +model_launcher.model.alpha: tag(log, interval(0.001, 1))
+      +model_launcher.model.subsample: interval(0.5, 1)
+      +model_launcher.model.min_child_weight: interval(1e-2, 100)
+      +model_launcher.model.max_depth: range(2, 16)
+      model_launcher.training_params.num_boost_round: range(100, 1000)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)
+      tabularization.min_code_inclusion_count: tag(log, range(10, 1000000))

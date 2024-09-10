@@ -1,6 +1,6 @@
 [project]
 name = "meds-tab"
-version = "0.0.4"
+dynamic = ["version"]
 authors = [
   { name="Matthew McDermott", email="mattmcdermott8@gmail.com" },
   { name="Nassim Oufattole", email="noufattole@gmail.com" },
@@ -8,24 +8,27 @@ authors = [
 ]
 description = "Scalable Tabularization of MEDS format Time-Series data"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "polars", "pyarrow", "loguru", "hydra-core", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
-  "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3",
-  "MEDS-transforms==0.0.5",
+  "polars==1.6.0", "pyarrow", "loguru", "hydra-core==1.3.2", "numpy", "scipy<1.14.0", "pandas", "tqdm", "xgboost",
+  "scikit-learn", "hydra-optuna-sweeper", "hydra-joblib-launcher", "ml-mixins", "meds==0.3.3", "meds-transforms==0.0.7",
 ]
+
+[tool.setuptools_scm]
 
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
 meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"
 meds-tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_series:main"
 meds-tab-cache-task = "MEDS_tabular_automl.scripts.cache_task:main"
-meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_xgboost:main"
+meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_model:main"
+meds-tab-model = "MEDS_tabular_automl.scripts.launch_model:main"
+meds-tab-autogluon = "MEDS_tabular_automl.scripts.launch_autogluon:main"
 generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
 
 
@@ -33,6 +36,7 @@ generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
 dev = ["pre-commit"]
 tests = ["pytest", "pytest-cov", "rootutils"]
 profiling = ["mprofile", "matplotlib"]
+autogluon = ["autogluon; python_version=='3.11.*'"]  # Environment marker to restrict AutoGluon to Python 3.11
 
 [build-system]
 requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]

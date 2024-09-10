@@ -1,0 +1,25 @@
+# @package _global_
+defaults:
+  - default
+  - training_params: default
+  - _self_
+
+model_launcher:
+  _target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+
+  model:
+    _target_: sklearn.linear_model.SGDClassifier
+    loss: log_loss
+
+path:
+  model_file_extension: .pkl
+  model_file_stem: "sgd_classifier"
+
+hydra:
+  sweeper:
+    params:
+      +model_launcher.model.alpha: tag(log, interval(1e-6, 1))
+      +model_launcher.model.l1_ratio: interval(0, 1)
+      +model_launcher.model.penalty: choice('l1', 'l2', 'elasticnet')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

@@ -38,14 +38,14 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
    - static codes (codes without timestamps)
    - static numerical codes (codes without timestamps but with numerical values).
 
-   This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `MEDS_cohort_dir` argument specified as a hydra-style command line argument.
+   This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `input_dir` argument specified as a hydra-style command line argument.
 
-2. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the frequency of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `patient_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
+2. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the frequency of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
 
    **Example: Tabularizing static data** with the minimum code frequency of 10, window sizes of `[1d, 30d,  365d, full]`, and value aggregation methods of `[static/present, static/first, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
 
    ```console
-   meds-tab-tabularize-static MEDS_cohort_dir="path_to_data" \
+   meds-tab-tabularize-static input_dir="path_to_data" \
                                tabularization.min_code_inclusion_frequency=10 \
                                tabularization.window_sizes=[1d,30d,365d,full] \
                                do_overwrite=False \
@@ -54,7 +54,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    - For the exhaustive examples of value aggregations, see [`/src/MEDS_tabular_automl/utils.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/utils.py#L24)
 
-3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `patient_id` x `timestamp`. This stage (and the previous stage) uses sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
+3. **`meds-tab-tabularize-time-series`**: Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `subject_id` x `timestamp`. This stage (and the previous stage) uses sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
 
    **Example: Aggregate time-series data** on features across different `window_sizes`
 
@@ -62,19 +62,19 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
    meds-tab-tabularize-time-series --multirun \
       worker="range(0,$N_PARALLEL_WORKERS)" \
       hydra/launcher=joblib \
-      MEDS_cohort_dir="path_to_data" \
+      input_dir="path_to_data" \
       tabularization.min_code_inclusion_frequency=10 \
       do_overwrite=False \
       tabularization.window_sizes=[1d,30d,365d,full] \
       tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
    ```
 
-4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`patient_id`, `timestamp`, `label`) structured similarly to the `MEDS_cohort_dir`.
+4. **`meds-tab-cache-task`**: Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
 
    **Example: Align tabularized data** for a specific task `$TASK` and labels that has pulled from [ACES](https://github.com/justin13601/ACES)
 
    ```console
-   meds-tab-cache-task MEDS_cohort_dir="path_to_data" \
+   meds-tab-cache-task input_dir="path_to_data" \
       task_name=$TASK \
       tabularization.min_code_inclusion_frequency=10 \
       do_overwrite=False \
@@ -86,7 +86,7 @@ See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_Au
 
    ```console
    meds-tab-xgboost --multirun \
-      MEDS_cohort_dir="path_to_data" \
+      input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       tabularization.min_code_inclusion_frequency=10 \

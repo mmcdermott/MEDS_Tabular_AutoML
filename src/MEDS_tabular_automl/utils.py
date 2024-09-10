@@ -1,21 +1,15 @@
-"""The base class for core dataset processing logic.
-
-Attributes:
-    INPUT_DF_T: This defines the type of the allowable input dataframes -- e.g., databases, filepaths,
-        dataframes, etc.
-    DF_T: This defines the type of internal dataframes -- e.g. polars DataFrames.
-"""
+"""The base class for core dataset processing logic and script utilities."""
 import os
+import sys
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from scipy.sparse import coo_array
 
-DF_T = pl.LazyFrame
 WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
 
@@ -46,16 +40,23 @@ def hydra_loguru_init() -> None:
 
 
 def filter_to_codes(
-    allowed_codes: list[str] | None,
-    min_code_inclusion_frequency: int,
     code_metadata_fp: Path,
-) -> list[str]:
+    allowed_codes: list[str] | None,
+    min_code_inclusion_count: int | None,
+    min_code_inclusion_frequency: float | None,
+    max_include_codes: int | None,
+) -> ListConfig[str]:
     """Filters and returns codes based on allowed list and minimum frequency.
 
     Args:
-        allowed_codes: List of allowed codes, None means all codes are allowed.
-        min_code_inclusion_frequency: Minimum frequency a code must have to be included.
         code_metadata_fp: Path to the metadata file containing code information.
+        allowed_codes: List of allowed codes, None means all codes are allowed.
+        min_code_inclusion_count: Minimum count a code must have to be included.
+        min_code_inclusion_frequency: The minimum frequency a code must have,
+            normalized by dividing its count by the total number of observations
+            across all codes in the dataset, to be included.
+        max_include_codes: Maximum number of codes to include (selecting the most
+            prevelent codes).
 
     Returns:
         Sorted list of the intersection of allowed codes (if they are specified) and filters based on
@@ -65,17 +66,51 @@ def filter_to_codes(
         >>> from tempfile import NamedTemporaryFile
         >>> with NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes(["A", "D"], 3, f.name)
+        ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, .35, None)
+        ['E']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, None, 1)
+        ['E']
+        >>> with NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
+        Traceback (most recent call last):
+        ...
+        ValueError: Code filtering criteria ...
+        ...
     """
-
     feature_freqs = pl.read_parquet(code_metadata_fp)
 
     if allowed_codes is not None:
         feature_freqs = feature_freqs.filter(pl.col("code").is_in(allowed_codes))
 
-    feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_frequency)
-    return sorted(feature_freqs["code"].to_list())
+    if min_code_inclusion_frequency is not None:
+        if min_code_inclusion_frequency < 0 or min_code_inclusion_frequency > 1:
+            raise ValueError("min_code_inclusion_frequency must be between 0 and 1.")
+        dataset_size = feature_freqs["count"].sum()
+        feature_freqs = feature_freqs.filter((pl.col("count") / dataset_size) >= min_code_inclusion_frequency)
+
+    if min_code_inclusion_count is not None:
+        feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
+
+    if max_include_codes is not None:
+        feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
+
+    if len(feature_freqs["code"]) == 0:
+        raise ValueError(
+            f"Code filtering criteria leaves only 0 codes. Note that {feature_freqs.shape[0]} "
+            "codes are read in, try modifying the following kwargs:"
+            f"\n- tabularization.allowed_codes: {allowed_codes}"
+            f"\n- tabularization.min_code_inclusion_count: {min_code_inclusion_count}"
+            f"\n- tabularization.min_code_inclusion_frequency: {min_code_inclusion_frequency}"
+            f"\n- tabularization.max_include_codes: {max_include_codes}"
+        )
+    return ListConfig(sorted(feature_freqs["code"].to_list()))
 
 
 OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
@@ -143,7 +178,8 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
     Raises:
         AssertionError: If the input array's first dimension is not 3.
     """
-    assert array.shape[0] == 3
+    if not array.shape[0] == 3:
+        raise AssertionError("Array must have 3 dimensions: [data, row, col], currently has", array.shape[0])
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
 
@@ -263,10 +299,9 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         ...     fp = Path(tmpdir) / "test.npz"
         ...     write_df(df_coo_array, fp, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
-        ...     write_df(df_coo_array, fp, do_overwrite=False)
-        Traceback (most recent call last):
-            ...
-        FileExistsError: ...test.npz exists and do_overwrite is False!
+        ...     import pytest
+        ...     with pytest.raises(FileExistsError):
+        ...         write_df(df_coo_array, fp, do_overwrite=False)
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
@@ -302,20 +337,22 @@ def get_events_df(shard_df: pl.LazyFrame, feature_columns) -> pl.LazyFrame:
 
 
 def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
-    """Ensures all times in the events LazyFrame are unique and sorted by patient_id and time.
+    """Ensures all times in the events LazyFrame are unique and sorted by subject_id and time.
 
     Args:
         events_df: Events LazyFrame to process.
 
     Returns:
-        A LazyFrame with unique times, sorted by patient_id and time.
+        A LazyFrame with unique times, sorted by subject_id and time.
     """
-    assert events_df.select(pl.col("time")).null_count().collect().item() == 0
+    if not events_df.select(pl.col("time")).null_count().collect().item() == 0:
+        raise ValueError("Time column must not have null values for time series data.")
     # Check events_df is sorted - so it aligns with the ts_matrix we generate later in the pipeline
     events_df = (
-        events_df.drop_nulls("time").select(pl.col(["patient_id", "time"])).unique(maintain_order=True)
+        events_df.drop_nulls("time").select(pl.col(["subject_id", "time"])).unique(maintain_order=True)
     )
-    assert events_df.sort(by=["patient_id", "time"]).collect().equals(events_df.collect())
+    if not events_df.sort(by=["subject_id", "time"]).collect().equals(events_df.collect()):
+        raise ValueError("Data frame must be sorted by subject_id and time")
     return events_df
 
 
@@ -379,3 +416,52 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     file_name = relative_path.name.split(".")[0]
 
     return str(relative_parent / file_name)
+
+
+def current_script_name() -> str:
+    """Returns the name of the module that called this function."""
+
+    main_module = sys.modules["__main__"]
+    main_func = getattr(main_module, "main", None)
+    if main_func and callable(main_func):
+        func_module = main_func.__module__
+        if func_module == "__main__":
+            return Path(sys.argv[0]).stem
+        else:
+            return func_module.split(".")[-1]
+
+    logger.warning("Can't find main function in __main__ module. Using sys.argv[0] as a fallback.")
+    return Path(sys.argv[0]).stem
+
+
+def stage_init(cfg: DictConfig, keys: list[str]):
+    """Initializes the stage by logging the configuration and the stage-specific paths.
+
+    Args:
+        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
+            stage specific configuration.
+
+    Returns: The data input directory, stage output directory, and metadata input directory.
+    """
+    logger.info(
+        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
+    )
+
+    chk_kwargs = {k: OmegaConf.select(cfg, k) for k in keys}
+
+    def chk(x: Path | None) -> str:
+        if x is None:
+            return "❌"
+        return "✅" if x.exists() and str(x) != "" else "❌"
+
+    paths_strs = [
+        f"  - {k}: {chk(Path(v) if v is not None else None)} "
+        f"{str(Path(v).resolve()) if v is not None else 'None'}"
+        for k, v in chk_kwargs.items()
+    ]
+
+    logger_strs = [
+        f"Stage config:\n{OmegaConf.to_yaml(cfg)}",
+        "Paths: (checkbox indicates if it exists)",
+    ]
+    logger.debug("\n".join(logger_strs + paths_strs))

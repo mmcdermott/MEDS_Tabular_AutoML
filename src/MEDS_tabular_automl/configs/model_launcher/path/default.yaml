@@ -1,0 +1,9 @@
+input_tabularized_cache_dir: ${input_tabularized_cache_dir}
+input_label_cache_dir: ${input_label_cache_dir}
+model_file_stem: model
+model_file_extension: .json
+cache_dir: ${cache_dir}
+sweep_results_dir: ${time_output_model_dir}/sweep_results/
+best_trial_dir: ${time_output_model_dir}/best_trial/
+performance_log_stem: performance
+config_log_stem: config

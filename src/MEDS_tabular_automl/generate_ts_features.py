@@ -57,7 +57,8 @@ def get_long_code_df(
         .to_series()
         .to_numpy()
     )
-    assert np.issubdtype(cols.dtype, np.number), "numeric_value must be a numerical type"
+    if not np.issubdtype(cols.dtype, np.number):
+        raise ValueError("numeric_value must be a numerical type. Instead it has type: ", cols.dtype)
     data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
     return data, (rows, cols)
 
@@ -85,7 +86,9 @@ def get_long_value_df(
         .to_series()
         .to_numpy()
     )
-    assert np.issubdtype(cols.dtype, np.number), "numeric_value must be a numerical type"
+    if not np.issubdtype(cols.dtype, np.number):
+        raise ValueError("numeric_value must be a numerical type. Instead it has type: ", cols.dtype)
+
     data = value_df.select(pl.col("numeric_value")).collect().to_series().to_numpy()
     return data, (rows, cols)
 
@@ -107,11 +110,12 @@ def summarize_dynamic_measurements(
         of aggregated values.
     """
     logger.info("Generating Sparse matrix for Time Series Features")
-    id_cols = ["patient_id", "time"]
+    id_cols = ["subject_id", "time"]
 
     # Confirm dataframe is sorted
     check_df = df.select(pl.col(id_cols))
-    assert check_df.sort(by=id_cols).collect().equals(check_df.collect()), "data frame must be sorted"
+    if not check_df.sort(by=id_cols).collect().equals(check_df.collect()):
+        raise ValueError("data frame must be sorted by subject_id and time")
 
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:

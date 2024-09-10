@@ -92,7 +92,7 @@ Now that we have generated tabular features for all the events in our dataset, w
 - **Row Selection Based on Tasks**: Only the data rows that are relevant to the specific tasks are selected and cached. This reduces the memory footprint and speeds up the training process.
 - **Use of Sparse Matrices for Efficient Storage**: Sparse matrices are again employed here to store the selected data efficiently, ensuring that only non-zero data points are kept in memory, thus optimizing both storage and retrieval times.
 
-The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `patient_id`, `timestamp`, and `label` columns.
+The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `subject_id`, `timestamp`, and `label` columns.
 
 ## 4. XGBoost Training
 

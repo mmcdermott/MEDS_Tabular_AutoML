@@ -2,7 +2,7 @@ from pathlib import Path
 
 import polars as pl
 
-from MEDS_tabular_automl.utils import DF_T, get_feature_names
+from MEDS_tabular_automl.utils import get_feature_names
 
 
 def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
@@ -65,7 +65,7 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
     return dict(df.collect().iter_rows())
 
 
-def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
+def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
     """Generates a DataFrame containing the frequencies of codes and numerical values under different
     aggregations by computing frequency counts for certain attributes and organizing the results into specific
     categories based on the dataset's features.
@@ -80,7 +80,7 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
     Examples:
         >>> from datetime import datetime
         >>> data = pl.DataFrame({
-        ...     'patient_id': [1, 1, 2, 2, 3, 3, 3],
+        ...     'subject_id': [1, 1, 2, 2, 3, 3, 3],
         ...     'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
         ...     'time': [
         ...         None,
@@ -101,7 +101,7 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
         ... )
     """
     static_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
+        pl.col("subject_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
     )
     static_code_freqs_df = static_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     static_code_freqs = {
@@ -117,7 +117,7 @@ def compute_feature_frequencies(shard_df: DF_T) -> pl.DataFrame:
     }
 
     ts_df = shard_df.filter(
-        pl.col("patient_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_not_null()
+        pl.col("subject_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_not_null()
     )
     code_freqs_df = ts_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     code_freqs = {row["code"] + "/code": row["count"] for row in code_freqs_df.iter_rows(named=True)}

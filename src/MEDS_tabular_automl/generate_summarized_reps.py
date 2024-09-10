@@ -59,7 +59,7 @@ def get_rolling_window_indicies(index_df: pl.LazyFrame, window_size: str) -> pl.
         timedelta = pd.Timedelta(window_size)
     return (
         index_df.with_row_index("index")
-        .rolling(index_column="time", period=timedelta, group_by="patient_id")
+        .rolling(index_column="time", period=timedelta, group_by="subject_id")
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
         .select(pl.col("min_index", "max_index"))
         .collect()
@@ -132,12 +132,12 @@ def compute_agg(
 ) -> csr_array:
     """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
 
-    Dataframe is expected to only have the relevant columns for aggregating. It should have the patient_id and
+    Dataframe is expected to only have the relevant columns for aggregating. It should have the subject_id and
     time columns, and then only code columns if agg is a code aggregation or only value columns if it is
     a value aggreagation.
 
     Args:
-        index_df: The DataFrame with 'patient_id' and 'time' columns used for grouping.
+        index_df: The DataFrame with 'subject_id' and 'time' columns used for grouping.
         matrix: The sparse matrix to be aggregated.
         window_size: The string defining the rolling window size.
         agg: The string specifying the aggregation method.
@@ -149,11 +149,11 @@ def compute_agg(
     """
     group_df = (
         index_df.with_row_index("index")
-        .group_by(["patient_id", "time"], maintain_order=True)
+        .group_by(["subject_id", "time"], maintain_order=True)
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
         .collect()
     )
-    index_df = group_df.lazy().select(pl.col("patient_id", "time"))
+    index_df = group_df.lazy().select(pl.col("subject_id", "time"))
     windows = group_df.select(pl.col("min_index", "max_index"))
     logger.info("Step 1.5: Running sparse aggregation.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
@@ -193,13 +193,16 @@ def generate_summary(
         raise ValueError(
             f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
         )
-    assert len(feature_columns), "feature_columns must be a non-empty list"
+    if not len(feature_columns):
+        raise ValueError("No feature columns provided -- feature_columns must be a non-empty list.")
 
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
     code_type, _ = agg.split("/")
     # only iterate through code_types that exist in the dataframe columns
-    assert any([c.endswith(code_type) for c in ts_columns])
+    if not any([c.endswith(code_type) for c in ts_columns]):
+        raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
+
     logger.info(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )

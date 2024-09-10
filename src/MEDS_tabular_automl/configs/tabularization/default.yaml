@@ -1,7 +1,11 @@
 # User inputs
+filtered_code_metadata_fp: ${output_dir}/metadata/codes.parquet
 allowed_codes: null
-min_code_inclusion_frequency: 10
-filtered_code_metadata_fp: ${output_cohort_dir}/tabularized_code_metadata.parquet
+min_code_inclusion_count: 10
+min_code_inclusion_frequency: null
+min_correlation: null
+max_by_correlation: null
+max_included_codes: null
 window_sizes:
   - "1d"
   - "7d"
@@ -19,4 +23,4 @@ aggs:
   - "value/max"
 
 # Resolved inputs
-_resolved_codes: ${filter_to_codes:${tabularization.allowed_codes},${tabularization.min_code_inclusion_frequency},${tabularization.filtered_code_metadata_fp}}
+_resolved_codes: ${filter_to_codes:${tabularization.filtered_code_metadata_fp},${tabularization.allowed_codes},${tabularization.min_code_inclusion_count},${tabularization.min_code_inclusion_frequency},${tabularization.max_included_codes}}

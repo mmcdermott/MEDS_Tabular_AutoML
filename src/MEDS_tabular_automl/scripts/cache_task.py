@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-from functools import partial
 from importlib.resources import files
 from pathlib import Path
 
@@ -9,6 +8,7 @@ import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
+from loguru import logger
 from omegaconf import DictConfig
 
 from ..describe_codes import filter_parquet, get_feature_columns
@@ -25,6 +25,7 @@ from ..utils import (
     hydra_loguru_init,
     load_matrix,
     load_tqdm,
+    stage_init,
     write_df,
 )
 
@@ -79,21 +80,46 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
+    stage_init(
+        cfg,
+        [
+            "input_dir",
+            "input_label_dir",
+            "input_tabularized_dir",
+            "output_dir",
+            "tabularization.filtered_code_metadata_fp",
+        ],
+    )
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
     # Produce ts representation
 
     # shuffle tasks
-    tabularization_tasks = list_subdir_files(cfg.input_dir, "npz")
+    tabularization_tasks = list_subdir_files(cfg.input_tabularized_dir, "npz")
+    if len(tabularization_tasks) == 0:
+        raise FileNotFoundError(
+            f"No tabularized data found, `input_tabularized_dir`: {cfg.input_tabularized_dir}, "
+            "is likely incorrect"
+        )
+
     np.random.shuffle(tabularization_tasks)
 
     label_dir = Path(cfg.input_label_dir)
-    label_df = pl.scan_parquet(label_dir / "**/*.parquet").rename(
-        {
-            "prediction_time": "time",
-            cfg.label_column: "label",
-        }
+    if not label_dir.exists():
+        raise FileNotFoundError(
+            f"Label directory {label_dir} does not exist, please check the `input_label_dir` kwarg"
+        )
+    label_df = (
+        pl.scan_parquet(label_dir / "**/*.parquet")
+        .rename(
+            {
+                "prediction_time": "time",
+                cfg.label_column: "label",
+            }
+        )
+        .group_by(pl.col("subject_id", "time"), maintain_order=True)
+        .first()
     )
 
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
@@ -102,37 +128,58 @@ def main(cfg: DictConfig):
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
         split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
+        meds_data_in_fp = Path(cfg.input_dir) / split / f"{shard_num}.parquet"
+        shard_label_fp = Path(cfg.output_label_cache_dir) / split / f"{shard_num}.parquet"
+        out_fp = (
+            Path(cfg.output_tabularized_cache_dir) / get_shard_prefix(cfg.input_tabularized_dir, data_fp)
+        ).with_suffix(".npz")
 
-        raw_data_fp = Path(cfg.output_cohort_dir) / "data" / split / f"{shard_num}.parquet"
-        raw_data_df = filter_parquet(raw_data_fp, cfg.tabularization._resolved_codes)
-        raw_data_df = (
-            get_unique_time_events_df(get_events_df(raw_data_df, feature_columns))
-            .with_row_index("event_id")
-            .select("patient_id", "time", "event_id")
-        )
-        shard_label_df = label_df.join(
-            raw_data_df.select("patient_id").unique(), on="patient_id", how="inner"
-        ).join_asof(other=raw_data_df, by="patient_id", on="time")
+        def read_meds_data_df(meds_data_fp):
+            if "numeric_value" not in pl.scan_parquet(meds_data_fp).columns:
+                raise ValueError(
+                    f"'numeric_value' column not found in raw data {meds_data_fp}. "
+                    "You are maybe loading labels instead of meds data"
+                )
+            return filter_parquet(meds_data_fp, cfg.tabularization._resolved_codes)
 
-        shard_label_fp = Path(cfg.output_label_dir) / split / f"{shard_num}.parquet"
+        def extract_labels(meds_data_df):
+            meds_data_df = (
+                get_unique_time_events_df(get_events_df(meds_data_df, feature_columns))
+                .with_row_index("event_id")
+                .select("subject_id", "time", "event_id")
+            )
+            shard_label_df = label_df.join(
+                meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
+            ).join_asof(other=meds_data_df, by="subject_id", on="time")
+            return shard_label_df
+
+        def read_fn(in_fp_tuple):
+            meds_data_fp, data_fp = in_fp_tuple
+            # TODO: replace this with more intelligent locking
+            if not Path(shard_label_fp).exists():
+                logger.info(f"Extracting labels for {shard_label_fp}")
+                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)
+                meds_data_df = read_meds_data_df(meds_data_fp)
+                extracted_events = extract_labels(meds_data_df)
+                write_lazyframe(extracted_events, shard_label_fp)
+            else:
+                logger.info(f"Labels already exist, reading from {shard_label_fp}")
+            shard_label_df = pl.scan_parquet(shard_label_fp)
+            matrix = load_matrix(data_fp)
+            return shard_label_df, matrix
+
+        def compute_fn(input_tuple):
+            shard_label_df, matrix = input_tuple
+            row_cached_matrix = generate_row_cached_matrix(matrix=matrix, label_df=shard_label_df)
+            return row_cached_matrix
+
+        def write_fn(row_cached_matrix, out_fp):
+            write_df(row_cached_matrix, out_fp, do_overwrite=cfg.do_overwrite)
+
         rwlock_wrap(
-            raw_data_fp,
-            shard_label_fp,
-            pl.scan_parquet,
-            write_lazyframe,
-            lambda df: shard_label_df,
-            do_overwrite=cfg.do_overwrite,
-            do_return=False,
-        )
-
-        out_fp = (Path(cfg.output_dir) / get_shard_prefix(cfg.input_dir, data_fp)).with_suffix(".npz")
-        compute_fn = partial(generate_row_cached_matrix, label_df=shard_label_df)
-        write_fn = partial(write_df, do_overwrite=cfg.do_overwrite)
-
-        rwlock_wrap(
-            data_fp,
+            (meds_data_in_fp, data_fp),
             out_fp,
-            load_matrix,
+            read_fn,
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,

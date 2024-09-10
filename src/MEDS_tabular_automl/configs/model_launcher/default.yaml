@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - path: default
+  - data_processing_params: default
+  - data_loading_params: default
+  - _self_
+
+model_launcher:
+  path: ${path}
+  data_processing_params: ${data_processing_params}
+  data_loading_params: ${data_loading_params}
+  tabularization: ${tabularization}

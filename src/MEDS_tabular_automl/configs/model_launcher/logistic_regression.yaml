@@ -1,0 +1,34 @@
+# @package _global_
+
+defaults:
+  - default
+  - training_params: default
+  - _self_
+
+model_launcher:
+  _target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+
+  model:
+    _target_: sklearn.linear_model.LogisticRegression
+    penalty: "l2"
+    dual: false
+    tol: 0.0001
+    C: 1.0
+    fit_intercept: True
+    intercept_scaling: 1
+    class_weight: null
+    random_state: null
+    solver: "lbfgs"
+    max_iter: 100
+
+path:
+  model_file_extension: .pkl
+  model_file_stem: "logistic_regression"
+
+hydra:
+  sweeper:
+    params:
+      model_launcher.model.C: tag(log, interval(1e-6, 1))
+      model_launcher.model.solver: choice('lbfgs', 'sag', 'saga')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

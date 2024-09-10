@@ -1,0 +1,38 @@
+# @package _global_
+
+defaults:
+  - default
+  - training_params: default
+  - _self_
+
+model_launcher:
+  _target_: MEDS_tabular_automl.sklearn_model.SklearnModel.initialize
+
+  model:
+    _target_: sklearn.ensemble.RandomForestClassifier
+    criterion: "gini"
+    max_depth: null
+    min_samples_split: 2
+    min_samples_leaf: 1
+    min_weight_fraction_leaf: 0.0
+    max_features: "sqrt"
+    max_leaf_nodes: null
+    min_impurity_decrease: 0.0
+    bootstrap: True
+
+path:
+  model_file_extension: .pkl
+  model_file_stem: "random_forest_classifier"
+
+hydra:
+  sweeper:
+    params:
+      +model_launcher.model.n_estimators: range(50, 300, 50)
+      model_launcher.model.max_depth: choice(10, 20, 30, 40, 50)
+      model_launcher.model.min_samples_split: range(2, 11)
+      model_launcher.model.min_samples_leaf: range(1, 5)
+      model_launcher.model.max_features: choice('sqrt', 'log2')
+      model_launcher.model.bootstrap: choice(True, False)
+      model_launcher.model.criterion: choice('gini', 'entropy')
+      model_launcher.training_params.epochs: range(10, 100)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)

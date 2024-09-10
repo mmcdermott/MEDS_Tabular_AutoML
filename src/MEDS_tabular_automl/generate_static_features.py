@@ -36,7 +36,7 @@ def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> c
     Returns:
         A sparse matrix representation of the DataFrame.
     """
-    dense_matrix = df.drop("patient_id").collect().to_numpy()
+    dense_matrix = df.drop("subject_id").collect().to_numpy()
     data_list = []
     rows = []
     cols = []
@@ -54,7 +54,7 @@ def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> c
 def get_sparse_static_rep(
     static_features: list[str], static_df: pl.DataFrame, meds_df: pl.DataFrame, feature_columns: list[str]
 ) -> coo_array:
-    """Merges static and time-series dataframes into a sparse representation based on the patient_id column.
+    """Merges static and time-series dataframes into a sparse representation based on the subject_id column.
 
     Args:
         static_features: A list of static feature names.
@@ -67,12 +67,15 @@ def get_sparse_static_rep(
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
-    # Check static_df is sorted and unique
-    assert static_df.select(pl.col("patient_id")).collect().to_series().is_sorted()
-    assert (
+    # Check static_df is sorted and unique and raise error if it is not
+    if not static_df.select(pl.col("subject_id")).collect().to_series().is_sorted():
+        raise ValueError("static_df is not sorted by subject_id.")
+    if not (
         static_df.select(pl.len()).collect().item()
-        == static_df.select(pl.col("patient_id").n_unique()).collect().item()
-    )
+        == static_df.select(pl.col("subject_id").n_unique()).collect().item()
+    ):
+        raise ValueError("static_df has duplicate subject_id values.")
+
     meds_df = get_unique_time_events_df(get_events_df(meds_df, feature_columns))
 
     # load static data as sparse matrix
@@ -81,9 +84,9 @@ def get_sparse_static_rep(
     )
     # Duplicate static matrix rows to match time-series data
     events_per_patient = (
-        meds_df.select(pl.col("patient_id").value_counts())
-        .unnest("patient_id")
-        .sort(by="patient_id")
+        meds_df.select(pl.col("subject_id").value_counts())
+        .unnest("subject_id")
+        .sort(by="subject_id")
         .select(pl.col("count"))
         .collect()
         .to_series()
@@ -110,16 +113,16 @@ def summarize_static_measurements(
         df: The DataFrame from which features will be extracted and summarized.
 
     Returns:
-        A LazyFrame containing summarized data pivoted by 'patient_id' for each static feature.
+        A LazyFrame containing summarized data pivoted by 'subject_id' for each static feature.
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
         # Handling 'first' static values
         static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
         code_subset = df.filter(pl.col("code").is_in(static_first_codes))
-        first_code_subset = code_subset.group_by(pl.col("patient_id")).first().collect()
+        first_code_subset = code_subset.group_by(pl.col("subject_id")).first().collect()
         static_value_pivot_df = first_code_subset.pivot(
-            index=["patient_id"], columns=["code"], values=["numeric_value"], aggregate_function=None
+            index=["subject_id"], columns=["code"], values=["numeric_value"], aggregate_function=None
         )
         # rename code to feature name
         remap_cols = {
@@ -128,8 +131,8 @@ def summarize_static_measurements(
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(
-            *["patient_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
-        ).sort(by="patient_id")
+            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
+        ).sort(by="subject_id")
         # pivot can be faster: https://stackoverflow.com/questions/73522017/replacing-a-pivot-with-a-lazy-groupby-operation # noqa: E501
         # TODO: consider casting with .cast(pl.Float32))
         return static_value_pivot_df
@@ -138,17 +141,17 @@ def summarize_static_measurements(
         # Handling 'present' static indicators
         static_present_codes = [parse_static_feature_column(c)[0] for c in static_features]
         static_present_pivot_df = (
-            df.select(*["patient_id", "code"])
+            df.select(*["subject_id", "code"])
             .filter(pl.col("code").is_in(static_present_codes))
             .with_columns(pl.lit(True).alias("__indicator"))
             .collect()
             .pivot(
-                index=["patient_id"],
+                index=["subject_id"],
                 columns=["code"],
                 values="__indicator",
                 aggregate_function=None,
             )
-            .sort(by="patient_id")
+            .sort(by="subject_id")
         )
         remap_cols = {
             input_name: output_name
@@ -157,7 +160,7 @@ def summarize_static_measurements(
         }
         # rename columns to final feature names
         static_present_pivot_df = static_present_pivot_df.select(
-            *["patient_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
+            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
         )
         return static_present_pivot_df
     else:
@@ -185,9 +188,10 @@ def get_flat_static_rep(
     """
     static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
     static_measurements = summarize_static_measurements(agg, static_features, df=shard_df)
+    if len(static_features) == 0:
+        raise ValueError(f"No static features found. Remove the aggregation function {agg}")
     # convert to sparse_matrix
     matrix = get_sparse_static_rep(static_features, static_measurements.lazy(), shard_df, feature_columns)
-    assert matrix.shape[1] == len(
-        static_features
-    ), f"Expected {len(static_features)} features, got {matrix.shape[1]}"
+    if not matrix.shape[1] == len(static_features):
+        raise ValueError(f"Expected {len(static_features)} features, got {matrix.shape[1]}")
     return matrix
