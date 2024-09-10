@@ -289,7 +289,7 @@ def test_integration(tmp_path):
             "task_name": "test_task",
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
-            "hydra.sweeper.n_trials": 1,
+            "hydra.sweeper.n_trials": 2,
         }
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
         if model == "autogluon":
@@ -299,3 +299,4 @@ def test_integration(tmp_path):
             overrides = ["--multirun"] + overrides
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
+        assert "Performance of best model:" in stderr
