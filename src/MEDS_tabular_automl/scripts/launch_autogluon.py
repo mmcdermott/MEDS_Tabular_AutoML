@@ -67,13 +67,13 @@ def main(cfg: DictConfig) -> float:
     held_out_dataset = ag.TabularDataset(held_out_df)
 
     # train model with AutoGluon
-    log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.config_log_stem}_log.txt"
+    log_filepath = Path(cfg.path.sweep_results_dir) / f"{cfg.path.config_log_stem}_log.txt"
 
     predictor = ag.TabularPredictor(
         label=cfg.task_name,
         log_to_file=True,
         log_file_path=str(log_filepath.resolve()),
-        path=cfg.output_model_dir,
+        path=cfg.time_output_model_dir,
     ).fit(train_data=train_dataset, tuning_data=tuning_dataset)
 
     # predict
@@ -83,11 +83,13 @@ def main(cfg: DictConfig) -> float:
     score = predictor.evaluate(held_out_dataset)
     logger.info("Test score:", score)
 
-    model_performance_log_filepath = Path(cfg.path.model_log_dir) / f"{cfg.path.performance_log_stem}.json"
+    model_performance_log_filepath = (
+        Path(cfg.path.sweep_results_dir) / f"{cfg.path.performance_log_stem}.json"
+    )
     model_performance_log_filepath.parent.mkdir(parents=True, exist_ok=True)
     # store results
     performance_dict = {
-        "output_model_dir": cfg.path.output_model_dir,
+        "output_model_dir": cfg.path.time_output_model_dir,
         "tabularization": OmegaConf.to_container(cfg.tabularization),
         "model_launcher": OmegaConf.to_container(cfg.model_launcher),
         "score": score,

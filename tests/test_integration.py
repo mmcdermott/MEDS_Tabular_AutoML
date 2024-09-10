@@ -2,6 +2,7 @@ import rootutils
 
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
+import glob
 import json
 import shutil
 import subprocess
@@ -291,8 +292,8 @@ def test_integration(tmp_path):
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
             "path.model_file_stem": model,
-            "hydra.sweeper.n_trials": 2,
-            "delete_below_top_k": 1,
+            "hydra.sweeper.n_trials": 3,
+            "delete_below_top_k": 2,
             "data_loading_params.keep_data_in_memory": True,
         }
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
@@ -305,9 +306,11 @@ def test_integration(tmp_path):
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stderr
         if model == "xgboost":
-            assert len(list_subdir_files(str(output_model_dir.resolve()), "json")) == 1
+            assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
+            assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
         else:
-            assert len(list_subdir_files(str(output_model_dir.resolve()), "pkl")) == 1
+            assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
+            assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1
         shutil.rmtree(output_model_dir)
 
     for model in [
@@ -322,8 +325,8 @@ def test_integration(tmp_path):
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
             "path.model_file_stem": model,
-            "hydra.sweeper.n_trials": 2,
-            "delete_below_top_k": 1,
+            "hydra.sweeper.n_trials": 3,
+            "delete_below_top_k": 2,
             "data_loading_params.keep_data_in_memory": False,
         }
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
@@ -336,7 +339,9 @@ def test_integration(tmp_path):
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stderr
         if model == "xgboost":
-            assert len(list_subdir_files(str(output_model_dir.resolve()), "json")) == 1
+            assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
+            assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
         else:
-            assert len(list_subdir_files(str(output_model_dir.resolve()), "pkl")) == 1
+            assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
+            assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1
         shutil.rmtree(output_model_dir)

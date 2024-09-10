@@ -315,7 +315,7 @@ def test_tabularize(tmp_path):
     df.write_parquet(out_fp)
 
     cache_task.main(cfg)
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -360,11 +360,11 @@ def test_tabularize(tmp_path):
 
     launch_model.main(cfg)
 
-    expected_output_dir = Path(cfg.output_model_dir)
+    expected_output_dir = Path(cfg.time_output_model_dir)
     output_files = list(expected_output_dir.glob("**/*.json"))
     assert len(output_files) == 1
 
-    log_dir = Path(cfg.path.model_log_dir)
+    log_dir = Path(cfg.path.sweep_results_dir)
     log_files = list(log_dir.glob("**/*.log"))
     assert len(log_files) == 2
     shutil.rmtree(expected_output_dir)
@@ -385,11 +385,11 @@ def test_tabularize(tmp_path):
 
     launch_model.main(cfg)
 
-    expected_output_dir = Path(cfg.output_model_dir)
+    expected_output_dir = Path(cfg.time_output_model_dir)
     output_files = list(expected_output_dir.glob("**/*.json"))
     assert len(output_files) == 1
 
-    log_dir = Path(cfg.path.model_log_dir)
+    log_dir = Path(cfg.path.sweep_results_dir)
     log_files = list(log_dir.glob("**/*.log"))
     assert len(log_files) == 2
     shutil.rmtree(expected_output_dir)
@@ -408,7 +408,7 @@ def test_tabularize(tmp_path):
 
     launch_model.main(cfg)
 
-    expected_output_dir = Path(cfg.output_model_dir)
+    expected_output_dir = Path(cfg.time_output_model_dir)
     output_files = list(expected_output_dir.glob("**/*.pkl"))
     assert len(output_files) == 1
     shutil.rmtree(expected_output_dir)
@@ -449,7 +449,7 @@ def test_tabularize(tmp_path):
 
     launch_model.main(cfg)
 
-    expected_output_dir = Path(cfg.output_model_dir)
+    expected_output_dir = Path(cfg.time_output_model_dir)
     output_files = list(expected_output_dir.glob("**/*.pkl"))
     assert len(output_files) == 1
     shutil.rmtree(expected_output_dir)
@@ -473,6 +473,6 @@ def test_tabularize(tmp_path):
 
         launch_autogluon.main(cfg)
 
-        expected_output_filepath = Path(cfg.output_model_dir) / "predictor.pkl"
+        expected_output_filepath = Path(cfg.time_output_model_dir) / "predictor.pkl"
         assert expected_output_filepath.is_file()
-        ag.tabular.TabularPredictor.load(cfg.output_model_dir)
+        ag.tabular.TabularPredictor.load(cfg.time_output_model_dir)

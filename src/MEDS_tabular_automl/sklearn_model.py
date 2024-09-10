@@ -175,13 +175,12 @@ class SklearnModel(BaseModel):
             raise ValueError("Predictions or true labels are empty.")
         return roc_auc_score(y_true, y_pred)
 
-    def save_model(self, output_fp: str):
+    def save_model(self, output_fp: Path):
         """Saves the model to the specified file path.
 
         Args:
             output_fp: The file path to save the model to.
         """
-        output_fp = Path(output_fp)
         # check if model has save method
         if not hasattr(self.model, "save_model"):
             logger.info(f"Model {self.model.__class__.__name__} does not have a save_model method.")

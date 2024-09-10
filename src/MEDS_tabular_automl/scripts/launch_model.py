@@ -1,14 +1,14 @@
-import time
+import json
 from importlib.resources import files
 from pathlib import Path
 
 import hydra
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.base_model import BaseModel
 
-from ..utils import hydra_loguru_init, log_to_logfile, stage_init
+from ..utils import hydra_loguru_init, stage_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
 if not config_yaml.is_file():
@@ -43,17 +43,31 @@ def main(cfg: DictConfig) -> float:
     model_launcher.train()
     auc = model_launcher.evaluate()
 
-    # save model
-    output_model_dir = Path(cfg.output_model_dir)
+    # Make output model directory
     path_cfg = model_launcher.cfg.path
-    model_filename = f"{path_cfg.model_file_stem}_{auc:.4f}_{time.time()}{path_cfg.model_file_extension}"
-    output_fp = output_model_dir / model_filename
-    output_model_dir.parent.mkdir(parents=True, exist_ok=True)
+    model_filename = f"{path_cfg.model_file_stem}{path_cfg.model_file_extension}"
+    model_config_hash = abs(hash(json.dumps(OmegaConf.to_container(cfg), sort_keys=True)))
+    trial_output_dir = Path(path_cfg.sweep_results_dir) / str(model_config_hash)
+    trial_output_dir.mkdir(parents=True, exist_ok=True)
 
-    # log to logfile
-    log_to_logfile(model_launcher, cfg, output_fp.stem)
+    # save model
+    model_launcher.save_model(trial_output_dir / model_filename)
 
-    model_launcher.save_model(output_fp)
+    # save model config
+    config_fp = trial_output_dir / f"{cfg.path.config_log_stem}.log"
+    with open(config_fp, "w") as f:
+        f.write(OmegaConf.to_yaml(cfg))
+
+    # save model performance
+    model_performance_fp = trial_output_dir / f"{cfg.path.performance_log_stem}.log"
+    with open(model_performance_fp, "w") as f:
+        f.write("trial_name,tuning_auc,test_auc\n")
+        f.write(
+            f"{trial_output_dir.stem},{model_launcher.evaluate()},"
+            f"{model_launcher.evaluate(split='held_out')}\n"
+        )
+
+    logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
     return auc
 
 

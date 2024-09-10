@@ -16,15 +16,17 @@ input_label_cache_dir: ${output_dir}/${task_name}/labels
 # Where to output the model and cached data
 output_model_dir: ???
 
+time_output_model_dir: ${output_model_dir}/${now:%Y-%m-%d_%H-%M-%S}
+
 delete_below_top_k: -1
 
 name: launch_model
 
 hydra:
   sweep:
-    dir: ${output_model_dir}/sweeps/${now:%Y-%m-%d-%H-%M-%S}/
+    dir: ${time_output_model_dir}/hydra/
     subdir: "1"
   run:
-    dir: ${path.model_log_dir}
+    dir: ${path.sweep_results_dir}
   sweeper:
     direction: "maximize"

@@ -15,8 +15,9 @@ model_launcher:
     p: 2
     metric: "minkowski"
 
-  path:
-    model_file_extension: .pkl
+path:
+  model_file_extension: .pkl
+  model_file_stem: "knn_classifier"
 
 hydra:
   sweeper:

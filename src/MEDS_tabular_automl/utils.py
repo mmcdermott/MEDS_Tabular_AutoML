@@ -418,33 +418,6 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     return str(relative_parent / file_name)
 
 
-def log_to_logfile(model, cfg, output_fp):
-    """Log model hyperparameters and performance to two log files.
-
-    Args:
-        model: The model to log.
-        cfg: The configuration dictionary.
-        output_fp: The relative output file path.
-    """
-    log_fp = Path(cfg.path.model_log_dir)
-
-    # make a folder to log everything for this model
-    out_fp = log_fp / output_fp
-    out_fp.mkdir(parents=True, exist_ok=True)
-
-    # config as a json
-    config_fp = out_fp / f"{cfg.path.config_log_stem}.log"
-    with open(config_fp, "w") as f:
-        f.write(OmegaConf.to_yaml(cfg))
-
-    model_performance_fp = out_fp / f"{cfg.path.performance_log_stem}.log"
-    with open(model_performance_fp, "w") as f:
-        f.write("model_fp,tuning_auc,test_auc\n")
-        f.write(f"{output_fp},{model.evaluate()},{model.evaluate(split='held_out')}\n")
-
-    logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
-
-
 def current_script_name() -> str:
     """Returns the name of the module that called this function."""
 

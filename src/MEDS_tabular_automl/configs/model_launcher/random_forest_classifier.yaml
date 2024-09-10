@@ -20,8 +20,9 @@ model_launcher:
     min_impurity_decrease: 0.0
     bootstrap: True
 
-  path:
-    model_file_extension: .pkl
+path:
+  model_file_extension: .pkl
+  model_file_stem: "random_forest_classifier"
 
 hydra:
   sweeper:

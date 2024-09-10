@@ -17,6 +17,9 @@ model_launcher:
     num_boost_round: 1000
     early_stopping_rounds: 5
 
+path:
+  model_file_stem: "xgboost"
+
 hydra:
   sweeper:
     params:
