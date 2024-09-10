@@ -9,6 +9,7 @@ from io import StringIO
 from pathlib import Path
 
 import polars as pl
+import pytest
 from hydra import compose, initialize
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
@@ -368,6 +369,31 @@ def test_tabularize(tmp_path):
     assert len(log_files) == 2
     shutil.rmtree(expected_output_dir)
 
+    xgboost_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "path.model_file_stem": "xgboost_oom_test",
+        "output_model_dir": str(output_model_dir.resolve()),
+        "data_loading_params.keep_data_in_memory": False,
+    }
+
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in xgboost_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
+
+    launch_model.main(cfg)
+
+    expected_output_dir = Path(cfg.output_model_dir)
+    output_files = list(expected_output_dir.glob("**/*.json"))
+    assert len(output_files) == 1
+
+    log_dir = Path(cfg.path.model_log_dir)
+    log_files = list(log_dir.glob("**/*.log"))
+    assert len(log_files) == 2
+    shutil.rmtree(expected_output_dir)
+
     sklearnmodel_config = {
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
@@ -386,6 +412,23 @@ def test_tabularize(tmp_path):
     output_files = list(expected_output_dir.glob("**/*.pkl"))
     assert len(output_files) == 1
     shutil.rmtree(expected_output_dir)
+
+    sklearnmodel_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "output_model_dir": str(output_model_dir.resolve()),
+        "data_loading_params.keep_data_in_memory": False,
+    }
+
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=knn_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides)
+    with pytest.raises(
+        ValueError, match="Data is loaded in shards, but KNeighborsClassifier does not support partial_fit."
+    ):
+        launch_model.main(cfg)
 
     sklearnmodel_config = {
         **shared_config,

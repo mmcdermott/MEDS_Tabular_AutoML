@@ -43,7 +43,7 @@ class XGBIterator(xgb.DataIter, TabularDataset):
             cfg: The configuration dictionary.
             split: The data split to use.
         """
-        xgb.DataIter.__init__(self, cache_prefix=Path(cfg.path.cache_dir))
+        xgb.DataIter.__init__(self, cache_prefix=cfg.path.cache_dir)
         TabularDataset.__init__(self, cfg=cfg, split=split)
 
         self._it = 0

@@ -3,6 +3,7 @@ import rootutils
 root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
 
 import json
+import shutil
 import subprocess
 from io import StringIO
 from pathlib import Path
@@ -292,6 +293,7 @@ def test_integration(tmp_path):
             "path.model_file_stem": model,
             "hydra.sweeper.n_trials": 2,
             "delete_below_top_k": 1,
+            "data_loading_params.keep_data_in_memory": True,
         }
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
         if model == "autogluon":
@@ -306,3 +308,35 @@ def test_integration(tmp_path):
             assert len(list_subdir_files(str(output_model_dir.resolve()), "json")) == 1
         else:
             assert len(list_subdir_files(str(output_model_dir.resolve()), "pkl")) == 1
+        shutil.rmtree(output_model_dir)
+
+    for model in [
+        "xgboost",
+        "sgd_classifier",
+    ]:
+        model_config = {
+            **shared_config,
+            "tabularization.min_code_inclusion_count": 1,
+            "tabularization.window_sizes": "[30d,365d,full]",
+            "task_name": "test_task",
+            "output_model_dir": str(output_model_dir.resolve()),
+            "model_launcher": model,
+            "path.model_file_stem": model,
+            "hydra.sweeper.n_trials": 2,
+            "delete_below_top_k": 1,
+            "data_loading_params.keep_data_in_memory": False,
+        }
+        overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
+        if model == "autogluon":
+            script = "meds-tab-autogluon"
+        else:
+            script = "meds-tab-model"
+            overrides = ["--multirun"] + overrides
+
+        stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
+        assert "Performance of best model:" in stderr
+        if model == "xgboost":
+            assert len(list_subdir_files(str(output_model_dir.resolve()), "json")) == 1
+        else:
+            assert len(list_subdir_files(str(output_model_dir.resolve()), "pkl")) == 1
+        shutil.rmtree(output_model_dir)
