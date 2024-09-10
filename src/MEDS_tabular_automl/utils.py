@@ -433,7 +433,7 @@ def log_to_logfile(model, cfg, output_fp):
     out_fp.mkdir(parents=True, exist_ok=True)
 
     # config as a json
-    config_fp = out_fp / f"{cfg.path.config_log_stem}.json"
+    config_fp = out_fp / f"{cfg.path.config_log_stem}.log"
     with open(config_fp, "w") as f:
         f.write(OmegaConf.to_yaml(cfg))
 

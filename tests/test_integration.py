@@ -289,7 +289,9 @@ def test_integration(tmp_path):
             "task_name": "test_task",
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
+            "path.model_file_stem": model,
             "hydra.sweeper.n_trials": 2,
+            "delete_below_top_k": 1,
         }
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
         if model == "autogluon":
@@ -300,3 +302,7 @@ def test_integration(tmp_path):
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stderr
+        if model == "xgboost":
+            assert len(list_subdir_files(str(output_model_dir.resolve()), "json")) == 1
+        else:
+            assert len(list_subdir_files(str(output_model_dir.resolve()), "pkl")) == 1

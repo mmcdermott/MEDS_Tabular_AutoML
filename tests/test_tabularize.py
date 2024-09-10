@@ -361,11 +361,11 @@ def test_tabularize(tmp_path):
 
     expected_output_dir = Path(cfg.output_model_dir)
     output_files = list(expected_output_dir.glob("**/*.json"))
-    assert len(output_files) == 2
+    assert len(output_files) == 1
 
     log_dir = Path(cfg.path.model_log_dir)
     log_files = list(log_dir.glob("**/*.log"))
-    assert len(log_files) == 1
+    assert len(log_files) == 2
     shutil.rmtree(expected_output_dir)
 
     sklearnmodel_config = {
