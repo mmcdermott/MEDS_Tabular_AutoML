@@ -39,31 +39,17 @@ mkdir -p "${TASKS_DIR}" # create a directory for the task
 
 for TASK_NAME in "${TASKS[@]}"
 do
-    gcloud storage cp "gs://ehr_standardization_schema/benchmark_v1/data/labels/${TASK_NAME}.parquet" "${TASKS_DIR}/${TASK_NAME}.parquet"
+    gcloud storage cp "gs://ehr_standardization_schema/benchmark_v1/data/labels/${TASK_NAME}.parquet" "${TASKS_DIR}/${TASK_NAME}/0.parquet"
 done
 ```
 
-## Pre-Processing for Tabularization
+## Run Tabularization and XGBoost Baseline
 
 ```console
 export N_PARALLEL_WORKERS=48 # Set number of workers
 export RESHARD_DIR=??? # set to directory to output reshareded meds data
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
     "long_los,icu_mortality" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
-```
-
-## Train XGBOOST Baseline
-
-```console
-meds-tab-model "input_dir=${MIMICIV_MEDS_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" output_model_dir=$OUTPUT_MODEL_DIR task_name=long_los
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
-```
-
-```console
-meds-tab-model "input_dir=${MIMICIV_MEDS_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" task_name=icu_mortality
     "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
 ```

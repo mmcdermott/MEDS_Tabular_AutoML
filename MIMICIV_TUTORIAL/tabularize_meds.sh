@@ -76,7 +76,7 @@ meds-tab-describe \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR"
 
 echo "Tabularizing static data"
-echo meds-tab-tabularize-static \
+meds-tab-tabularize-static \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
     do_overwrite=False "$@"
 
@@ -91,16 +91,16 @@ for TASK in "${TASK_ARRAY[@]}"
 do
     echo "Running task_specific_caching.py for task: $TASK"
     meds-tab-cache-task \
-    --multirun \
-    worker="range(0,$N_PARALLEL_WORKERS)" \
     hydra/launcher=joblib \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
-    "input_label_dir=${TASKS_DIR}" "task_name=${TASK}" do_overwrite=False "$@"
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "task_name=${TASK}" do_overwrite=False "$@"
 
   echo "Running xgboost for task: $TASK"
   meds-tab-xgboost \
       --multirun \
       worker="range(0,$N_PARALLEL_WORKERS)" \
       "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
-      "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" do_overwrite=False "$@"
+      "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" do_overwrite=False \
+      "hydra.sweeper.n_trials=1000" "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
+      "$@"
 done

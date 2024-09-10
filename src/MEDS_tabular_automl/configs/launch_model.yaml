@@ -22,7 +22,7 @@ name: launch_model
 
 hydra:
   sweep:
-    dir: ${output_model_dir}/sweeps/{now:%Y-%m-%d-%H-%M-%S}/
+    dir: ${output_model_dir}/sweeps/${now:%Y-%m-%d-%H-%M-%S}/
     subdir: "1"
   run:
     dir: ${path.model_log_dir}
