@@ -275,7 +275,7 @@ def test_tabularize(tmp_path):
             f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
         )
     output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -330,6 +330,20 @@ def test_tabularize(tmp_path):
         len(list_subdir_files(cfg.output_tabularized_cache_dir, "npz"))
         == expected_num_time_tabs + expected_num_static_tabs
     )
+
+    failure_xgboost_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 100_000_000,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "output_model_dir": str(output_model_dir.resolve()),
+    }
+
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in failure_xgboost_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
+
+    assert 0.0 == launch_model.main(cfg)
 
     xgboost_config = {
         **shared_config,

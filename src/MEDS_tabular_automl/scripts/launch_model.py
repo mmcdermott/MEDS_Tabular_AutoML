@@ -4,6 +4,7 @@ from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
+from loguru import logger
 
 from MEDS_tabular_automl.base_model import BaseModel
 
@@ -30,6 +31,12 @@ def main(cfg: DictConfig) -> float:
 
     if not cfg.loguru_init:
         hydra_loguru_init()
+
+    try:
+        cfg.tabularization._resolved_codes
+    except ValueError as e:
+        logger.warning(f"No codes meet loading critera, trial returning 0 AUC: {str(e)}")
+        return 0.0
 
     model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
 

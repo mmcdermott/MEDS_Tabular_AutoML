@@ -69,6 +69,11 @@ class TabularDataset(TimeableMixin):
         self._set_scaler()
         self._set_imputer()
 
+        self.valid_event_ids, self.labels = self._load_ids_and_labels()
+        # check if the labels are empty
+        if len(self.labels) == 0:
+            raise ValueError("No labels found.")
+
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
         """Creates boolean masks for filtering features.
@@ -478,30 +483,16 @@ class TabularDataset(TimeableMixin):
             all_feats = [all_feats[i] for i in indices]
         return all_feats
 
-    def get_columns_and_indices(self) -> tuple[list[str], list[int]]:
-        """Retrieves the names and indices of the columns in the data.
+    def densify(self) -> np.ndarray:
+        """Builds the data as a dense matrix based on column subselection."""
 
-        Returns:
-            A tuple containing the names of the columns and their indices.
-        """
-        raise NotImplementedError("This method is not implemented yet.")
-        files = get_model_files(self.cfg, self.split, self._data_shards[0])
-
-        def extract_name(test_file):
-            return str(Path(test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
-
-        agg_wind_combos = [extract_name(test_file) for test_file in files]
-
-        feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
-        all_feats = []
-        all_indices = []
-        for agg_wind in agg_wind_combos:
-            window, feat, agg = agg_wind.split("/")
-            feature_ids = get_feature_indices(feat + "/" + agg, feature_columns)
-            feature_names = [feature_columns[i] for i in feature_ids]
-            for feat_name in feature_names:
-                all_feats.append(f"{feat_name}/{agg}/{window}")
-            # use mask to append indices
-            all_indices.extend(feature_ids)
-
-        return all_feats, all_indices
+        # get the dense matrix by iterating through the data shards
+        data = []
+        labels = []
+        for shard_idx in range(len(self._data_shards)):
+            shard_data, shard_labels = self.get_data_shards(shard_idx)
+            data.append(shard_data)
+            labels.append(shard_labels)
+        data = sp.vstack(data)
+        labels = np.concatenate(labels, axis=0)
+        return data, labels
