@@ -39,9 +39,7 @@ MEDS-Tab leverages the recently developed, minimal, easy-to-use Medical Event Da
 
 By following these steps, you can seamlessly transform your dataset, define necessary criteria, and leverage powerful machine learning tools within the MEDS-Tab ecosystem. This approach not only simplifies the process but also ensures high-quality, reproducible results for your machine learning tasks for health projects. It can reliably take no more than a week of full-time human effort to perform Steps I-V on new datasets in reasonable raw formulations!
 
-
 ______________________________________________________________________
-
 
 # Usage
 

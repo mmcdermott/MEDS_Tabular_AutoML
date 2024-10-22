@@ -125,18 +125,18 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 #### 2.1 XGBoost Performance on MIMIC-IV
 
 | Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Number of Included Codes\* | Window Sizes           | Aggregations                                                                |
-| ------------------------------- | ----------------- | ----- | -------------------------------- | -------------------------- | ---------------------- | --------------------------------------------------------------------------- |
-| Post-discharge 30 day Mortality | Discharge         | 0.935 | 1,371                            | 5,712                      | \[7d,full\]            | \[code/count,value/count,value/min,value/max\]                              |
-| Post-discharge 1 year Mortality | Discharge         | 0.898 | 289                              | 10,048                     | \[2h,12h,1d,30d,full\] | \[static/present,code/count,value/sum_sqd,value/min\]                       |
-| 30 day Readmission              | Discharge         | 0.708 | 303                              | 9,903                      | \[30d,365d,full\]      | \[code/count,value/count,value/sum,value/sum_sqd,value/max\]                |
-| In ICU Mortality                | Admission + 24 hr | 0.661 | 7,059                            | 3,037                      | \[12h,full\]           | \[static/present,code/count,value/sum,value/min,value/max\]                 |
-| In ICU Mortality                | Admission + 48 hr | 0.673 | 71                               | 16,112                     | \[1d,7d,full\]         | \[static/present,code/count,value/sum,value/min,value/max\]                 |
-| In Hospital Mortality           | Admission + 24 hr | 0.812 | 43                               | 18,989                     | \[1d,full\]            | \[static/present,code/count,value/sum,value/min,value/max\]                 |
-| In Hospital Mortality           | Admission + 48 hr | 0.810 | 678                              | 7,433                      | \[1d,full\]            | \[static/present,code/count,value/count\]                                   |
-| LOS in ICU > 3 days             | Admission + 24 hr | 0.946 | 30,443                           | 1,624                      | \[2h,7d,30d\]          | \[static/present,code/count,value/count,value/sum,value/sum_sqd,value/max\] |
-| LOS in ICU > 3 days             | Admission + 48 hr | 0.967 | 2,864                            | 4,332                      | \[2h,7d,30d\]          | \[code/count,value/sum_sqd,value/max\]                                      |
-| LOS in Hospital > 3 days        | Admission + 24 hr | 0.943 | 94,633                           | 912                        | \[12h,1d,7d\]          | \[code/count,value/count,value/sum_sqd\]                                    |
-| LOS in Hospital > 3 days        | Admission + 48 hr | 0.945 | 30,880                           | 1,619                      | \[1d,7d,30d\]          | \[code/count,value/sum,value/min,value/max\]                                |
+| ------------------------------- | ----------------- | ----- | ---------------------------- | -------------------------- | ---------------------- | --------------------------------------------------------------------------- |
+| Post-discharge 30 day Mortality | Discharge         | 0.935 | 1,371                        | 5,712                      | \[7d,full\]            | \[code/count,value/count,value/min,value/max\]                              |
+| Post-discharge 1 year Mortality | Discharge         | 0.898 | 289                          | 10,048                     | \[2h,12h,1d,30d,full\] | \[static/present,code/count,value/sum_sqd,value/min\]                       |
+| 30 day Readmission              | Discharge         | 0.708 | 303                          | 9,903                      | \[30d,365d,full\]      | \[code/count,value/count,value/sum,value/sum_sqd,value/max\]                |
+| In ICU Mortality                | Admission + 24 hr | 0.661 | 7,059                        | 3,037                      | \[12h,full\]           | \[static/present,code/count,value/sum,value/min,value/max\]                 |
+| In ICU Mortality                | Admission + 48 hr | 0.673 | 71                           | 16,112                     | \[1d,7d,full\]         | \[static/present,code/count,value/sum,value/min,value/max\]                 |
+| In Hospital Mortality           | Admission + 24 hr | 0.812 | 43                           | 18,989                     | \[1d,full\]            | \[static/present,code/count,value/sum,value/min,value/max\]                 |
+| In Hospital Mortality           | Admission + 48 hr | 0.810 | 678                          | 7,433                      | \[1d,full\]            | \[static/present,code/count,value/count\]                                   |
+| LOS in ICU > 3 days             | Admission + 24 hr | 0.946 | 30,443                       | 1,624                      | \[2h,7d,30d\]          | \[static/present,code/count,value/count,value/sum,value/sum_sqd,value/max\] |
+| LOS in ICU > 3 days             | Admission + 48 hr | 0.967 | 2,864                        | 4,332                      | \[2h,7d,30d\]          | \[code/count,value/sum_sqd,value/max\]                                      |
+| LOS in Hospital > 3 days        | Admission + 24 hr | 0.943 | 94,633                       | 912                        | \[12h,1d,7d\]          | \[code/count,value/count,value/sum_sqd\]                                    |
+| LOS in Hospital > 3 days        | Admission + 48 hr | 0.945 | 30,880                       | 1,619                      | \[1d,7d,30d\]          | \[code/count,value/sum,value/min,value/max\]                                |
 
 - Number of Included Codes is based on Minimum Code Inclusion Count -- we calculated the number of resulting codes that were above the minimum threshold and reported that.
 
@@ -169,15 +169,15 @@ For more details about eICU specific task generation and running, see the [eICU 
 #### 1. XGBoost Performance on eICU
 
 | Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Window Sizes             | Aggregations                                                   |
-| ------------------------------- | ----------------- | ----- | -------------------------------- | ------------------------ | -------------------------------------------------------------- |
-| Post-discharge 30 day Mortality | Discharge         | 0.603 | 68,235                           | \[12h,1d,full\]          | \[code/count,value/sum_sqd,value/max\]                         |
-| Post-discharge 1 year Mortality | Discharge         | 0.875 | 3,280                            | \[30d,365d\]             | \[static/present,value/sum,value/sum_sqd,value/min,value/max\] |
-| In Hospital Mortality           | Admission + 24 hr | 0.855 | 335,912                          | \[2h,7d,30d,365d,full\]  | \[static/present,code/count,value/count,value/min,value/max\]  |
-| In Hospital Mortality           | Admission + 48 hr | 0.570 | 89,121                           | \[12h,1d,30d\]           | \[code/count,value/count,value/min\]                           |
-| LOS in ICU > 3 days             | Admission + 24 hr | 0.783 | 7,881                            | \[1d,30d,full\]          | \[static/present,code/count,value/count,value/sum,value/max\]  |
-| LOS in ICU > 3 days             | Admission + 48 hr | 0.757 | 1,719                            | \[2h,12h,7d,30d,full\]   | \[code/count,value/count,value/sum,value/sum_sqd,value/min\]   |
-| LOS in Hospital > 3 days        | Admission + 24 hr | 0.864 | 160                              | \[1d,30d,365d,full\]     | \[static/present,code/count,value/min,value/max\]              |
-| LOS in Hospital > 3 days        | Admission + 48 hr | 0.895 | 975                              | \[12h,1d,30d,365d,full\] | \[code/count,value/count,value/sum,value/sum_sqd\]             |
+| ------------------------------- | ----------------- | ----- | ---------------------------- | ------------------------ | -------------------------------------------------------------- |
+| Post-discharge 30 day Mortality | Discharge         | 0.603 | 68,235                       | \[12h,1d,full\]          | \[code/count,value/sum_sqd,value/max\]                         |
+| Post-discharge 1 year Mortality | Discharge         | 0.875 | 3,280                        | \[30d,365d\]             | \[static/present,value/sum,value/sum_sqd,value/min,value/max\] |
+| In Hospital Mortality           | Admission + 24 hr | 0.855 | 335,912                      | \[2h,7d,30d,365d,full\]  | \[static/present,code/count,value/count,value/min,value/max\]  |
+| In Hospital Mortality           | Admission + 48 hr | 0.570 | 89,121                       | \[12h,1d,30d\]           | \[code/count,value/count,value/min\]                           |
+| LOS in ICU > 3 days             | Admission + 24 hr | 0.783 | 7,881                        | \[1d,30d,full\]          | \[static/present,code/count,value/count,value/sum,value/max\]  |
+| LOS in ICU > 3 days             | Admission + 48 hr | 0.757 | 1,719                        | \[2h,12h,7d,30d,full\]   | \[code/count,value/count,value/sum,value/sum_sqd,value/min\]   |
+| LOS in Hospital > 3 days        | Admission + 24 hr | 0.864 | 160                          | \[1d,30d,365d,full\]     | \[static/present,code/count,value/min,value/max\]              |
+| LOS in Hospital > 3 days        | Admission + 48 hr | 0.895 | 975                          | \[12h,1d,30d,365d,full\] | \[code/count,value/count,value/sum,value/sum_sqd\]             |
 
 #### 2. XGBoost Optimal Found Model Parameters
 
