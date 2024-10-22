@@ -29,12 +29,12 @@ This initial stage processes a pre-shareded dataset. We expect a structure as fo
 ...
 ```
 
-We then compute and store feature frequencies, crucial for determining which features are relevant for further analysis.
+We then compute and store feature counts, crucial for determining which features are relevant for further analysis.
 
 **Detailed Workflow:**
 
 - **Data Loading and Sharding**: We iterate through shards to compute feature frequencies for each shard.
-- **Frequency Aggregation**: After computing frequencies across shards, we aggregate them to get a final count of each feature across the entire dataset training dataset, which allows us to filter out infrequent features in the tabularization stage or when tuning XGBoost.
+- **Count Aggregation**: After computing feature counts across shards, we aggregate them to get a final count of each feature across the entire dataset training dataset, which allows us to filter out infrequent features in the tabularization stage or when tuning XGBoost.
 
 ## 2. Tabularization of Time-Series Data
 
@@ -92,7 +92,7 @@ Now that we have generated tabular features for all the events in our dataset, w
 - **Row Selection Based on Tasks**: Only the data rows that are relevant to the specific tasks are selected and cached. This reduces the memory footprint and speeds up the training process.
 - **Use of Sparse Matrices for Efficient Storage**: Sparse matrices are again employed here to store the selected data efficiently, ensuring that only non-zero data points are kept in memory, thus optimizing both storage and retrieval times.
 
-The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels follow the same shard filestructure as the input meds data from step (1), and the label parquets need `subject_id`, `timestamp`, and `label` columns.
+The file structure for the cached data mirrors that of the tabular data, also consisting of `.npz` files, where users must specify the directory that stores labels. Labels must follow the [MEDS label-schema](https://github.com/Medical-Event-Data-Standard/meds?tab=readme-ov-file#the-label-schema), specifically including the `subject_id`, `prediction_time`, and `boolean_value` columns which are necessary for binary classification tasks.
 
 ## 4. XGBoost Training
 
@@ -102,4 +102,4 @@ The final stage uses the processed and cached data to train an XGBoost model. Th
 
 - **Iterator for Data Loading**: Custom iterators are designed to load sparse matrices efficiently into the XGBoost training process, which can handle sparse inputs natively, thus maintaining high computational efficiency.
 - **Training and Validation**: The model is trained using the tabular data, with evaluation steps that include early stopping to prevent overfitting and tuning of hyperparameters based on validation performance.
-- **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window sizes, and the minimimum code inclusion frequency.
+- **Hyperaparameter Tuning**: We use [optuna](https://optuna.org/) to tune over XGBoost model pramters, aggregations, window sizes, and the minimimum code inclusion count.
