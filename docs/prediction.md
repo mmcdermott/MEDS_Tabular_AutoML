@@ -12,18 +12,16 @@ We optimize predictive accuracy and model performance by using varied window siz
 
 A single XGBoost run was completed to profile time and memory usage. This was done for each `$TASK` using the following command:
 
-```console
-meds-tab-model
-      input_dir="path_to_data" \
-      task_name=$TASK \
-      output_dir="output_directory" \
-      do_overwrite=False \
+```bash
+meds-tab-model \
+    model_launcher=xgboost \
+    "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
+    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK"
 ```
 
-This uses the defaults minimum code inclusion count, window sizes, and aggregations from the `launch_xgboost.yaml`:
+This uses the defaults minimum code inclusion count, window sizes, and aggregations from the [`configs/launch_model.yaml`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/launch_model.yaml) which inherits from the [`configs/tabularization/default.yaml`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/tabularization/default.yaml).
 
 ```yaml
-allowed_codes:      # allows all codes that meet min code inclusion count
 min_code_inclusion_count: 10
 window_sizes:
   - 1d
@@ -82,25 +80,16 @@ To better understand the runtimes, we also report the task specific cohort size.
 
 The XGBoost sweep was run using the following command for each `$TASK`:
 
-```console
-meds-tab-model --multirun \
-      input_dir="path_to_data" \
-      task_name=$TASK \
-      output_dir="output_directory" \
-      tabularization.window_sizes=$(generate-permutations [1d,30d,365d,full]) \
-      do_overwrite=False \
-      tabularization.aggs=$(generate-permutations [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
-```
-
-The model parameters were set to:
-
-```yaml
-model:
-  booster: gbtree
-  device: cpu
-  nthread: 1
-  tree_method: hist
-  objective: binary:logistic
+```bash
+meds-tab-model \
+   --multirun \
+   model_launcher=xgboost \
+   "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
+   "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" \
+   "hydra.sweeper.n_trials=1000" "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=$(generate-subsets [1d,30d,365d,full]) \
+    tabularization.aggs=$(generate-subsets [static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max])
 ```
 
 The hydra sweeper swept over the parameters:
@@ -117,6 +106,8 @@ params:
   early_stopping_rounds: range(1, 10)
   tabularization.min_code_inclusion_count: tag(log, range(10, 1000000))
 ```
+
+You can override xgboost sweep parameters in the [`configs/model_launcher/xgboost.yaml`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/model_launcher/xgboost.yaml) file.
 
 Note that the XGBoost command shown includes `tabularization.window_sizes` and ` tabularization.aggs` in the parameters to sweep over.
 

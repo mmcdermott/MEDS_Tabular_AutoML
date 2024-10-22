@@ -2,7 +2,7 @@
 # Core CLI Scripts Overview
 We provide a set of core CLI scripts to facilitate the tabularization and modeling of MEDS data. These scripts are designed to be run in sequence to transform raw MEDS data into tabularized data and train a model on the tabularized data. The following is a high-level overview of the core CLI scripts:
 
-#### 1. **`MEDS_transform-reshard_to_split`**:
+## 1. **`MEDS_transform-reshard_to_split`**:
 
 This optional command reshards the data. A core challenge in tabularization is the high memory usage and slow compute time. We shard the data into small shards to reduce the memory usage as we can independently tabularize each shard, and we can reduce cpu time by parallelizing the processing of these shards across workers that are independently processing different shards.
 
@@ -32,7 +32,7 @@ MEDS_transform-reshard_to_split \
 For the rest of the tutorial we will assume that the data has been reshared into the `MEDS_RESHARD_DIR` directory, but this step is optional, and you could instead use the original data directory, `MEDS_DIR`. If you experience high memory issues in later stages, you should try reducing `stage_configs.reshard_to_split.n_subjects_per_shard` to a smaller number.
 
 
-#### 2. **`meds-tab-describe`**:
+## 2. **`meds-tab-describe`**:
 
 This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
 
@@ -55,7 +55,9 @@ This stage is not parallelized as it runs very quickly.
     - `input_dir`: The directory containing the MEDS data.
     - `output_dir`: The directory to store the tabularized data.
 
-#### 3. **`meds-tab-tabularize-static`**: Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
+## 3. **`meds-tab-tabularize-static`**:
+
+Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
 
    **Example: Tabularizing static data** with the minimum code count of 10, window sizes of `[1d, 30d,  365d, full]`, and value aggregation methods of `[static/present, static/first, code/count, value/count, value/sum, value/sum_sqd, value/min, value/max]`
 
@@ -89,7 +91,7 @@ This stage is not parallelized as it runs very quickly.
     - `output_dir`: The directory to store the tabularized data.
 
 
-#### 4. **`meds-tab-tabularize-time-series`**:
+## 4. **`meds-tab-tabularize-time-series`**:
 
 Iterates through combinations of a shard, `window_size`, and `aggregation` to generate feature vectors that aggregate patient data for each unique `subject_id` x `time`. This stage (and the previous stage) uses sparse matrix formats to efficiently handle the computational and storage demands of rolling window calculations on large datasets. We support parallelization through Hydra's [`--multirun`](https://hydra.cc/docs/intro/#multirun) flag and the [`joblib` launcher](https://hydra.cc/docs/plugins/joblib_launcher/#internaldocs-banner).
 
@@ -128,7 +130,7 @@ meds-tab-tabularize-time-series \
 
 
 
-5. **`meds-tab-cache-task`**:
+## 5. **`meds-tab-cache-task`**:
 
 Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
 
@@ -177,7 +179,7 @@ meds-tab-cache-task \
     - `tabularization.aggs`: The aggregation functions to use.
 
 
-#### 6. **`meds-tab-model`**:
+## 6. **`meds-tab-model`**:
 
 Trains a tabular model using user-specified parameters. You can train a single xgboost model with the following command:
 ```bash
@@ -202,6 +204,28 @@ meds-tab-model \
     - `tabularization.window_sizes`: The window sizes to use.
     - `tabularization.aggs`: The aggregation functions to use.
 
+??? note "Data Preprocessing Options"
+
+     The tool provides several options for data preprocessing, though these may not always be necessary depending on your chosen model:
+
+     - **Tree-based methods** (e.g., XGBoost):
+        - Insensitive to normalization
+        - Generally don't benefit from missing value imputation
+        - XGBoost natively handles learning decisions for missing data
+     - **Other supported models** (`knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`):
+        - Support sparse matrices
+        - May benefit from normalization or imputation for optimal performance
+
+     **Available preprocessing options:**
+
+     - *Normalization* (maintains sparsity):
+         - `standard_scaler`: Unit variance scaling
+         - `max_abs_scaler`: Maximum absolute value scaling
+
+     - *Imputation* (converts to dense format which significantly increases memory usage!!!):
+         - `mean_imputer`: Mean imputation
+         - `median_imputer`: Median imputation
+         - `mode_imputer`: Mode imputation
 
 You can also run an [optuna](https://optuna.org/) hyperparameter sweep by adding the `--multirun` flag and can control the number of trials with `hydra.sweeper.n_trials` and parallel jobs with `hydra.sweeper.n_jobs`:
 
@@ -229,7 +253,6 @@ meds-tab-model \
     - `tabularization.min_code_inclusion_count`: The minimum code inclusion frequency.
     - `tabularization.window_sizes`: The window sizes to use.
     - `tabularization.aggs`: The aggregation functions to use.
-
 
 ??? note "Why `generate-subsets`?"
     **`generate-subsets`**: Generates and prints a sorted list of all non-empty subsets from a comma-separated input. This is provided for the convenience of sweeping over all possible combinations of window sizes and aggregations.

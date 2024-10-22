@@ -6,10 +6,11 @@ site_author: Nassim Oufattole
 nav:
   - "Home": index.md
   - "Overview": overview.md
+  - "Implementation": implementation.md
   - "MIMICIV Tutorial": tutorial.md
   - "Terminology": terminology.md
-  - "Prediction": prediction.md
-  - "Profiling": profiling.md
+  - "Benchmark Results": prediction.md
+  - "Computational Profiling": profiling.md
   - "API Reference": reference/api/
   - "Config Reference": reference/config/
   - "Issues": https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues
