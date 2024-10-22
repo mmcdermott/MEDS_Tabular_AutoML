@@ -3,7 +3,7 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       # list of supported hooks: https://pre-commit.com/hooks.html
       - id: trailing-whitespace
@@ -88,6 +88,7 @@ repos:
     rev: 0.7.17
     hooks:
       - id: mdformat
+        exclude: "^docs/.*\\.md$"
         args: ["--number"]
         additional_dependencies:
           - mdformat-gfm

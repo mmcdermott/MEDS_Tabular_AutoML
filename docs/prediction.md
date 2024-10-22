@@ -13,18 +13,18 @@ We optimize predictive accuracy and model performance by using varied window siz
 A single XGBoost run was completed to profile time and memory usage. This was done for each `$TASK` using the following command:
 
 ```console
-meds-tab-xgboost
+meds-tab-model
       input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
       do_overwrite=False \
 ```
 
-This uses the defaults minimum code inclusion frequency, window sizes, and aggregations from the `launch_xgboost.yaml`:
+This uses the defaults minimum code inclusion count, window sizes, and aggregations from the `launch_xgboost.yaml`:
 
 ```yaml
-allowed_codes:      # allows all codes that meet min code inclusion frequency
-min_code_inclusion_frequency: 10
+allowed_codes:      # allows all codes that meet min code inclusion count
+min_code_inclusion_count: 10
 window_sizes:
   - 1d
   - 7d
@@ -83,7 +83,7 @@ To better understand the runtimes, we also report the task specific cohort size.
 The XGBoost sweep was run using the following command for each `$TASK`:
 
 ```console
-meds-tab-xgboost --multirun \
+meds-tab-model --multirun \
       input_dir="path_to_data" \
       task_name=$TASK \
       output_dir="output_directory" \
@@ -115,7 +115,7 @@ params:
   model.max_depth: range(2, 16)
   num_boost_round: range(100, 1000)
   early_stopping_rounds: range(1, 10)
-  tabularization.min_code_inclusion_frequency: tag(log, range(10, 1000000))
+  tabularization.min_code_inclusion_count: tag(log, range(10, 1000000))
 ```
 
 Note that the XGBoost command shown includes `tabularization.window_sizes` and ` tabularization.aggs` in the parameters to sweep over.
@@ -124,7 +124,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 
 #### 2.1 XGBoost Performance on MIMIC-IV
 
-| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Frequency | Number of Included Codes\* | Window Sizes           | Aggregations                                                                |
+| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Number of Included Codes\* | Window Sizes           | Aggregations                                                                |
 | ------------------------------- | ----------------- | ----- | -------------------------------- | -------------------------- | ---------------------- | --------------------------------------------------------------------------- |
 | Post-discharge 30 day Mortality | Discharge         | 0.935 | 1,371                            | 5,712                      | \[7d,full\]            | \[code/count,value/count,value/min,value/max\]                              |
 | Post-discharge 1 year Mortality | Discharge         | 0.898 | 289                              | 10,048                     | \[2h,12h,1d,30d,full\] | \[static/present,code/count,value/sum_sqd,value/min\]                       |
@@ -138,7 +138,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 | LOS in Hospital > 3 days        | Admission + 24 hr | 0.943 | 94,633                           | 912                        | \[12h,1d,7d\]          | \[code/count,value/count,value/sum_sqd\]                                    |
 | LOS in Hospital > 3 days        | Admission + 48 hr | 0.945 | 30,880                           | 1,619                      | \[1d,7d,30d\]          | \[code/count,value/sum,value/min,value/max\]                                |
 
-- Number of Included Codes is based on Minimum Code Inclusion Frequency -- we calculated the number of resulting codes that were above the minimum threshold and reported that.
+- Number of Included Codes is based on Minimum Code Inclusion Count -- we calculated the number of resulting codes that were above the minimum threshold and reported that.
 
 #### 2.2 XGBoost Optimal Found Model Parameters
 
@@ -168,7 +168,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 
 #### 1. XGBoost Performance on eICU
 
-| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Frequency | Window Sizes             | Aggregations                                                   |
+| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Window Sizes             | Aggregations                                                   |
 | ------------------------------- | ----------------- | ----- | -------------------------------- | ------------------------ | -------------------------------------------------------------- |
 | Post-discharge 30 day Mortality | Discharge         | 0.603 | 68,235                           | \[12h,1d,full\]          | \[code/count,value/sum_sqd,value/max\]                         |
 | Post-discharge 1 year Mortality | Discharge         | 0.875 | 3,280                            | \[30d,365d\]             | \[static/present,value/sum,value/sum_sqd,value/min,value/max\] |
