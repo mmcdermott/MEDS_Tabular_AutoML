@@ -168,6 +168,7 @@ This stage is not parallelized as it runs very quickly.
 
 !!! note "Code Inclusion Parameters"
     In addition to `min_code_inclusion_count` there are several other parameters that can be set in tabularization to restrict the codes that are included:
+
     * `allowed_codes`: a list of codes to include in the tabularized data
     * `min_code_inclusion_count`: The minimum number of times a code must appear
     * `min_code_inclusion_frequency`: The minimum normalized frequency required
@@ -433,6 +434,7 @@ meds-tab-model \
 
 ??? note "Code Inclusion Parameters in Modeling"
     In this modeling stage, you can change the code inclusion parameters from previous stages and treat them as tunable hyperparameters. Additional task-specific parameters include:
+
     * `min_correlation`: Minimum correlation with target required
     * `max_by_correlation`: Maximum number of codes to include based on correlation with target
 
@@ -446,6 +448,7 @@ meds-tab-model \
         * May benefit from normalization or imputation
 
     Available preprocessing options:
+
     * *Normalization* (maintains sparsity):
         * `standard_scaler`
         * `max_abs_scaler`
@@ -498,7 +501,7 @@ OUTPUT_MODEL_DIR/
                 ??? folder "TRIAL_2_ID"
                     [Similar structure to TRIAL_1_ID]
 
-??? note "Experimental Feature"
+??? example "Experimental Feature"
     We also support an autogluon based hyperparameter and model search:
     ```bash
     meds-tab-autogluon model_launcher=autogluon \
