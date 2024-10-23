@@ -51,7 +51,7 @@ Static aggregations are computed once per subject_id and static code. Dynamic ag
 
 ## Lookback Window
 
-We define a lookback window as a time period before a reference time point over which dynamic data is aggregated. By default we use the lookback windows (defined in [this default hydra config](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/tabularization/default.yaml)):
+We define a lookback window as a time period before a reference time point over which dynamic data is aggregated. By default, we use the lookback windows (defined in [this default hydra config](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/tabularization/default.yaml)):
 ```yaml
 window_sizes:
   - "1d" # 1 day
