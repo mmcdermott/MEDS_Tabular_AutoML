@@ -18,6 +18,8 @@ time: "2024-01-15 14:30:00"
 code: "HEART_RATE"
 numeric_value: 72.0
 ```
+represents a heart rate measurement of 72.0 for patient_123 taken on January 15th, 2024 at 2:30 PM.
+
 
 ## Feature Types
 
@@ -30,33 +32,31 @@ Measurements in MEDS-Tab are categorized into four types based on whether they i
 | Dynamic Codes | Measurements with a timestamp but no numeric value | Diagnosis codes, medication orders |
 | Dynamic Numeric Values | Measurements with both a timestamp and numeric value | Vital signs, lab results |
 
-Note: "Static" and "dynamic" refer to how data is recorded in the dataset structure, not whether the underlying concept can change over time.
+Note that "Static" and "Dynamic" refer to whether a timestamp is recorded in the MEDS data, not whether the underlying concept can change over time.
 
 ## Aggregation Functions
 
-### Static Aggregations
-Terms for aggregations applied to static data per subject_id and static code:
-- `static/present`: Binary indicator of code presence
-- `static/first`: The numeric value (for static numeric values)
+| Aggregation | Applies To | Definition |
+|-------------|------------|------------|
+| `static/present` | Static Codes | Binary indicator of code presence |
+| `static/first` | Static Numeric Values | The numeric value |
+| `code/count` | Dynamic Codes | Count of code occurrences within lookback window |
+| `value/count` | Dynamic Numeric Values | Count of measurements within lookback window |
+| `value/sum` | Dynamic Numeric Values | Sum of measurements within lookback window |
+| `value/sum_sqd` | Dynamic Numeric Values | Sum of squared measurements within lookback window |
+| `value/min` | Dynamic Numeric Values | Minimum measurement within lookback window |
+| `value/max` | Dynamic Numeric Values | Maximum measurement within lookback window |
 
-### Dynamic Aggregations
-Terms for aggregations applied per subject_id and lookback window:
-
-For dynamic codes:
-- `code/count`: Count of code occurrences
-
-For dynamic numeric values (subset of dynamic codes with numeric measurements):
-- `value/count`: Count of measurements
-- `value/sum`: Sum of measurements
-- `value/sum_sqd`: Sum of squared measurements
-- `value/min`: Minimum measurement
-- `value/max`: Maximum measurement
+Static aggregations are computed once per subject_id and static code. Dynamic aggregations are computed per subject_id, code, and lookback window, where the lookback window defines the time period before a reference time point over which measurements are aggregated. Note that the value-based aggregations (`value/*`) are only computed for the subset of dynamic code measurements that include numeric values, while `code/count` is computed for all dynamic codes regardless of whether they have numeric values.
 
 ## Lookback Window
 
-A time period before a reference time point over which dynamic data is aggregated. Standard windows:
-- "1d": 1 day
-- "7d": 7 days
-- "30d": 30 days
-- "365d": 1 year
-- "full": Complete subject history
+We define a lookback window as a time period before a reference time point over which dynamic data is aggregated. By default we use the lookback windows (defined in [this default hydra config](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/tabularization/default.yaml)):
+```yaml
+window_sizes:
+  - "1d" # 1 day
+  - "7d" # 7 days
+  - "30d" # 30 days
+  - "365d" # 1 year
+  - "full" # full subject history
+```
