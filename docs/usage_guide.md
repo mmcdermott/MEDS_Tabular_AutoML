@@ -24,7 +24,7 @@ MEDS_transform-reshard_to_split \
     * `worker`: When using joblib or a hydra slurm launcher, the range of workers must be defined as it specifies the number of parallel workers to spawn. We use 6 workers here.
     * `input_dir`: The directory containing the MEDS data.
     * `cohort_dir`: The directory to store the resharded data.
-    * `stages`: The stages to run. We only run the reshard_to_split stage here. MEDS Transform allows for a sequence of stages to be defined an run which is why this is a list.
+    * `stages`: The stages to run. We only run the reshard_to_split stage here. MEDS Transform allows for a sequence of stages to be defined and run which is why this is a list.
     * `stage`: The specific stage to run. We run the reshard_to_split stage here. It must be one of the stages in the `stages` kwarg list.
     * `stage_configs.reshard_to_split.n_subjects_per_shard`: The number of subjects per shard. We use 2500 subjects per shard here.
 
@@ -144,7 +144,7 @@ OUTPUT_DIR/
 
 ## 3. **`meds-tab-tabularize-static`**
 
-Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination, thus rows are duplicated across multiple timestamps for the same patient.
+Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination. As a result, rows are duplicated across multiple timestamps for the same patient.
 
 ```bash
 meds-tab-tabularize-static \
