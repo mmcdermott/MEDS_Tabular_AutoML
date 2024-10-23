@@ -5,9 +5,9 @@
 .md-typeset .admonition.folder,
 .md-typeset details.folder {
   border: none;
-  border-left: 3px solid rgb(40, 72, 214);
+  border-left: 3px solid var(--md-primary-fg-color);
   box-shadow: none;
-  background: none;
+  background: var(--md-default-bg-color--light);
 }
 
 .md-typeset .folder > .admonition-title,
@@ -18,8 +18,9 @@
   font-weight: normal;
   display: flex;
   align-items: center;
-  min-height: 24px; /* Ensure consistent height */
+  min-height: 40px; /* Better touch target size */
   gap: 0.5rem; /* Add space between icon and text */
+  color: var(--md-typeset-color); /* Ensure sufficient contrast */
 }
 
 .md-typeset .folder > .admonition-title::before,
