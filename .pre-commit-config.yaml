@@ -88,8 +88,8 @@ repos:
     rev: 0.7.17
     hooks:
       - id: mdformat
-        exclude: "^docs/.*\\.md$"
         args: ["--number"]
+        exclude: "docs/tutorial.md|docs/index.md"
         additional_dependencies:
           - mdformat-gfm
           - mdformat-tables
@@ -98,6 +98,7 @@ repos:
           - mdformat-black
           - mdformat-config
           - mdformat-shfmt
+          - mdformat-mkdocs
 
   # word spelling linter
   - repo: https://github.com/codespell-project/codespell

@@ -19,16 +19,17 @@ MEDS_transform-reshard_to_split \
 ```
 
 ??? note "Args Description"
-    * `--multirun`: This is an optional argument to specify that the command should be run in parallel. We use this here to parallelize the resharing of the data.
-    * `hydra/launcher`: This is an optional argument to specify the launcher. When using multirun you should specify the launcher. We use joblib here which enables parallelization on a single machine.
-    * `worker`: When using joblib or a hydra slurm launcher, the range of workers must be defined as it specifies the number of parallel workers to spawn. We use 6 workers here.
-    * `input_dir`: The directory containing the MEDS data.
-    * `cohort_dir`: The directory to store the resharded data.
-    * `stages`: The stages to run. We only run the reshard_to_split stage here. MEDS Transform allows for a sequence of stages to be defined and run which is why this is a list.
-    * `stage`: The specific stage to run. We run the reshard_to_split stage here. It must be one of the stages in the `stages` kwarg list.
-    * `stage_configs.reshard_to_split.n_subjects_per_shard`: The number of subjects per shard. We use 2500 subjects per shard here.
+    - `--multirun`: This is an optional argument to specify that the command should be run in parallel. We use this here to parallelize the resharing of the data.
+    - `hydra/launcher`: This is an optional argument to specify the launcher. When using multirun you should specify the launcher. We use joblib here which enables parallelization on a single machine.
+    - `worker`: When using joblib or a hydra slurm launcher, the range of workers must be defined as it specifies the number of parallel workers to spawn. We use 6 workers here.
+    - `input_dir`: The directory containing the MEDS data.
+    - `cohort_dir`: The directory to store the resharded data.
+    - `stages`: The stages to run. We only run the reshard_to_split stage here. MEDS Transform allows for a sequence of stages to be defined and run which is why this is a list.
+    - `stage`: The specific stage to run. We run the reshard_to_split stage here. It must be one of the stages in the `stages` kwarg list.
+    - `stage_configs.reshard_to_split.n_subjects_per_shard`: The number of subjects per shard. We use 2500 subjects per shard here.
 
 ### Input Data Structure
+
 ```text
 MEDS_DIR/
 │
@@ -44,6 +45,7 @@ MEDS_DIR/
 ```
 
 ### Output Data Structure (New Files)
+
 ```text
 MEDS_RESHARD_DIR/
 │
@@ -59,21 +61,25 @@ MEDS_RESHARD_DIR/
 ```
 
 ### Complete Directory Structure
+
 !!! abstract "Stage 0 Directory Structure"
     ??? folder "MEDS_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
     ??? folder "MEDS_RESHARD_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
 
 For the rest of the tutorial we will assume that the data has been reshared into the `MEDS_RESHARD_DIR` directory, but this step is optional, and you could instead use the original data directory, `MEDS_DIR`. If you experience high memory issues in later stages, you should try reducing `stage_configs.reshard_to_split.n_subjects_per_shard` to a smaller number.
 
@@ -81,10 +87,10 @@ For the rest of the tutorial we will assume that the data has been reshared into
 
 This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
 
-* dynamic codes (codes with timestamps)
-* dynamic numeric values (codes with timestamps and numerical values)
-* static codes (codes without timestamps)
-* static numeric values (codes without timestamps but with numerical values)
+- dynamic codes (codes with timestamps)
+- dynamic numeric values (codes with timestamps and numerical values)
+- static codes (codes without timestamps)
+- static numeric values (codes without timestamps but with numerical values)
 
 This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `OUTPUT_DIR` argument specified as a hydra-style command line argument.
 
@@ -96,10 +102,11 @@ meds-tab-describe \
 This stage is not parallelized as it runs very quickly.
 
 ??? note "Args Description"
-    * `input_dir`: The directory containing the MEDS data.
-    * `output_dir`: The directory to store the tabularized data.
+    - `input_dir`: The directory containing the MEDS data.
+    - `output_dir`: The directory to store the tabularized data.
 
 ### Input Data Structure
+
 ```text
 MEDS_RESHARD_DIR/
 │
@@ -115,6 +122,7 @@ MEDS_RESHARD_DIR/
 ```
 
 ### Output Data Structure (New Files)
+
 ```text
 OUTPUT_DIR/
 │
@@ -123,24 +131,29 @@ OUTPUT_DIR/
 ```
 
 ### Complete Directory Structure
+
 !!! abstract "Stage 1 Directory Structure"
     ??? folder "MEDS_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
     ??? folder "MEDS_RESHARD_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
+
     ??? folder "OUTPUT_DIR"
         ??? folder "metadata"
-            * 📄 codes.parquet
+            - 📄 codes.parquet
 
 ## 3. **`meds-tab-tabularize-static`**
 
@@ -159,27 +172,29 @@ meds-tab-tabularize-static \
 This stage is not parallelized as it runs very quickly.
 
 ??? note "Args Description"
-    * `input_dir`: The directory containing the MEDS data.
-    * `output_dir`: The directory to store the tabularized data.
-    * `tabularization.min_code_inclusion_count`: The minimum number of times a code must appear.
-    * `tabularization.window_sizes`: The window sizes to use for aggregations.
-    * `do_overwrite`: Whether to overwrite existing files.
-    * `tabularization.aggs`: The aggregation methods to use.
+    - `input_dir`: The directory containing the MEDS data.
+    - `output_dir`: The directory to store the tabularized data.
+    - `tabularization.min_code_inclusion_count`: The minimum number of times a code must appear.
+    - `tabularization.window_sizes`: The window sizes to use for aggregations.
+    - `do_overwrite`: Whether to overwrite existing files.
+    - `tabularization.aggs`: The aggregation methods to use.
 
 !!! note "Code Inclusion Parameters"
     In addition to `min_code_inclusion_count` there are several other parameters that can be set in tabularization to restrict the codes that are included:
 
-    * `allowed_codes`: a list of codes to include in the tabularized data
-    * `min_code_inclusion_count`: The minimum number of times a code must appear
-    * `min_code_inclusion_frequency`: The minimum normalized frequency required
-    * `max_included_codes`: The maximum number of codes to include
+    - `allowed_codes`: a list of codes to include in the tabularized data
+    - `min_code_inclusion_count`: The minimum number of times a code must appear
+    - `min_code_inclusion_frequency`: The minimum normalized frequency required
+    - `max_included_codes`: The maximum number of codes to include
 
 ### Input Data Structure
+
 ```text
 [Previous structure remains the same]
 ```
 
 ### Output Data Structure (New Files)
+
 ```text
 OUTPUT_DIR/
 └─── tabularize/
@@ -197,36 +212,44 @@ OUTPUT_DIR/
 ```
 
 ### Complete Directory Structure After Static Tabularization
+
 !!! abstract "Stage 3 Directory Structure"
     ??? folder "MEDS_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
+            - 📄 SHARD 0.parquet
+
     ??? folder "MEDS_RESHARD_DIR"
         ??? folder "SPLIT A"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
+
         ??? folder "SPLIT B"
-            * 📄 SHARD 0.parquet
-            * 📄 SHARD 1.parquet
-            * 📄 ...
+            - 📄 SHARD 0.parquet
+            - 📄 SHARD 1.parquet
+            - 📄 ...
+
     ??? folder "OUTPUT_DIR"
         ??? folder "metadata"
-            * 📄 codes.parquet
+            - 📄 codes.parquet
+
         ??? folder "tabularize"
             ??? folder "SPLIT A"
                 ??? folder "SHARD 0"
                     ??? folder "none/static"
-                        * 📄 present.npz
-                        * 📄 first.npz
+                        - 📄 present.npz
+                        - 📄 first.npz
+
                 ??? folder "SHARD 1"
                     ??? folder "none/static"
-                        * 📄 present.npz
-                        * 📄 first.npz
+                        - 📄 present.npz
+                        - 📄 first.npz
+
             ??? folder "SPLIT B"
-                [Similar structure to SPLIT A]
+                \[Similar structure to SPLIT A\]
 
 ## 4. **`meds-tab-tabularize-time-series`**
 
@@ -251,11 +274,13 @@ meds-tab-tabularize-time-series \
     You must use the same code inclusion parameters (which in this example is just `tabularization.min_code_inclusion_count`) as in the previous stage, `meds-tab-tabularize-static`, to ensure that the same codes are included in the tabularized data.
 
 ### Input Data Structure
+
 ```text
 [Previous structure remains the same]
 ```
 
 ### Output Data Structure (New Files)
+
 ```text
 OUTPUT_DIR/tabularize/
 │
@@ -275,34 +300,44 @@ OUTPUT_DIR/tabularize/
 ```
 
 ### Complete Directory Structure
+
 !!! abstract "Stage 4 Directory Structure"
     ??? folder "MEDS_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "MEDS_RESHARD_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "OUTPUT_DIR"
         ??? folder "metadata"
-            * 📄 codes.parquet
+            - 📄 codes.parquet
+
         ??? folder "tabularize"
             ??? folder "SPLIT A"
                 ??? folder "SHARD 0"
                     ??? folder "none/static"
-                        * 📄 present.npz
-                        * 📄 first.npz
+                        - 📄 present.npz
+                        - 📄 first.npz
+
                     ??? folder "1d"
                         ??? folder "code"
-                            * 📄 count.npz
+                            - 📄 count.npz
+
                         ??? folder "value"
-                            * 📄 sum.npz
+                            - 📄 sum.npz
+
                     ??? folder "7d"
                         ??? folder "code"
-                            * 📄 count.npz
+                            - 📄 count.npz
+
                         ??? folder "value"
-                            * 📄 sum.npz
+                            - 📄 sum.npz
+
                 ??? folder "SHARD 1"
-                    [Similar structure to SHARD 0]
+                    \[Similar structure to SHARD 0\]
+
             ??? folder "SPLIT B"
-                [Similar structure to SPLIT A]
+                \[Similar structure to SPLIT A\]
 
 ## 5. **`meds-tab-cache-task`**
 
@@ -329,6 +364,7 @@ meds-tab-cache-task \
     You must use the same code inclusion parameters (which in this example is just `tabularization.min_code_inclusion_count`) as in the previous stages to ensure that the same codes are included in the tabularized data.
 
 ### Input Data Structure
+
 ```text
 # Previous structure plus:
 TASKS_DIR/
@@ -337,6 +373,7 @@ TASKS_DIR/
 ```
 
 ### Output Data Structure (New Files)
+
 ```text
 OUTPUT_DIR/
 └─── TASK/
@@ -352,50 +389,64 @@ OUTPUT_DIR/
 ```
 
 ### Complete Directory Structure
+
 !!! abstract "Stage 5 Directory Structure"
     ??? folder "MEDS_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "MEDS_RESHARD_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "OUTPUT_DIR"
         ??? folder "metadata"
-            * 📄 codes.parquet
+            - 📄 codes.parquet
+
         ??? folder "tabularize"
-            [Previous structure]
+            \[Previous structure\]
+
         ??? folder "${TASK}"
             ??? folder "labels"
                 ??? folder "SPLIT A"
-                    * 📄 SHARD 0.parquet
-                    * 📄 SHARD 1.parquet
+                    - 📄 SHARD 0.parquet
+                    - 📄 SHARD 1.parquet
+
                 ??? folder "SPLIT B"
-                    * 📄 SHARD 0.parquet
-                    * 📄 SHARD 1.parquet
+                    - 📄 SHARD 0.parquet
+                    - 📄 SHARD 1.parquet
+
             ??? folder "task_cache"
                 ??? folder "SPLIT A"
                     ??? folder "SHARD 0"
                         ??? folder "none/static"
-                            * 📄 present.npz
-                            * 📄 first.npz
+                            - 📄 present.npz
+                            - 📄 first.npz
+
                         ??? folder "1d"
                             ??? folder "code"
-                                * 📄 count.npz
+                                - 📄 count.npz
+
                             ??? folder "value"
-                                * 📄 sum.npz
+                                - 📄 sum.npz
+
                         ??? folder "7d"
                             ??? folder "code"
-                                * 📄 count.npz
+                                - 📄 count.npz
+
                             ??? folder "value"
-                                * 📄 sum.npz
+                                - 📄 sum.npz
+
                     ??? folder "SHARD 1"
-                        [Similar structure to SHARD 0]
+                        \[Similar structure to SHARD 0\]
+
                 ??? folder "SPLIT B"
-                    [Similar structure to SPLIT A]
+                    \[Similar structure to SPLIT A\]
 
 ## 6. **`meds-tab-model`**
 
 Trains a tabular model using user-specified parameters. The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
 
 ### Single Model Training
+
 ```bash
 meds-tab-model \
     model_launcher=xgboost \
@@ -409,6 +460,7 @@ meds-tab-model \
 ```
 
 ### Hyperparameter Optimization
+
 ```bash
 meds-tab-model \
     --multirun \
@@ -425,39 +477,40 @@ meds-tab-model \
 ```
 
 ??? note "Args Description for Model Stage"
-    * `model_launcher`: Choose from `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
-    * `input_dir`: The directory containing the MEDS data
-    * `output_dir`: The directory storing tabularized data
-    * `output_model_dir`: Where to save model outputs
-    * `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
-    * `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
+    - `model_launcher`: Choose from `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
+    - `input_dir`: The directory containing the MEDS data
+    - `output_dir`: The directory storing tabularized data
+    - `output_model_dir`: Where to save model outputs
+    - `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
+    - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
 
 ??? note "Code Inclusion Parameters in Modeling"
     In this modeling stage, you can change the code inclusion parameters from previous stages and treat them as tunable hyperparameters. Additional task-specific parameters include:
 
-    * `min_correlation`: Minimum correlation with target required
-    * `max_by_correlation`: Maximum number of codes to include based on correlation with target
+    - `min_correlation`: Minimum correlation with target required
+    - `max_by_correlation`: Maximum number of codes to include based on correlation with target
 
 ??? note "Data Preprocessing Options"
-    * **Tree-based methods** (e.g., XGBoost):
-        * Insensitive to normalization
-        * Generally don't benefit from missing value imputation
-        * XGBoost handles missing data natively
-    * **Other supported models**:
-        * Support sparse matrices
-        * May benefit from normalization or imputation
+    - **Tree-based methods** (e.g., XGBoost):
+        - Insensitive to normalization
+        - Generally don't benefit from missing value imputation
+        - XGBoost handles missing data natively
+    - **Other supported models**:
+        - Support sparse matrices
+        - May benefit from normalization or imputation
 
     Available preprocessing options:
 
-    * *Normalization* (maintains sparsity):
-        * `standard_scaler`
-        * `max_abs_scaler`
-    * *Imputation* (converts to dense format):
-        * `mean_imputer`
-        * `median_imputer`
-        * `mode_imputer`
+    - *Normalization* (maintains sparsity):
+        - `standard_scaler`
+        - `max_abs_scaler`
+    - *Imputation* (converts to dense format):
+        - `mean_imputer`
+        - `median_imputer`
+        - `mode_imputer`
 
 ### Input/Output Data Structure
+
 ```text
 [Previous structure remains the same for input]
 
@@ -478,31 +531,39 @@ OUTPUT_MODEL_DIR/
 ```
 
 ### Complete Directory Structure
+
 !!! abstract "Final Directory Structure"
     ??? folder "MEDS_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "MEDS_RESHARD_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "OUTPUT_DIR"
-        [Previous structure]
+        \[Previous structure\]
+
     ??? folder "OUTPUT_MODEL_DIR"
         ??? folder "TASK/YYYY-MM-DD_HH-MM-SS"
             ??? folder "best_trial"
-                * 📄 config.log
-                * 📄 performance.log
-                * 📄 xgboost.json
+                - 📄 config.log
+                - 📄 performance.log
+                - 📄 xgboost.json
+
             ??? folder "hydra"
-                * 📄 optimization_results.yaml
+                - 📄 optimization_results.yaml
+
             ??? folder "sweep_results"
                 ??? folder "TRIAL_1_ID"
-                    * 📄 config.log
-                    * 📄 performance.log
-                    * 📄 xgboost.json
+                    - 📄 config.log
+                    - 📄 performance.log
+                    - 📄 xgboost.json
+
                 ??? folder "TRIAL_2_ID"
-                    [Similar structure to TRIAL_1_ID]
+                    \[Similar structure to TRIAL_1_ID\]
 
 ??? example "Experimental Feature"
     We also support an autogluon based hyperparameter and model search:
+
     ```bash
     meds-tab-autogluon model_launcher=autogluon \
        "input_dir=${MEDS_RESHARD_DIR}/data" \
@@ -510,4 +571,5 @@ OUTPUT_MODEL_DIR/
        "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
        "task_name=$TASK"
     ```
+
     Run `meds-tab-autogluon model_launcher=autogluon --help` to see all kwargs. Autogluon requires a lot of memory as it makes all the sparse matrices dense, and is not recommended for large datasets.

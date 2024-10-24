@@ -139,10 +139,10 @@ MEDS-Tab has several key limitations which we plan to address in future changes.
 ### Technical debt / code improvements
 
 1. The computation and use of the code metadata dataframe, containing frequencies of codes, should be offloaded to core MEDS functionality, with the remaining code in this repository cleaned up.
-   - [#28](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/28)
+    - [#28](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/28)
 2. We should add more doctests and push test coverage up to 100%
-   - [#29](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/29)
-   - [#30](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/30)
+    - [#29](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/29)
+    - [#30](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/30)
 
 ## What do you mean "tabular pipelines"? Isn't _all_ structured EHR data already tabular?
 
