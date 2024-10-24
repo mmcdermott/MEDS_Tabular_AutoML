@@ -6,7 +6,7 @@ To run tests, use the following command:
 
 Run all the fast tests that are fast (and don't use gpu) with:
 
-```bash
+```console
 pytest -k "not slow"
 ```
 
@@ -24,12 +24,12 @@ This section explains how to edit documentation files in the `docs` directory.
 
 First install docs code
 
-```bash
+```console
 pip install -e .[docs]
 ```
 
 Run
 
-```bash
+```console
 mkdocs serve
 ```

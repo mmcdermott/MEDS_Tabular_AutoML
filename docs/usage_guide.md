@@ -6,7 +6,7 @@ We provide a set of core CLI scripts to facilitate the tabularization and modeli
 
 This optional command reshards the data. A core challenge in tabularization is the high memory usage and slow compute time. We shard the data into small shards to reduce the memory usage as we can independently tabularize each shard, and we can reduce cpu time by parallelizing the processing of these shards across workers that are independently processing different shards.
 
-```bash
+```console
 MEDS_transform-reshard_to_split \
   --multirun \
   worker="range(0,6)" \
@@ -94,7 +94,7 @@ This command processes MEDS data shards to compute the frequencies of different 
 
 This script further caches feature names and frequencies in a dataset stored in a `code_metadata.parquet` file within the `OUTPUT_DIR` argument specified as a hydra-style command line argument.
 
-```bash
+```console
 meds-tab-describe \
     "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_DIR"
 ```
@@ -159,7 +159,7 @@ OUTPUT_DIR/
 
 Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination. As a result, rows are duplicated across multiple timestamps for the same patient.
 
-```bash
+```console
 meds-tab-tabularize-static \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
@@ -255,7 +255,7 @@ OUTPUT_DIR/
 
 This stage handles the computationally intensive task of converting temporal medical data into feature vectors. The process employs several key optimizations: sparse matrix operations utilizing scipy.sparse for memory-efficient storage, data sharding that enables parallel processing, and efficient aggregation using Polars for fast rolling window computations.
 
-```bash
+```console
 meds-tab-tabularize-time-series \
     --multirun \
     worker="range(0,$N_PARALLEL_WORKERS)" \
@@ -343,7 +343,7 @@ OUTPUT_DIR/tabularize/
 
 Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
 
-```bash
+```console
 meds-tab-cache-task \
     --multirun \
     hydra/launcher=joblib \
@@ -447,7 +447,7 @@ Trains a tabular model using user-specified parameters. The system incorporates 
 
 ### Single Model Training
 
-```bash
+```console
 meds-tab-model \
     model_launcher=xgboost \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
@@ -461,7 +461,7 @@ meds-tab-model \
 
 ### Hyperparameter Optimization
 
-```bash
+```console
 meds-tab-model \
     --multirun \
     model_launcher=xgboost \
@@ -564,7 +564,7 @@ OUTPUT_MODEL_DIR/
 ??? example "Experimental Feature"
     We also support an autogluon based hyperparameter and model search:
 
-    ```bash
+    ```console
     meds-tab-autogluon model_launcher=autogluon \
        "input_dir=${MEDS_RESHARD_DIR}/data" \
        "output_dir=$OUTPUT_DIR" \
