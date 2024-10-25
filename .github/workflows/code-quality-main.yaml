@@ -20,5 +20,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install packages
+        run: |
+          pip install .[dev]
+
       - name: Run pre-commits
         uses: pre-commit/action@v3.0.1

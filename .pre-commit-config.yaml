@@ -3,7 +3,7 @@ default_language_version:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v5.0.0
     hooks:
       # list of supported hooks: https://pre-commit.com/hooks.html
       - id: trailing-whitespace
@@ -89,6 +89,7 @@ repos:
     hooks:
       - id: mdformat
         args: ["--number"]
+        exclude: "docs/tutorial.md|docs/index.md"
         additional_dependencies:
           - mdformat-gfm
           - mdformat-tables
@@ -97,6 +98,7 @@ repos:
           - mdformat-black
           - mdformat-config
           - mdformat-shfmt
+          - mdformat-mkdocs
 
   # word spelling linter
   - repo: https://github.com/codespell-project/codespell
