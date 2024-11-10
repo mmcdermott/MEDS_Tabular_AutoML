@@ -141,8 +141,6 @@ def main(
         out_fp = (
             Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
         ).with_suffix(".npz")
-        if out_fp.exists() and not cfg.do_overwrite:
-            raise FileExistsError(f"do_overwrite is {cfg.do_overwrite} and {out_fp} exists!")
 
         def read_fn(in_fp):
             return filter_parquet(in_fp, cfg.tabularization._resolved_codes)
