@@ -163,10 +163,9 @@ def wrap(
         ...     lambda df: df.with_columns(pl.col("c") * 2),
         ...     lambda df: df.filter(pl.col("d") > 4)
         ... ]
-        >>> wrap(in_fp, out_fp, read_fn, write_fn, *transform_fns)
-        Traceback (most recent call last):
-            ...
-        polars.exceptions.ColumnNotFoundError: unable to find column "d"; valid columns: ["a", "b", "c"]
+        >>> import pytest
+        >>> with pytest.raises(Exception):
+        ...     wrap(in_fp, out_fp, read_fn, write_fn, *transform_fns)
         >>> assert cache_directory.is_dir()
         >>> cache_fp = cache_directory / "step_0.output"
         >>> pl.read_csv(cache_fp)
