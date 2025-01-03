@@ -255,7 +255,7 @@ def store_matrix(coo_matrix: coo_array, fp_path: Path) -> None:
         fp_path: The file path where the matrix will be stored.
     """
     array, shape = sparse_matrix_to_array(coo_matrix)
-    np.savez(fp_path, array=array, shape=shape)
+    np.savez_compressed(fp_path, array=array, shape=shape)
 
 
 def load_matrix(fp_path: Path) -> coo_array:
