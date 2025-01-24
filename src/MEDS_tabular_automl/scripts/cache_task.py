@@ -58,33 +58,33 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
 
     Raises:
         ValueError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
-    
+
     Example:
     >>> import polars as pl
     >>> import scipy.sparse as sp
     >>> import pytest
-    >>> 
+    >>>
     >>> # Create a sample sparse matrix
     >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
-    >>> 
+    >>>
     >>> # Create a label DataFrame with specific event IDs
     >>> label_df = pl.DataFrame({"event_id": [1, 3]})
-    >>> 
+    >>>
     >>> # Generate row-cached matrix
     >>> result = generate_row_cached_matrix(matrix, label_df.lazy())
-    >>> 
+    >>>
     >>> # Check the shape and contents of the result
     >>> result.shape
     (2, 3)
     >>> result.toarray().tolist()
     [[0, 3, 0], [0, 6, 0]]
-    >>> 
+    >>>
     >>> # Demonstrate ValueError when event_id exceeds matrix rows
-    >>> with pytest.raises(ValueError, match="Label_df event_ids must be valid indexes of sparse matrix: 4 <= 4"):
+    >>> with pytest.raises(ValueError,
+    ...                    match="Label_df event_ids must be valid indexes of sparse matrix: 4 <= 4"):
     ...     generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [4]}).lazy())
-    
-    In the case where events have no history, this function returns a matrix with zeros for the rows that have no history:
-    >>> # Create a sample matrix with 5 rows
+
+    >>> # Handle events with no history -- i.e. where valid_ids are -1
     >>> matrix = np.array([
     ...     [1, 2, 3],
     ...     [4, 5, 6],
@@ -92,24 +92,21 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     ...     [10, 11, 12],
     ...     [13, 14, 15]
     ... ])
-    >>> 
-    >>> # Test case with some valid_ids including -1
+    >>>
     >>> label_df = pl.DataFrame({
     ...     "event_id": [0, 2, -1, 4]
     ... }).lazy()
     >>> result = generate_row_cached_matrix(matrix, label_df)
-    >>> 
+    >>>
     >>> # Check that the result contains the correct rows
     >>> result.toarray().tolist()
     [[1, 2, 3], [7, 8, 9], [0, 0, 0], [13, 14, 15]]
-    
+
     Test case with no labels
     >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
     >>> result = generate_row_cached_matrix(matrix, label_df)
     >>> result.toarray().tolist()
     []
-    
-    
     """
     label_len = label_df.select(pl.col("event_id").max()).collect().item()
     if label_len and matrix.shape[0] <= label_len:
@@ -119,7 +116,7 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     csr: sp.csr_array = sp.csr_array(matrix)
     valid_ids = label_df.select(pl.col("event_id")).collect().to_series().to_numpy()
     csr = csr[valid_ids, :]
-    indices_with_no_past_data = (valid_ids == -1)
+    indices_with_no_past_data = valid_ids == -1
     if indices_with_no_past_data.any().item():
         csr[indices_with_no_past_data] = 0
         csr.eliminate_zeros()
@@ -209,7 +206,10 @@ def main(cfg: DictConfig):
             ).join_asof(other=meds_data_df, by="subject_id", on="time")
             null_event_ids = shard_label_df.select(pl.col("event_id").is_null().sum()).collect().item()
             if null_event_ids > 0:
-                logger.warning(f"Found {null_event_ids} labels for which there is no prior patient data! These events will just have an empty vector representation.")
+                logger.warning(
+                    f"Found {null_event_ids} labels for which there is no prior patient data!"
+                    "These events will just have an empty vector representation."
+                )
             # fill null event_ids with -1
             shard_label_df = shard_label_df.with_columns(pl.col("event_id").fill_null(-1))
 
