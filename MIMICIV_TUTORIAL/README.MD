@@ -93,3 +93,16 @@ bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $O
     "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
 ```
+
+## New and significantly faster Tabularization Script
+
+This is a new bash script that minimizes the amount of tabularization performed, only tabularizing event times that correspond to a specific task. We strongly recommend using this script:
+
+```console
+export N_PARALLEL_WORKERS=48 # Set number of workers
+TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
+bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABULARIZATION_DIR \
+    "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
+    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
+    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
+```
