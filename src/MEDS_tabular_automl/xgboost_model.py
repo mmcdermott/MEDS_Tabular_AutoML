@@ -1,13 +1,13 @@
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
+import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
-import polars as pl
-import numpy as np
 
 from .base_model import BaseModel
 from .tabular_dataset import TabularDataset
@@ -126,11 +126,11 @@ class XGBoostModel(BaseModel):
         else:
             self._build_iterators()
             self._build_dmatrix_from_iterators()
-    
+
     def load_model(self, xgboost_json_fp: Path):
         self.model = xgb.Booster()
         self.model.load_model(str(xgboost_json_fp))
-    
+
     def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
         """Helper Function that retrieves model predictions and labels."""
         if split == "tuning":
@@ -145,7 +145,7 @@ class XGBoostModel(BaseModel):
         else:
             raise ValueError(f"Invalid split for evaluation: {split}")
         return y_true, y_pred
-    
+
     def predict(self, split="held_out") -> pl.DataFrame:
         """Retrieves logits for the given split.
 
@@ -163,11 +163,23 @@ class XGBoostModel(BaseModel):
         else:
             raise ValueError(f"Invalid split for evaluation: {split}")
         _, cached_labels = xgb_iterator._load_ids_and_labels(load_ids=False, load_labels=True)
-        parquet_files = list(Path(self.cfg.path.input_label_cache_dir) / split / f"{key}.parquet"  for key in cached_labels.keys())
+        parquet_files = list(
+            Path(self.cfg.path.input_label_cache_dir) / split / f"{key}.parquet"
+            for key in cached_labels.keys()
+        )
         labels = pl.concat([pl.read_parquet(fp) for fp in parquet_files])
-        predictions_df = pl.DataFrame({"subject_id": labels['subject_id'], "prediction_time": labels['time'], "boolean_value": y_true, "predicted_boolean_value": y_pred.round(), "predicted_boolean_probability": y_pred, "event_id": labels['event_id']})
-        if not (predictions_df['boolean_value'] == labels['label']).all():
-            mismatched_labels = predictions_df['boolean_value'] == labels['label'] 
+        predictions_df = pl.DataFrame(
+            {
+                "subject_id": labels["subject_id"],
+                "prediction_time": labels["time"],
+                "boolean_value": y_true,
+                "predicted_boolean_value": y_pred.round(),
+                "predicted_boolean_probability": y_pred,
+                "event_id": labels["event_id"],
+            }
+        )
+        if not (predictions_df["boolean_value"] == labels["label"]).all():
+            mismatched_labels = predictions_df["boolean_value"] == labels["label"]
             raise ValueError(f"Label mismatch: {sum(mismatched_labels)} incorrect predictions")
 
         return predictions_df

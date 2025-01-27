@@ -344,7 +344,6 @@ def test_integration(tmp_path):
         else:
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1
-        breakpoint()
         time_output_dir = next(output_model_dir.iterdir())
         time_output_dir = [each for each in output_model_dir.iterdir()][0]
         assert (time_output_dir / "best_trial/held_out_predictions.parquet").exists()

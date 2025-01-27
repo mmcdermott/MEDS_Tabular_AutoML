@@ -3,10 +3,9 @@ from pathlib import Path
 
 import polars as pl
 from hydra.experimental.callback import Callback
+from hydra.utils import instantiate
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
-from hydra.utils import instantiate
-import xgboost as xgb
 
 
 class EvaluationCallback(Callback):
