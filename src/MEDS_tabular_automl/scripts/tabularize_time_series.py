@@ -73,6 +73,13 @@ def main(
             "tabularization.filtered_code_metadata_fp",
         ],
     )
+
+    if cfg.task_name or cfg.input_label_dir:
+        if not (cfg.task_name and cfg.input_label_dir):
+            raise ValueError("If either `task_name` or `input_label_dir` is provided, both must be provided.")
+        if not Path(cfg.input_label_dir).is_dir():
+            raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()
@@ -91,6 +98,11 @@ def main(
 
     # iterate through them
     for shard_fp, window_size, agg in iter_wrapper(tabularization_tasks):
+        if cfg.input_label_dir:
+            label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
+            label_df = pl.scan_parquet(label_fp)
+        else:
+            label_df = None
         out_fp = (
             Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / window_size / agg
         ).with_suffix(".npz")
@@ -109,6 +121,7 @@ def main(
                 sparse_matrix,
                 window_size,
                 agg,
+                label_df,
             )
 
             if not summary_df.shape[1]:

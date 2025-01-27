@@ -128,6 +128,7 @@ def compute_agg(
     window_size: str,
     agg: str,
     num_features: int,
+    label_df: pl.LazyFrame | None = None,
     use_tqdm: bool = False,
 ) -> csr_array:
     """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
@@ -142,13 +143,19 @@ def compute_agg(
         window_size: The string defining the rolling window size.
         agg: The string specifying the aggregation method.
         num_features: The number of features in the matrix.
+        label_df: The DataFrame with labels. If provided, only perform aggregations at the label times.
         use_tqdm: The flag to enable or disable tqdm progress bar.
 
     Returns:
         The aggregated sparse matrix.
     """
+    if label_df is not None:
+        event_df = label_df.rename({"prediction_time": "time"})
+    else:
+        event_df = index_df
+
     group_df = (
-        index_df.with_row_index("index")
+        event_df.with_row_index("index")
         .group_by(["subject_id", "time"], maintain_order=True)
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
         .collect()
@@ -170,6 +177,7 @@ def generate_summary(
     matrix: sparray,
     window_size: str,
     agg: str,
+    label_df: pl.LazyFrame | None = None,
     use_tqdm: bool = False,
 ) -> csr_array:
     """Generate a summary of the data frame for a given window size and aggregation.
@@ -180,7 +188,7 @@ def generate_summary(
         matrix: The sparse matrix containing the data to aggregate.
         window_size: The size of the rolling window used for summary.
         agg: The aggregation function to apply.
-        num_features: The total number of features to handle.
+        label_df: The DataFrame with labels.
         use_tqdm: The flag to enable or disable progress display.
 
     Returns:
@@ -207,5 +215,5 @@ def generate_summary(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
 
-    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm)
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), label_df, use_tqdm=use_tqdm)
     return out_matrix
