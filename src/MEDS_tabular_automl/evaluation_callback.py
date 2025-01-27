@@ -4,7 +4,9 @@ from pathlib import Path
 import polars as pl
 from hydra.experimental.callback import Callback
 from loguru import logger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
+import xgboost as xgb
 
 
 class EvaluationCallback(Callback):
@@ -32,9 +34,23 @@ class EvaluationCallback(Callback):
         best_trial_dir = Path(config.path.sweep_results_dir) / performance["trial_name"].cast(pl.String)[0]
         output_best_trial_dir = Path(config.path.best_trial_dir)
         shutil.copytree(best_trial_dir, output_best_trial_dir)
-        performance.write_parquet(config.time_output_model_dir / "sweep_results_summary.parquet")
+        performance.write_parquet(Path(config.time_output_model_dir) / "sweep_results_summary.parquet")
+
+        self.store_predictions(output_best_trial_dir, config.prediction_splits)
 
         return performance.head(1)
+
+    def store_predictions(self, best_trial_dir, splits):
+        config = Path(best_trial_dir) / "config.log"
+        xgboost_fp = Path(best_trial_dir) / "xgboost.json"
+        cfg = OmegaConf.load(config)
+        model_launcher = instantiate(cfg.model_launcher)
+        model_launcher.load_model(xgboost_fp)
+        model_launcher._build()
+
+        for split in splits:
+            pred_df = model_launcher.predict(split)
+            pred_df.write_parquet(Path(best_trial_dir) / f"{split}_predictions.parquet")
 
     def log_performance(self, best_model_performance):
         """logger.info performance of the best model with nice formatting."""

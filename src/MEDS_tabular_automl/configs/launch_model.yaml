@@ -22,6 +22,10 @@ delete_below_top_k: -1
 
 name: launch_model
 
+prediction_splits:
+  - held_out
+  - tuning
+
 hydra:
   sweep:
     dir: ${time_output_model_dir}/hydra/
