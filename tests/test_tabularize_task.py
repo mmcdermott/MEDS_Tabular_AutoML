@@ -207,7 +207,6 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
-        "task_name": "test_task",
         "input_label_dir": str(input_label_dir.resolve()),
     }
 

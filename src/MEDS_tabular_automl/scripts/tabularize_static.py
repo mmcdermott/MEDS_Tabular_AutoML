@@ -91,9 +91,7 @@ def main(
         ],
     )
 
-    if cfg.task_name or cfg.input_label_dir:
-        if not (cfg.task_name and cfg.input_label_dir):
-            raise ValueError("If either `task_name` or `input_label_dir` is provided, both must be provided.")
+    if cfg.input_label_dir:
         if not Path(cfg.input_label_dir).is_dir():
             raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
