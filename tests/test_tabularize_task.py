@@ -8,11 +8,14 @@ from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.scripts import (
     describe_codes,
+    launch_model,
     tabularize_static,
     tabularize_time_series,
 )
@@ -144,7 +147,7 @@ def test_tabularize(tmp_path):
     input_dir = Path(tmp_path) / "input_dir"
     output_dir = Path(tmp_path) / "output_dir"
     input_label_dir = Path(tmp_path) / "label_dir"
-    # output_model_dir = Path(tmp_path) / "output_model_dir"
+    output_model_dir = Path(tmp_path) / "output_model_dir"
 
     shared_config = {
         "input_dir": str(input_dir.resolve()),
@@ -286,40 +289,38 @@ def test_tabularize(tmp_path):
 
     # Step 3: Train XGBoost
 
-    # xgboost_config = {
-    #     **shared_config,
-    #     "tabularization.min_code_inclusion_count": 1,
-    #     "tabularization.window_sizes": "[30d,365d,full]",
-    #     "task_name": "test_task",
-    #     input_tabularized_cache_dir: ${output_dir}/${task_name}/task_cache
-    #     input_label_cache_dir: ${output_dir}/${task_name}/labels
-    #     "output_model_dir": str(output_model_dir.resolve()),
-    # }
+    xgboost_config = {
+        **shared_config,
+        "tabularization.min_code_inclusion_count": 1,
+        "tabularization.window_sizes": "[30d,365d,full]",
+        "task_name": "test_task",
+        "input_tabularized_cache_dir": str(output_dir.resolve()),
+        "input_label_cache_dir": str(input_label_dir.resolve()),
+        "output_model_dir": str(output_model_dir.resolve()),
+    }
 
-    # with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
-    #     overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in xgboost_config.items()]
-    #     cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
+    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
+        overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in xgboost_config.items()]
+        cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
 
-    # launch_model.main(cfg)
+    launch_model.main(cfg)
 
-    # expected_output_dir = Path(cfg.time_output_model_dir)
-    # output_files = list(expected_output_dir.glob("**/*.json"))
-    # assert len(output_files) == 1
+    expected_output_dir = Path(cfg.time_output_model_dir)
+    output_files = list(expected_output_dir.glob("**/*.json"))
+    assert len(output_files) == 1
 
-    # log_dir = Path(cfg.path.sweep_results_dir)
-    # log_files = list(log_dir.glob("**/*.log"))
-    # assert len(log_files) == 2
+    log_dir = Path(cfg.path.sweep_results_dir)
+    log_files = list(log_dir.glob("**/*.log"))
+    assert len(log_files) == 2
 
-    # # Test prediction
-    # config_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "config.log"
-    # xgboost_json_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "xgboost.json"
-    # assert config_fp.exists()
-    # assert xgboost_json_fp.exists()
-    # cfg = OmegaConf.load(config_fp)
-    # xgboost_model = instantiate(cfg.model_launcher)
-    # xgboost_model.load_model(xgboost_json_fp)
-    # xgboost_model._build()
-    # predictions_df = xgboost_model.predict("held_out")
-    # assert isinstance(predictions_df, pl.DataFrame)
-
-    # shutil.rmtree(expected_output_dir)
+    # Test prediction
+    config_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "config.log"
+    xgboost_json_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "xgboost.json"
+    assert config_fp.exists()
+    assert xgboost_json_fp.exists()
+    cfg = OmegaConf.load(config_fp)
+    xgboost_model = instantiate(cfg.model_launcher)
+    xgboost_model.load_model(xgboost_json_fp)
+    xgboost_model._build()
+    predictions_df = xgboost_model.predict("held_out")
+    assert isinstance(predictions_df, pl.DataFrame)

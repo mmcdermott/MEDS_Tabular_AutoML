@@ -168,6 +168,12 @@ class XGBoostModel(BaseModel):
             for key in cached_labels.keys()
         )
         labels = pl.concat([pl.read_parquet(fp) for fp in parquet_files])
+        if "event_id" not in labels.schema:
+            labels = labels.with_row_index("event_id")
+        if "time" not in labels.schema:
+            labels = labels.rename({"prediction_time": "time"})
+        if "boolean_value" in labels.schema:
+            labels = labels.rename({"boolean_value": "label"})
         predictions_df = pl.DataFrame(
             {
                 "subject_id": labels["subject_id"],
