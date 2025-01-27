@@ -42,6 +42,10 @@ class EvaluationCallback(Callback):
     def store_predictions(self, best_trial_dir, splits):
         config = Path(best_trial_dir) / "config.log"
         xgboost_fp = Path(best_trial_dir) / "xgboost.json"
+        if not xgboost_fp.exists():
+            logger.warning("Prediction parquets not stored, we only support storing them for xgboost models.")
+            return
+
         cfg = OmegaConf.load(config)
         model_launcher = instantiate(cfg.model_launcher)
         model_launcher.load_model(xgboost_fp)
