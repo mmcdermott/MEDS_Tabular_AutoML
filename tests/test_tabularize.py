@@ -11,6 +11,8 @@ from pathlib import Path
 import polars as pl
 import pytest
 from hydra import compose, initialize
+from hydra.utils import instantiate
+from omegaconf import OmegaConf
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -367,6 +369,19 @@ def test_tabularize(tmp_path):
     log_dir = Path(cfg.path.sweep_results_dir)
     log_files = list(log_dir.glob("**/*.log"))
     assert len(log_files) == 2
+
+    # Test prediction
+    config_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "config.log"
+    xgboost_json_fp = next(Path(cfg.path.sweep_results_dir).iterdir()) / "xgboost.json"
+    assert config_fp.exists()
+    assert xgboost_json_fp.exists()
+    cfg = OmegaConf.load(config_fp)
+    xgboost_model = instantiate(cfg.model_launcher)
+    xgboost_model.load_model(xgboost_json_fp)
+    xgboost_model._build()
+    predictions_df = xgboost_model.predict("held_out")
+    assert isinstance(predictions_df, pl.DataFrame)
+
     shutil.rmtree(expected_output_dir)
 
     xgboost_config = {
