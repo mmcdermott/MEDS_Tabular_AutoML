@@ -65,8 +65,8 @@ class EvaluationCallback(Callback):
             ...         'sweep_results_dir': str(sweep_results_dir),
             ...         'performance_log_stem': 'performance',
             ...         'best_trial_dir': str(Path(temp_dir) / 'best_trial'),
-            ...         'time_output_model_dir': str(Path(temp_dir) / 'output')
             ...     },
+            ...     'time_output_model_dir': str(Path(temp_dir) / 'output'),
             ...     'prediction_splits': ['test'],
             ...     'delete_below_top_k': 1
             ... })
@@ -75,7 +75,7 @@ class EvaluationCallback(Callback):
             >>> cb = EvaluationCallback()
             >>>
             >>> # Run the method
-            >>> Path(config.path.time_output_model_dir).mkdir()
+            >>> Path(config.time_output_model_dir).mkdir()
             >>> result = cb.on_multirun_end(config)
             >>>
             >>> # Verify results
@@ -107,7 +107,7 @@ class EvaluationCallback(Callback):
         best_trial_dir = Path(config.path.sweep_results_dir) / performance["trial_name"].cast(pl.String)[0]
         output_best_trial_dir = Path(config.path.best_trial_dir)
         shutil.copytree(best_trial_dir, output_best_trial_dir)
-        performance.write_parquet(Path(config.path.time_output_model_dir) / "sweep_results_summary.parquet")
+        performance.write_parquet(Path(config.time_output_model_dir) / "sweep_results_summary.parquet")
 
         self.store_predictions(output_best_trial_dir, config.prediction_splits)
 
