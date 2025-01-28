@@ -21,10 +21,8 @@ from MEDS_tabular_automl.scripts import (
 )
 from MEDS_tabular_automl.utils import (
     VALUE_AGGREGATIONS,
-    get_events_df,
     get_feature_names,
     get_shard_prefix,
-    get_unique_time_events_df,
     load_matrix,
 )
 
@@ -92,7 +90,7 @@ subject_id,code,time,numeric_value
 1500733,HR,2010-06-03T15:39:49.000000,84.4
 1500733,TEMP,2010-06-03T15:39:49.000000,100.3
 1500733,HR,2010-06-03T16:20:49.000000,90.1
-1500733,TEMP,2010-06-03T16:20:49.000000,100.1
+1500733,TEMP,2010-06-03T16:20:49.000000,98.7
 1500733,DISCHARGE,2010-06-03T16:44:26.000000,
 """
 MEDS_TUNING_0 = """
@@ -100,8 +98,9 @@ subject_id,code,time,numeric_value
 754281,EYE_COLOR//BROWN,,
 754281,HEIGHT,,166.22261567137025
 754281,DOB,1988-12-19T00:00:00.000000,
+754281,TEMP,2009-01-03T06:27:59.000000,98.0
 754281,ADMISSION//PULMONARY,2010-01-03T06:27:59.000000,
-754281,TEMP,2010-01-03T06:27:59.000000,99.8
+754281,TEMP,2010-01-03T06:27:59.000000,100.0
 754281,HR,2010-01-03T06:27:59.000000,142.0
 754281,DISCHARGE,2010-01-03T08:22:13.000000,
 """
@@ -215,9 +214,11 @@ def test_tabularize(tmp_path):
         cfg = compose(config_name="tabularization", overrides=overrides)
 
     # Create fake labels
-    df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
-    pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
-    df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
+    temp_median = 99.8
+    df = all_data.filter(pl.col("code").eq("TEMP")).with_columns(
+        (pl.col("numeric_value") > temp_median).alias("boolean_value")
+    )
+    df = df.group_by(["subject_id", "time"], maintain_order=True).first()
     df = df.select("subject_id", pl.col("time").alias("prediction_time"), "boolean_value")
     meds_files = list(Path(cfg.input_dir).glob("**/*.parquet"))
     for med_fp in meds_files:

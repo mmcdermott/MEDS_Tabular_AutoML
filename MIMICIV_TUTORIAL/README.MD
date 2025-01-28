@@ -82,26 +82,37 @@ for TASK_NAME in "${TASKS[@]}"; do
 done
 ```
 
-## Run Tabularization and XGBoost Baseline
+## Tabularization Workflows
+
+### (Recommended Approach) Selective Task Tabularization
+
+When working with only one or a few tasks of interest, use the selective tabularization script. This approach minimizes computational overhead by only processing event times for specific tasks:
+
+```console
+export N_PARALLEL_WORKERS=48 # Set number of workers
+TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
+bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABULARIZATION_DIR \
+    "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
+    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
+    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
+```
+
+### (Not Recommended Approach) Full Data Tabularization and XGBoost Baseline
+
+To tabularize all data comprehensively, this script performs a one-time, extensive tabularization of every unique subject_id across all time points. This is an incredibly storage and memory-intensive operation that creates a complete tabular representation of the entire dataset.
+
+The key advantages of this approach include:
+
+- Generates a full tabular dataset once, which can be reused for multiple prediction tasks
+- Enables efficient subselection of relevant rows for each different prediction task
+
+We recommend using this script, as opposed to the task specific script, when tabularizing all unique event times would be faster than tabularizing only the relevant events for each task separately.
 
 ```console
 export N_PARALLEL_WORKERS=48 # Set number of workers
 export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
-    "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
-```
-
-## New and significantly faster Tabularization Script
-
-This is a new bash script that minimizes the amount of tabularization performed, only tabularizing event times that correspond to a specific task. We strongly recommend using this script:
-
-```console
-export N_PARALLEL_WORKERS=48 # Set number of workers
-TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
-bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
     "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"

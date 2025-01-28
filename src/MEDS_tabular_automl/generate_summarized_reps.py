@@ -149,23 +149,31 @@ def compute_agg(
     Returns:
         The aggregated sparse matrix.
     """
-    if label_df is not None:
-        event_df = label_df.rename({"prediction_time": "time"})
-    else:
-        event_df = index_df
-
     group_df = (
-        event_df.with_row_index("index")
+        index_df.with_row_index("index")
         .group_by(["subject_id", "time"], maintain_order=True)
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
         .collect()
     )
     index_df = group_df.lazy().select(pl.col("subject_id", "time"))
     windows = group_df.select(pl.col("min_index", "max_index"))
-    logger.info("Step 1.5: Running sparse aggregation.")
-    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
-    logger.info("Step 2: computing rolling windows and aggregating.")
-    windows = get_rolling_window_indicies(index_df, window_size)
+
+    if label_df is not None:
+        logger.info("Step 2: computing rolling windows and aggregating.")
+        windows = get_rolling_window_indicies(index_df, window_size)
+        event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
+        windows = (
+            label_df.rename({"prediction_time": "time"})
+            .join_asof(event_df, by="subject_id", on="time")
+            .select(windows.columns)
+            .collect()
+        )
+    else:
+        logger.info("Step 1.5: Running sparse aggregation.")
+        matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
+        logger.info("Step 2: computing rolling windows and aggregating.")
+        windows = get_rolling_window_indicies(index_df, window_size)
+
     logger.info("Starting final sparse aggregations.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     return matrix
