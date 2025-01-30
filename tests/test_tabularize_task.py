@@ -323,4 +323,7 @@ def test_tabularize(tmp_path):
     xgboost_model.load_model(xgboost_json_fp)
     xgboost_model._build()
     predictions_df = xgboost_model.predict("held_out")
+    from meds_evaluation.schema import validate_binary_classification_schema
+
+    validate_binary_classification_schema(predictions_df)
     assert isinstance(predictions_df, pl.DataFrame)
