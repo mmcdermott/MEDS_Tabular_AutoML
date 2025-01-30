@@ -6,6 +6,7 @@ import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
+from meds_evaluation.schema import BINARY_CLASSIFICATION_SCHEMA_DICT
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
@@ -182,7 +183,8 @@ class XGBoostModel(BaseModel):
                 "predicted_boolean_value": y_pred.round(),
                 "predicted_boolean_probability": y_pred,
                 "event_id": labels["event_id"],
-            }
+            },
+            schema={**BINARY_CLASSIFICATION_SCHEMA_DICT, "event_id": pl.Int64},
         )
         if not (predictions_df["boolean_value"] == labels["label"]).all():
             mismatched_labels = predictions_df["boolean_value"] == labels["label"]
