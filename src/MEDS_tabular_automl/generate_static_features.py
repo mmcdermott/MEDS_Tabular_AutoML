@@ -76,8 +76,6 @@ def get_sparse_static_rep(
     ):
         raise ValueError("static_df has duplicate subject_id values.")
 
-    meds_df = get_unique_time_events_df(get_events_df(meds_df, feature_columns))
-
     # load static data as sparse matrix
     static_matrix = convert_to_matrix(
         static_df, num_events=meds_df.select(pl.len()).collect().item(), num_features=len(static_features)
@@ -168,9 +166,7 @@ def summarize_static_measurements(
 
 
 def get_flat_static_rep(
-    agg: str,
-    feature_columns: list[str],
-    shard_df: pl.LazyFrame,
+    agg: str, feature_columns: list[str], shard_df: pl.LazyFrame, label_df: pl.LazyFrame | None
 ) -> coo_array:
     """Produces a sparse representation for static data from a specified shard DataFrame.
 
@@ -182,6 +178,7 @@ def get_flat_static_rep(
         agg: The aggregation method for static data.
         feature_columns: A list of feature columns to include.
         shard_df: The shard DataFrame containing the patient data.
+        label_df: The label DataFrame containing the labels for the shard data.
 
     Returns:
         A sparse array representing the static features for the provided shard of data.
@@ -191,7 +188,12 @@ def get_flat_static_rep(
     if len(static_features) == 0:
         raise ValueError(f"No static features found. Remove the aggregation function {agg}")
     # convert to sparse_matrix
-    matrix = get_sparse_static_rep(static_features, static_measurements.lazy(), shard_df, feature_columns)
+    if label_df is not None:
+        event_df = label_df.rename({"prediction_time": "time"})
+    else:
+        event_df = get_unique_time_events_df(get_events_df(shard_df, feature_columns))
+
+    matrix = get_sparse_static_rep(static_features, static_measurements.lazy(), event_df, feature_columns)
     if not matrix.shape[1] == len(static_features):
         raise ValueError(f"Expected {len(static_features)} features, got {matrix.shape[1]}")
     return matrix

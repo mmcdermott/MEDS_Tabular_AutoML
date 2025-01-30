@@ -9,4 +9,7 @@ input_code_metadata_fp: ${output_dir}/metadata/codes.parquet
 input_dir: ${input_dir}
 output_tabularized_dir: ${output_dir}/tabularize
 
+# task name and label directory, if both are available, will tabularize only events from these tasks
+input_label_dir: null
+
 name: tabularization

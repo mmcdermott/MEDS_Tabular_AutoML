@@ -128,6 +128,7 @@ def compute_agg(
     window_size: str,
     agg: str,
     num_features: int,
+    label_df: pl.LazyFrame | None = None,
     use_tqdm: bool = False,
 ) -> csr_array:
     """Applies aggregation to a sparse matrix using rolling window indices derived from a DataFrame.
@@ -142,6 +143,7 @@ def compute_agg(
         window_size: The string defining the rolling window size.
         agg: The string specifying the aggregation method.
         num_features: The number of features in the matrix.
+        label_df: The DataFrame with labels. If provided, only perform aggregations at the label times.
         use_tqdm: The flag to enable or disable tqdm progress bar.
 
     Returns:
@@ -155,10 +157,23 @@ def compute_agg(
     )
     index_df = group_df.lazy().select(pl.col("subject_id", "time"))
     windows = group_df.select(pl.col("min_index", "max_index"))
-    logger.info("Step 1.5: Running sparse aggregation.")
-    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
-    logger.info("Step 2: computing rolling windows and aggregating.")
-    windows = get_rolling_window_indicies(index_df, window_size)
+
+    if label_df is not None:
+        logger.info("Step 2: computing rolling windows and aggregating.")
+        windows = get_rolling_window_indicies(index_df, window_size)
+        event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
+        windows = (
+            label_df.rename({"prediction_time": "time"})
+            .join_asof(event_df, by="subject_id", on="time")
+            .select(windows.columns)
+            .collect()
+        )
+    else:
+        logger.info("Step 1.5: Running sparse aggregation.")
+        matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
+        logger.info("Step 2: computing rolling windows and aggregating.")
+        windows = get_rolling_window_indicies(index_df, window_size)
+
     logger.info("Starting final sparse aggregations.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     return matrix
@@ -170,6 +185,7 @@ def generate_summary(
     matrix: sparray,
     window_size: str,
     agg: str,
+    label_df: pl.LazyFrame | None = None,
     use_tqdm: bool = False,
 ) -> csr_array:
     """Generate a summary of the data frame for a given window size and aggregation.
@@ -180,7 +196,7 @@ def generate_summary(
         matrix: The sparse matrix containing the data to aggregate.
         window_size: The size of the rolling window used for summary.
         agg: The aggregation function to apply.
-        num_features: The total number of features to handle.
+        label_df: The DataFrame with labels.
         use_tqdm: The flag to enable or disable progress display.
 
     Returns:
@@ -207,5 +223,5 @@ def generate_summary(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
 
-    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), use_tqdm=use_tqdm)
+    out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), label_df, use_tqdm=use_tqdm)
     return out_matrix

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import polars as pl
 from hydra import compose, initialize
+from meds_evaluation.schema import validate_binary_classification_schema
 
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
@@ -308,6 +309,14 @@ def test_integration(tmp_path):
         if model == "xgboost":
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
+
+            time_output_dir = next(output_model_dir.iterdir())
+            assert (time_output_dir / "best_trial/held_out_predictions.parquet").exists()
+            assert (time_output_dir / "best_trial/tuning_predictions.parquet").exists()
+            assert (time_output_dir / "sweep_results_summary.parquet").exists()
+            validate_binary_classification_schema(
+                pl.read_parquet(time_output_dir / "best_trial/held_out_predictions.parquet")
+            )
         else:
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1
@@ -341,7 +350,16 @@ def test_integration(tmp_path):
         if model == "xgboost":
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
+
+            time_output_dir = next(output_model_dir.iterdir())
+            assert (time_output_dir / "best_trial/held_out_predictions.parquet").exists()
+            assert (time_output_dir / "best_trial/tuning_predictions.parquet").exists()
+            assert (time_output_dir / "sweep_results_summary.parquet").exists()
+            validate_binary_classification_schema(
+                pl.read_parquet(time_output_dir / "best_trial/held_out_predictions.parquet")
+            )
         else:
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1
+
         shutil.rmtree(output_model_dir)

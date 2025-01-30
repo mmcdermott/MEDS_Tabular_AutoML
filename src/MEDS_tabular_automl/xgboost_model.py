@@ -1,9 +1,12 @@
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
+import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
 from loguru import logger
+from meds_evaluation.schema import BINARY_CLASSIFICATION_SCHEMA_DICT
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
@@ -125,6 +128,70 @@ class XGBoostModel(BaseModel):
             self._build_iterators()
             self._build_dmatrix_from_iterators()
 
+    def load_model(self, xgboost_json_fp: Path):
+        self.model = xgb.Booster()
+        self.model.load_model(str(xgboost_json_fp))
+
+    def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
+        """Helper Function that retrieves model predictions and labels."""
+        if split == "tuning":
+            y_pred = self.model.predict(self.dtuning)
+            y_true = self.dtuning.get_label()
+        elif split == "held_out":
+            y_pred = self.model.predict(self.dheld_out)
+            y_true = self.dheld_out.get_label()
+        elif split == "train":
+            y_pred = self.model.predict(self.dtrain)
+            y_true = self.dtrain.get_label()
+        else:
+            raise ValueError(f"Invalid split for evaluation: {split}")
+        return y_true, y_pred
+
+    def predict(self, split="held_out") -> pl.DataFrame:
+        """Retrieves logits for the given split.
+
+        Returns:
+            The evaluation metric as the ROC AUC score.
+        """
+        y_true, y_pred = self._predict(split)
+
+        if split == "tuning":
+            xgb_iterator = self.ituning
+        elif split == "held_out":
+            xgb_iterator = self.iheld_out
+        elif split == "train":
+            xgb_iterator = self.itrain
+        else:
+            raise ValueError(f"Invalid split for evaluation: {split}")
+        _, cached_labels = xgb_iterator._load_ids_and_labels(load_ids=False, load_labels=True)
+        parquet_files = list(
+            Path(self.cfg.path.input_label_cache_dir) / split / f"{key}.parquet"
+            for key in cached_labels.keys()
+        )
+        labels = pl.concat([pl.read_parquet(fp) for fp in parquet_files])
+        if "event_id" not in labels.schema:
+            labels = labels.with_row_index("event_id")
+        if "time" not in labels.schema:
+            labels = labels.rename({"prediction_time": "time"})
+        if "boolean_value" in labels.schema:
+            labels = labels.rename({"boolean_value": "label"})
+        predictions_df = pl.DataFrame(
+            {
+                "subject_id": labels["subject_id"],
+                "prediction_time": labels["time"],
+                "boolean_value": y_true,
+                "predicted_boolean_value": y_pred.round(),
+                "predicted_boolean_probability": y_pred,
+                "event_id": labels["event_id"],
+            },
+            schema={**BINARY_CLASSIFICATION_SCHEMA_DICT, "event_id": pl.Int64},
+        )
+        if not (predictions_df["boolean_value"] == labels["label"]).all():
+            mismatched_labels = predictions_df["boolean_value"] == labels["label"]
+            raise ValueError(f"Label mismatch: {sum(mismatched_labels)} incorrect predictions")
+
+        return predictions_df
+
     def _train(self):
         """Trains the model."""
         self.model = xgb.train(
@@ -168,17 +235,7 @@ class XGBoostModel(BaseModel):
         Returns:
             The evaluation metric as the ROC AUC score.
         """
-        if split == "tuning":
-            y_pred = self.model.predict(self.dtuning)
-            y_true = self.dtuning.get_label()
-        elif split == "held_out":
-            y_pred = self.model.predict(self.dheld_out)
-            y_true = self.dheld_out.get_label()
-        elif split == "train":
-            y_pred = self.model.predict(self.dtrain)
-            y_true = self.dtrain.get_label()
-        else:
-            raise ValueError(f"Invalid split for evaluation: {split}")
+        y_true, y_pred = self._predict(split)
         return roc_auc_score(y_true, y_pred)
 
     def save_model(self, output_fp: Path):
