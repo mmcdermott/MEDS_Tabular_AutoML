@@ -236,6 +236,9 @@ class XGBoostModel(BaseModel):
             The evaluation metric as the ROC AUC score.
         """
         y_true, y_pred = self._predict(split)
+        if y_true.sum() == 0:
+            logger.warning("No positive labels in held-out set, returning 0 AUC")
+            return 0.0
         return roc_auc_score(y_true, y_pred)
 
     def save_model(self, output_fp: Path):
