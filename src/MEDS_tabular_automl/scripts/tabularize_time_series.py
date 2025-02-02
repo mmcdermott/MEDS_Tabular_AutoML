@@ -134,7 +134,9 @@ def main(
 
         def write_fn(out_matrix, out_fp):
             coo_matrix = out_matrix.tocoo()
-            write_df(coo_matrix, out_fp, do_overwrite=cfg.do_overwrite)
+            write_df(
+                coo_matrix, out_fp, do_compress=cfg.tabularization.do_compress, do_overwrite=cfg.do_overwrite
+            )
             del coo_matrix
             del out_matrix
             gc.collect()

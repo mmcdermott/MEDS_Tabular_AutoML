@@ -164,7 +164,7 @@ def main(
             )
 
         def write_fn(data, out_df):
-            write_df(data, out_df, do_overwrite=cfg.do_overwrite)
+            write_df(data, out_df, do_compress=cfg.tabularization.do_compress, do_overwrite=cfg.do_overwrite)
 
         rwlock_wrap(
             shard_fp,

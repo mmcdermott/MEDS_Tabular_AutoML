@@ -236,7 +236,12 @@ def main(cfg: DictConfig):
             return row_cached_matrix
 
         def write_fn(row_cached_matrix, out_fp):
-            write_df(row_cached_matrix, out_fp, do_overwrite=cfg.do_overwrite)
+            write_df(
+                row_cached_matrix,
+                out_fp,
+                do_compress=cfg.tabularization.do_compress,
+                do_overwrite=cfg.do_overwrite,
+            )
 
         rwlock_wrap(
             (meds_data_in_fp, data_fp),
