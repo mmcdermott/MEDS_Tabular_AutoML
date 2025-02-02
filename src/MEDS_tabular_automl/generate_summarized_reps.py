@@ -108,6 +108,9 @@ def aggregate_matrix(
             row.append(agg_matrix.row)
         else:
             raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
+    if len(row) == 0:
+        logger.warning("No data to aggregate for this shard. Returning empty aggregation matrix.")
+        return csr_array(([], ([], [])), shape=(windows.shape[0], num_features))
     row = np.concatenate(row)
     data = np.concatenate(data)
     col = np.concatenate(col)
