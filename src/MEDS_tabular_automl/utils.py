@@ -247,7 +247,7 @@ def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int
     return np.array([data, row, col]), coo_matrix.shape
 
 
-def store_matrix(coo_matrix: coo_array, fp_path: Path) -> None:
+def store_matrix(coo_matrix: coo_array, fp_path: Path, do_compress: bool) -> None:
     """Stores a sparse matrix to disk as a .npz file.
 
     Args:
@@ -255,7 +255,10 @@ def store_matrix(coo_matrix: coo_array, fp_path: Path) -> None:
         fp_path: The file path where the matrix will be stored.
     """
     array, shape = sparse_matrix_to_array(coo_matrix)
-    np.savez_compressed(fp_path, array=array, shape=shape)
+    if do_compress:
+        np.savez_compressed(fp_path, array=array, shape=shape)
+    else:
+        np.savez(fp_path, array=array, shape=shape)
 
 
 def load_matrix(fp_path: Path) -> coo_array:
@@ -272,12 +275,18 @@ def load_matrix(fp_path: Path) -> coo_array:
     return array_to_sparse_matrix(array, shape)
 
 
-def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite: bool = False) -> None:
+def write_df(
+    df: pl.LazyFrame | pl.DataFrame | coo_array,
+    fp: Path,
+    do_compress: bool = False,
+    do_overwrite: bool = False,
+) -> None:
     """Writes a sparse matrix to disk.
 
     Args:
         df: The sparse matrix to write.
         fp: The file path where to write the data.
+        do_compress: A flag indicating whether to compress the data.
         do_overwrite: A flag indicating whether to overwrite the file if it already exists.
 
     Raises:
@@ -297,7 +306,10 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
         ...     write_df(df_polars.lazy(), fp, do_overwrite=True)
         ...     assert_frame_equal(pl.read_parquet(fp), df_polars)
         ...     fp = Path(tmpdir) / "test.npz"
-        ...     write_df(df_coo_array, fp, do_overwrite=True)
+        ...     write_df(df_coo_array, fp, do_compress=False, do_overwrite=True)
+        ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
+        ...     fp = Path(tmpdir) / "test_compressed.npz"
+        ...     write_df(df_coo_array, fp, do_compress=True, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
         ...     import pytest
         ...     with pytest.raises(FileExistsError):
@@ -313,7 +325,7 @@ def write_df(df: pl.LazyFrame | pl.DataFrame | coo_array, fp: Path, do_overwrite
     elif isinstance(df, pl.DataFrame):
         df.write_parquet(fp, use_pyarrow=WRITE_USE_PYARROW)
     elif isinstance(df, coo_array):
-        store_matrix(df, fp)
+        store_matrix(df, fp, do_compress)
     else:
         raise TypeError(f"Unsupported type for df: {type(df)}")
 
