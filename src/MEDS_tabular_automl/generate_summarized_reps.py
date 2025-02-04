@@ -83,6 +83,44 @@ def aggregate_matrix(
 
     Raises:
         TypeError: If the type of the aggregated matrix is not compatible for further operations.
+
+    Example:
+        >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [1, 2, 2]})
+        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
+        >>> matrix.toarray()
+        array([[1, 1, 0],
+               [2, 0, 0],
+               [3, 0, 1]])
+        >>> agg = "sum"
+        >>> num_features = 3
+        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
+        >>> aggregated_matrix.toarray()
+        array([[3, 1, 0],
+               [6, 1, 1],
+               [5, 0, 1]])
+
+        Maybe nans are causing this:
+        >>> data = np.array([1.0, 2.0, 3.0, 1.0, np.nan])
+        >>> matrix = coo_array((data, ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
+        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
+        >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [1, 2, 2]})
+
+        Maybe no windows is causing this:
+        >>> windows = pl.DataFrame({"min_index": [], "max_index": []},
+        ...                         schema={"min_index": pl.Int32, "max_index": pl.Int32})
+        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
+        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
+
+        Maybe an empty window causes this:
+        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
+        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
+        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
+
+        Maybe a null window causes this:
+        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [None]},
+        ...                         schema={"min_index": pl.Int32, "max_index": pl.Int32})
+        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
+        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
     """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
