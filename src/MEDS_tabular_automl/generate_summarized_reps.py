@@ -67,12 +67,12 @@ def get_rolling_window_indicies(
     │ ---       ┆ ---       │
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
-    │ 0         ┆ 0         │
     │ 0         ┆ 1         │
-    │ 1         ┆ 2         │
-    │ 2         ┆ 3         │
-    │ 3         ┆ 4         │
-    │ 4         ┆ 5         │
+    │ 0         ┆ 2         │
+    │ 1         ┆ 3         │
+    │ 2         ┆ 4         │
+    │ 3         ┆ 5         │
+    │ 4         ┆ 6         │
     └───────────┴───────────┘
     >>> label_df = pl.DataFrame({"subject_id": [1],
     ...                          "prediction_time": pl.Series(["2021-01-02"]).str.strptime(pl.Date)})
@@ -83,7 +83,7 @@ def get_rolling_window_indicies(
     │ ---       ┆ ---       │
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
-    │ 0         ┆ 0         │
+    │ 0         ┆ 1         │
     └───────────┴───────────┘
     >>> label_df = pl.DataFrame({"subject_id": [1],
     ...                          "prediction_time": pl.Series(["2021-01-01"]).str.strptime(pl.Date)})
@@ -94,7 +94,7 @@ def get_rolling_window_indicies(
     │ ---       ┆ ---       │
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
-    │ null      ┆ null      │
+    │ 0         ┆ 0         │
     └───────────┴───────────┘
     """
     if window_size == "full":
@@ -105,7 +105,7 @@ def get_rolling_window_indicies(
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
-        .select(pl.col("min_index", "max_index"))
+        .select(pl.col("min_index"), pl.col("max_index") + 1)
         .collect()
     )
     if label_df is not None:
@@ -114,6 +114,7 @@ def get_rolling_window_indicies(
             label_df.rename({"prediction_time": "time"})
             .join_asof(event_df, by="subject_id", on="time")
             .select(windows.columns)
+            .fill_null(0)
             .collect()
         )
     return windows
@@ -138,7 +139,7 @@ def aggregate_matrix(
         TypeError: If the type of the aggregated matrix is not compatible for further operations.
 
     Example:
-        >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [1, 2, 2]})
+        >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [2, 3, 3]})
         >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
         >>> matrix.toarray()
         array([[1, 1, 0],
@@ -151,29 +152,6 @@ def aggregate_matrix(
         array([[3, 1, 0],
                [6, 1, 1],
                [5, 0, 1]])
-
-        Maybe nans are causing this:
-        >>> data = np.array([1.0, 2.0, 3.0, 1.0, np.nan])
-        >>> matrix = coo_array((data, ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
-        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
-        >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [1, 2, 2]})
-
-        Maybe no windows is causing this:
-        >>> windows = pl.DataFrame({"min_index": [], "max_index": []},
-        ...                         schema={"min_index": pl.Int32, "max_index": pl.Int32})
-        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
-        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
-
-        Maybe an empty window causes this:
-        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
-        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
-        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
-
-        Maybe a null window causes this:
-        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [None]},
-        ...                         schema={"min_index": pl.Int32, "max_index": pl.Int32})
-        >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
-        >>> aggregated_matrix = aggregate_matrix(windows, matrix, agg, num_features)
     """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
@@ -186,7 +164,7 @@ def aggregate_matrix(
     for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
         min_index = window["min_index"]
         max_index = window["max_index"]
-        subset_matrix = matrix[min_index : max_index + 1, :]
+        subset_matrix = matrix[min_index:max_index, :]
         agg_matrix = sparse_aggregate(subset_matrix, agg)
         if isinstance(agg_matrix, np.ndarray):
             nozero_ind = np.nonzero(agg_matrix)[0]
