@@ -152,6 +152,18 @@ def aggregate_matrix(
         array([[3, 1, 0],
                [6, 1, 1],
                [5, 0, 1]])
+
+        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
+        >>> aggregate_matrix(windows, matrix, 'sum', num_features).toarray()
+        array([[0, 0, 0]])
+        >>> aggregate_matrix(windows, matrix, 'min', num_features).toarray()
+        array([[0, 0, 0]])
+        >>> aggregate_matrix(windows, matrix, 'max', num_features).toarray()
+        array([[0, 0, 0]])
+        >>> aggregate_matrix(windows, matrix, 'sum_sqd', num_features).toarray()
+        array([[0, 0, 0]])
+        >>> aggregate_matrix(windows, matrix, 'count', num_features).toarray()
+        array([[0, 0, 0]])
     """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
