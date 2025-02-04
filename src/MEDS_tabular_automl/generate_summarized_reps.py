@@ -43,7 +43,9 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array
     return merged_matrix
 
 
-def get_rolling_window_indicies(index_df: pl.LazyFrame, window_size: str) -> pl.LazyFrame:
+def get_rolling_window_indicies(
+    index_df: pl.LazyFrame, window_size: str, label_df: pl.LazyFrame = None
+) -> pl.LazyFrame:
     """Computes the start and end indices for rolling window operations on a LazyFrame.
 
     Args:
@@ -52,18 +54,69 @@ def get_rolling_window_indicies(index_df: pl.LazyFrame, window_size: str) -> pl.
 
     Returns:
         A LazyFrame with columns 'min_index' and 'max_index' representing the range of each window.
+
+    Example:
+    >>> index_df = pl.DataFrame({"subject_id": [1, 1, 1, 1, 1, 1],
+    ...                          "time": pl.Series(["2021-01-02",
+    ...                          "2021-01-06", "2021-01-11", "2021-01-16",
+    ...                          "2021-01-21", "2021-01-26"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "7d")
+    shape: (6, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 0         ┆ 0         │
+    │ 0         ┆ 1         │
+    │ 1         ┆ 2         │
+    │ 2         ┆ 3         │
+    │ 3         ┆ 4         │
+    │ 4         ┆ 5         │
+    └───────────┴───────────┘
+    >>> label_df = pl.DataFrame({"subject_id": [1],
+    ...                          "prediction_time": pl.Series(["2021-01-02"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
+    shape: (1, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 0         ┆ 0         │
+    └───────────┴───────────┘
+    >>> label_df = pl.DataFrame({"subject_id": [1],
+    ...                          "prediction_time": pl.Series(["2021-01-01"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
+    shape: (1, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ null      ┆ null      │
+    └───────────┴───────────┘
     """
     if window_size == "full":
         timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
     else:
         timedelta = pd.Timedelta(window_size)
-    return (
+    windows = (
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
         .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
         .select(pl.col("min_index", "max_index"))
         .collect()
     )
+    if label_df is not None:
+        event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
+        windows = (
+            label_df.rename({"prediction_time": "time"})
+            .join_asof(event_df, by="subject_id", on="time")
+            .select(windows.columns)
+            .collect()
+        )
+    return windows
 
 
 def aggregate_matrix(
@@ -201,14 +254,7 @@ def compute_agg(
 
     if label_df is not None:
         logger.info("Step 2: computing rolling windows and aggregating.")
-        windows = get_rolling_window_indicies(index_df, window_size)
-        event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
-        windows = (
-            label_df.rename({"prediction_time": "time"})
-            .join_asof(event_df, by="subject_id", on="time")
-            .select(windows.columns)
-            .collect()
-        )
+        windows = get_rolling_window_indicies(index_df, window_size, label_df)
     else:
         logger.info("Step 1.5: Running sparse aggregation.")
         matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
