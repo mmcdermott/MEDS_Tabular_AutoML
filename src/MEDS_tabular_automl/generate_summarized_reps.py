@@ -155,27 +155,25 @@ def aggregate_matrix(
 
         >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
         >>> aggregate_matrix(windows, matrix, 'sum', num_features).toarray()
-        array([[0, 0, 0]])
+        array([[0., 0., 0.]])
         >>> aggregate_matrix(windows, matrix, 'min', num_features).toarray()
-        array([[0, 0, 0]])
+        array([[0., 0., 0.]])
         >>> aggregate_matrix(windows, matrix, 'max', num_features).toarray()
-        array([[0, 0, 0]])
+        array([[0., 0., 0.]])
         >>> aggregate_matrix(windows, matrix, 'sum_sqd', num_features).toarray()
-        array([[0, 0, 0]])
+        array([[0., 0., 0.]])
         >>> aggregate_matrix(windows, matrix, 'count', num_features).toarray()
-        array([[0, 0, 0]])
+        array([[0., 0., 0.]])
     """
     tqdm = load_tqdm(use_tqdm)
     agg = agg.split("/")[-1]
     matrix = csr_array(matrix)
-    # if agg.startswith("sum"):
-    #     out_dtype = np.float32
-    # else:
-    #     out_dtype = np.int32
     data, row, col = [], [], []
     for i, window in tqdm(enumerate(windows.iter_rows(named=True)), total=len(windows)):
         min_index = window["min_index"]
         max_index = window["max_index"]
+        if min_index == max_index:
+            continue
         subset_matrix = matrix[min_index:max_index, :]
         agg_matrix = sparse_aggregate(subset_matrix, agg)
         if isinstance(agg_matrix, np.ndarray):
