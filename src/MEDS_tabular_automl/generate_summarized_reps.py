@@ -85,6 +85,8 @@ def get_rolling_window_indicies(
     ╞═══════════╪═══════════╡
     │ 0         ┆ 1         │
     └───────────┴───────────┘
+
+    Test label prior to all observations returns empty window
     >>> label_df = pl.DataFrame({"subject_id": [1],
     ...                          "prediction_time": pl.Series(["2021-01-01"]).str.strptime(pl.Date)})
     >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
@@ -95,6 +97,44 @@ def get_rolling_window_indicies(
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
     │ 0         ┆ 0         │
+    └───────────┴───────────┘
+
+    Test label after all observations returns the window ending at the last event for the patient
+    >>> label_df = pl.DataFrame({"subject_id": [1],
+    ...                          "prediction_time": pl.Series(["2022-01-01"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
+    shape: (1, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 4         ┆ 6         │
+    └───────────┴───────────┘
+
+    Confirm a label with no observations within a window from it, will extract the previous event's window.
+    >>> label_df = pl.DataFrame({"subject_id": [1],
+    ...                          "prediction_time": pl.Series(["2021-01-08"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "1d", label_df.lazy())
+    shape: (1, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 1         ┆ 2         │
+    └───────────┴───────────┘
+
+    Check if there is no data for the patient, the min_index will be 0 and max_index will be 0
+    >>> index_df = pl.DataFrame({"subject_id": [],
+    ...                          "time": pl.Series([]).cast(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "1d")
+    shape: (0, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
     └───────────┴───────────┘
     """
     if window_size == "full":
