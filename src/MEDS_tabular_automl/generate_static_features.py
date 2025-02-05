@@ -65,7 +65,7 @@ def get_subject_specific_sparse_static_rep(static_df: pl.DataFrame, static_featu
     >>> static_df = pl.DataFrame({"subject_id": [1, 2, 3], "A": [1, 2, 3], "B": [4, 5, 6]})
     >>> meds_df = pl.DataFrame({"subject_id": [1, 1, 1, 2, 2, 2], "code": ["A", "B", "A", "B", "A", "B"]})
 
-    Observe that you get a sparse matrix with on row per static_df row
+    Observe that you get a sparse matrix with one row per static_df row
     >>> get_subject_specific_sparse_static_rep(static_df=static_df.lazy(), static_features=["A", "B"]).shape
     (3, 2)
     """
@@ -95,7 +95,7 @@ def get_sparse_static_rep(
     >>> meds_df = pl.DataFrame({"subject_id": [1, 1, 1, 2, 2, 2], "code": ["A", "B", "A", "B", "A", "B"]})
     >>> feature_columns = ["A/static/present", "B/static/first", "A/static/present", "B/static/first"]
 
-    Observe that you get a sparse matrix with on row per meds_df row
+    Observe that you get a sparse matrix with one row per meds_df row
     >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
     ...                       meds_df=meds_df.lazy(), feature_columns=feature_columns).shape
     (6, 2)
