@@ -9,11 +9,11 @@ import numpy as np
 import polars as pl
 import scipy.sparse as sp
 from loguru import logger
+from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
-from ..mapper import wrap as rwlock_wrap
 from ..utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
@@ -30,7 +30,7 @@ from ..utils import (
 )
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 
@@ -205,7 +205,7 @@ def main(cfg: DictConfig):
                 meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
             ).join_asof(other=meds_data_df, by="subject_id", on="time")
             null_event_ids = shard_label_df.select(pl.col("event_id").is_null().sum()).collect().item()
-            if null_event_ids > 0:
+            if null_event_ids > 0:  # pragma: no cover
                 logger.warning(
                     f"Found {null_event_ids} labels for which there is no prior patient data!"
                     "These events will just have an empty vector representation."
@@ -250,7 +250,6 @@ def main(cfg: DictConfig):
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
-            do_return=False,
         )
 
 
