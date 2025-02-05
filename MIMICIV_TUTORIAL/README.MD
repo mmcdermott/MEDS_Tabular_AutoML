@@ -59,7 +59,7 @@ We can manually extract the supervised task labels from our meds dataset using [
 ```console
 conda create -n aces python=3.12
 conda activate aces
-pip install es-aces==0.5.0
+pip install es-aces==0.6.1
 pip install hydra-joblib-launcher
 ```
 
@@ -89,12 +89,14 @@ done
 When working with only one or a few tasks of interest, use the selective tabularization script. This approach minimizes computational overhead by only processing event times for specific tasks:
 
 ```console
+export WINDOW_SIZES="2h,12h,1d,7d,30d,365d,full"
+export AGGREGATIONS="static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max"
 export N_PARALLEL_WORKERS=48 # Set number of workers
+
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
+    ${WINDOW_SIZES} ${AGGREGATIONS}
 ```
 
 ### (Not Recommended Approach) Full Data Tabularization and XGBoost Baseline
@@ -109,13 +111,16 @@ The key advantages of this approach include:
 We recommend using this script, as opposed to the task specific script, when tabularizing all unique event times would be faster than tabularizing only the relevant events for each task separately.
 
 ```console
-export N_PARALLEL_WORKERS=48 # Set number of workers
 export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
+export WINDOW_SIZES="2h,12h,1d,7d,30d,365d,full"
+export AGGREGATIONS="static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max"
+export N_PARALLEL_WORKERS=48 # Set number of workers
+
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
+    ${WINDOW_SIZES} ${AGGREGATIONS}
+
 ```
 
 ## Benchmarking Workflows
@@ -130,7 +135,15 @@ pip install hydra_profiler
 ### (Recommended Approach) Selective Task Tabularization
 
 ```console
-ROOT_DIR=/storage/shared/mimic-iv/meds_tab_tutorial/
+export ROOT_DIR=/storage/shared/mimic-iv/meds_tab_tutorial_task/
+export MIMICIV_MEDS_DIR=${ROOT_DIR}/meds/ # set to the directory in which you want to store the raw MIMIC-IV data
+export OUTPUT_TABULARIZATION_DIR=${ROOT_DIR}/meds_tab/ # set to the output directory for the tabularized data
+export OUTPUT_MODEL_DIR=${OUTPUT_TABULARIZATION_DIR}/results/ # set to the base results directory
+TASKS_DIR="$MIMICIV_MEDS_DIR/tasks/" # set to the directory in which you want to store all tasks
+
+export WINDOW_SIZES="2h,12h,1d,7d,30d,365d,full"
+export AGGREGATIONS="static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max"
+
 TASKS=(
     "mortality/in_hospital/first_24h"
 )
@@ -138,16 +151,21 @@ export N_PARALLEL_WORKERS=48 # Set number of workers
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]" \
+    ${WINDOW_SIZES} ${AGGREGATIONS} \
     "++hydra.callbacks.profiler._target_=hydra_profiler.profiler.ProfilerCallback"
 ```
 
 ### (Not Recommended Approach) Full Data Tabularization and XGBoost Baseline
 
 ```console
-export N_PARALLEL_WORKERS=48 # Set number of workers
+export ROOT_DIR=/storage/shared/mimic-iv/meds_tab_tutorial/
+
+
 export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
+export WINDOW_SIZES="2h,12h,1d,7d,30d,365d,full"
+export AGGREGATIONS="static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max"
+export N_PARALLEL_WORKERS=48 # Set number of workers
+
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \

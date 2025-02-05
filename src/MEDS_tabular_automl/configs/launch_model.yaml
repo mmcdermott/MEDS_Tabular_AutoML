@@ -20,7 +20,7 @@ time_output_model_dir: ${output_model_dir}/${now:%Y-%m-%d_%H-%M-%S}
 
 delete_below_top_k: -1
 
-name: launch_model
+log_name: launch_model
 
 prediction_splits:
   - held_out

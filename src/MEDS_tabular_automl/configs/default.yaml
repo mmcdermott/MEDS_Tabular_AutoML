@@ -6,13 +6,13 @@ tqdm: False
 worker: 0
 loguru_init: False
 
-log_dir: ${output_dir}/.logs/
+log_dir: ${output_dir}/.logs/${now:%Y-%m-%d}_${now:%H-%M-%S}/
 cache_dir: ${output_dir}/.cache
 
 hydra:
   verbose: False
   job:
-    name: MEDS_TAB_${name}_${worker}_${now:%Y-%m-%d_%H-%M-%S}
+    name: MEDS_TAB_${log_name}_${worker}_${now:%Y-%m-%d}_${now:%H-%M-%S}
   sweep:
     dir: ${log_dir}
   run:
