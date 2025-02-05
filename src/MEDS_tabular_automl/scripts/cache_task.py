@@ -30,7 +30,7 @@ from ..utils import (
 )
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 
@@ -205,7 +205,7 @@ def main(cfg: DictConfig):
                 meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
             ).join_asof(other=meds_data_df, by="subject_id", on="time")
             null_event_ids = shard_label_df.select(pl.col("event_id").is_null().sum()).collect().item()
-            if null_event_ids > 0:
+            if null_event_ids > 0:  # pragma: no cover
                 logger.warning(
                     f"Found {null_event_ids} labels for which there is no prior patient data!"
                     "These events will just have an empty vector representation."
