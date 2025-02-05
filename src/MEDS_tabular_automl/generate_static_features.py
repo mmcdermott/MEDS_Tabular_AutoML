@@ -51,8 +51,33 @@ def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> c
     return matrix
 
 
+def get_subject_specific_sparse_static_rep(static_df: pl.DataFrame, static_features: list[str]):
+    """Given a DataFrame of static features, returns a sparse matrix representation of the data.
+
+    Args:
+        static_df: A DataFrame containing static features.
+        static_features: A list of static feature names.
+
+    Returns:
+        A sparse matrix representation of the DataFrame.
+
+    Example:
+    >>> static_df = pl.DataFrame({"subject_id": [1, 2, 3], "A": [1, 2, 3], "B": [4, 5, 6]})
+    >>> meds_df = pl.DataFrame({"subject_id": [1, 1, 1, 2, 2, 2], "code": ["A", "B", "A", "B", "A", "B"]})
+
+    Observe that you get a sparse matrix with on row per static_df row
+    >>> get_subject_specific_sparse_static_rep(static_df=static_df.lazy(), static_features=["A", "B"]).shape
+    (3, 2)
+    """
+    return convert_to_matrix(
+        static_df,
+        num_events=static_df.select(pl.col("subject_id").n_unique()).collect().item(),
+        num_features=len(static_features),
+    )
+
+
 def get_sparse_static_rep(
-    static_features: list[str], static_df: pl.DataFrame, meds_df: pl.DataFrame, feature_columns: list[str]
+    static_features: list[str], static_df: pl.LazyFrame, meds_df: pl.LazyFrame, feature_columns: list[str]
 ) -> coo_array:
     """Merges static and time-series dataframes into a sparse representation based on the subject_id column.
 
@@ -64,6 +89,16 @@ def get_sparse_static_rep(
 
     Returns:
         A sparse array representation of the merged static and time-series features.
+
+    Example:
+    >>> static_df = pl.DataFrame({"subject_id": [1, 2, 3], "A": [1, 2, 3], "B": [4, 5, 6]})
+    >>> meds_df = pl.DataFrame({"subject_id": [1, 1, 1, 2, 2, 2], "code": ["A", "B", "A", "B", "A", "B"]})
+    >>> feature_columns = ["A/static/present", "B/static/first", "A/static/present", "B/static/first"]
+
+    Observe that you get a sparse matrix with on row per meds_df row
+    >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
+    ...                       meds_df=meds_df.lazy(), feature_columns=feature_columns).shape
+    (6, 2)
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
@@ -77,8 +112,8 @@ def get_sparse_static_rep(
         raise ValueError("static_df has duplicate subject_id values.")
 
     # load static data as sparse matrix
-    static_matrix = convert_to_matrix(
-        static_df, num_events=meds_df.select(pl.len()).collect().item(), num_features=len(static_features)
+    static_matrix = get_subject_specific_sparse_static_rep(
+        static_df=static_df, static_features=static_features
     )
     # Duplicate static matrix rows to match time-series data
     events_per_patient = (
