@@ -12,6 +12,7 @@ pl.enable_string_cache()
 
 from importlib.resources import files
 
+from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
 from ..describe_codes import (
@@ -22,7 +23,6 @@ from ..describe_codes import (
 )
 from ..file_name import list_subdir_files
 from ..generate_static_features import get_flat_static_rep
-from ..mapper import wrap as rwlock_wrap
 from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
@@ -130,7 +130,6 @@ def main(
         write_fn,
         compute_fn,
         do_overwrite=cfg.do_overwrite,
-        do_return=False,
     )
 
     # Step 2: Produce static data representation
@@ -173,7 +172,6 @@ def main(
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
-            do_return=False,
         )
 
 

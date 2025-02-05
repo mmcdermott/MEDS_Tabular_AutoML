@@ -8,6 +8,7 @@ import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
+from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
 from ..describe_codes import (
@@ -16,7 +17,6 @@ from ..describe_codes import (
     convert_to_freq_dict,
 )
 from ..file_name import list_subdir_files
-from ..mapper import wrap as rwlock_wrap
 from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
@@ -60,7 +60,6 @@ def main(cfg: DictConfig):
             write_fn,
             compute_feature_frequencies,
             do_overwrite=cfg.do_overwrite,
-            do_return=False,
         )
 
     logger.info("Summing frequency computations.")
@@ -89,7 +88,6 @@ def main(cfg: DictConfig):
         write_fn,
         compute_fn,
         do_overwrite=cfg.do_overwrite,
-        do_return=False,
     )
     logger.info("Stored feature columns and frequencies.")
 
