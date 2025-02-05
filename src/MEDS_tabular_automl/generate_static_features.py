@@ -112,13 +112,40 @@ def summarize_static_measurements(
 
     Returns:
         A LazyFrame containing summarized data pivoted by 'subject_id' for each static feature.
+
+    Example:
+    >>> feature_columns = ['A/static/first', 'B/static/first', 'A/static/present', 'B/static/present']
+    >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2], 'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A'],
+    ...                    'numeric_value': [1, None, 2, 3, None, None, 3]})
+    >>> result = summarize_static_measurements('static/first', feature_columns, df.lazy())
+    >>> result
+    shape: (2, 3)
+    ┌────────────┬────────────────┬────────────────┐
+    │ subject_id ┆ A/static/first ┆ B/static/first │
+    │ ---        ┆ ---            ┆ ---            │
+    │ i64        ┆ f32            ┆ f32            │
+    ╞════════════╪════════════════╪════════════════╡
+    │ 1          ┆ 1.0            ┆ 2.5            │
+    │ 2          ┆ 3.0            ┆ null           │
+    └────────────┴────────────────┴────────────────┘
+    >>> result = summarize_static_measurements('static/present', feature_columns, df.lazy())
+    >>> result
+    shape: (2, 3)
+    ┌────────────┬──────────────────┬──────────────────┐
+    │ subject_id ┆ A/static/present ┆ B/static/present │
+    │ ---        ┆ ---              ┆ ---              │
+    │ i64        ┆ bool             ┆ bool             │
+    ╞════════════╪══════════════════╪══════════════════╡
+    │ 1          ┆ true             ┆ true             │
+    │ 2          ┆ true             ┆ null             │
+    └────────────┴──────────────────┴──────────────────┘
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
         # Handling 'first' static values
         static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
         code_subset = df.filter(pl.col("code").is_in(static_first_codes))
-        first_code_subset = code_subset.group_by(pl.col("subject_id")).first().collect()
+        first_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
         static_value_pivot_df = first_code_subset.pivot(
             index=["subject_id"], columns=["code"], values=["numeric_value"], aggregate_function=None
         )
@@ -129,10 +156,8 @@ def summarize_static_measurements(
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(
-            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Boolean) for k, v in remap_cols.items()]
+            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float32) for k, v in remap_cols.items()]
         ).sort(by="subject_id")
-        # pivot can be faster: https://stackoverflow.com/questions/73522017/replacing-a-pivot-with-a-lazy-groupby-operation # noqa: E501
-        # TODO: consider casting with .cast(pl.Float32))
         return static_value_pivot_df
     elif agg == STATIC_CODE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
@@ -147,7 +172,7 @@ def summarize_static_measurements(
                 index=["subject_id"],
                 columns=["code"],
                 values="__indicator",
-                aggregate_function=None,
+                aggregate_function="sum",
             )
             .sort(by="subject_id")
         )
