@@ -158,8 +158,6 @@ def summarize_static_measurements(
         static_value_pivot_df = static_value_pivot_df.select(
             *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float32) for k, v in remap_cols.items()]
         ).sort(by="subject_id")
-        # pivot can be faster: https://stackoverflow.com/questions/73522017/replacing-a-pivot-with-a-lazy-groupby-operation # noqa: E501
-        # TODO: consider casting with .cast(pl.Float32))
         return static_value_pivot_df
     elif agg == STATIC_CODE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
