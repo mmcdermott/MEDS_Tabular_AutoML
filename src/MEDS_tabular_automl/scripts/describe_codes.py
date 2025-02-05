@@ -20,7 +20,7 @@ from ..file_name import list_subdir_files
 from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 

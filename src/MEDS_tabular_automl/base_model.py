@@ -12,19 +12,19 @@ class BaseModel(ABC, TimeableMixin):
     """Defines the interface for a model that can be trained and evaluated via the launch_model script."""
 
     @abstractmethod
-    def __init__(self):
+    def __init__(self):  # pragma: no cover
         pass
 
     @abstractmethod
-    def train(self):
+    def train(self):  # pragma: no cover
         pass
 
     @abstractmethod
-    def evaluate(self) -> float:
+    def evaluate(self) -> float:  # pragma: no cover
         pass
 
     @abstractmethod
-    def save_model(self, output_fp: Path):
+    def save_model(self, output_fp: Path):  # pragma: no cover
         pass
 
     @classmethod

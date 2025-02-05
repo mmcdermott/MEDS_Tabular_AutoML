@@ -31,7 +31,7 @@ from ..utils import (
 )
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 

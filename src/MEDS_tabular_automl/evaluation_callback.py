@@ -100,7 +100,7 @@ class EvaluationCallback(Callback):
             self.delete_below_top_k_models(
                 performance, config.delete_below_top_k, config.path.sweep_results_dir
             )
-        else:
+        else:  # pragma: no cover
             logger.info(
                 "All models were saved. To automatically delete models, set delete_below_top_k in config."
             )
