@@ -9,11 +9,11 @@ import numpy as np
 import polars as pl
 import scipy.sparse as sp
 from loguru import logger
+from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
-from ..mapper import wrap as rwlock_wrap
 from ..utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
@@ -250,7 +250,6 @@ def main(cfg: DictConfig):
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
-            do_return=False,
         )
 
 
