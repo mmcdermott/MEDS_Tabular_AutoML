@@ -6,6 +6,7 @@ min_code_inclusion_frequency: null
 min_correlation: null
 max_by_correlation: null
 max_included_codes: null
+do_compress: False
 window_sizes:
   - "1d"
   - "7d"

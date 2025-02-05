@@ -236,6 +236,9 @@ class XGBoostModel(BaseModel):
             The evaluation metric as the ROC AUC score.
         """
         y_true, y_pred = self._predict(split)
+        if len(np.unique(y_true)) != 2:
+            logger.warning("There is only one class in the ground truth labels, returning 0 AUC")
+            return 0.0
         return roc_auc_score(y_true, y_pred)
 
     def save_model(self, output_fp: Path):
