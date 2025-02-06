@@ -5,4 +5,4 @@ defaults:
 # Where to store output code frequency data
 output_filepath: ${output_dir}/metadata/codes.parquet
 
-name: describe_codes
+log_name: describe_codes

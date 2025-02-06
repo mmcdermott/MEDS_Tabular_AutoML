@@ -12,4 +12,4 @@ output_tabularized_dir: ${output_dir}/tabularize
 # task name and label directory, if both are available, will tabularize only events from these tasks
 input_label_dir: null
 
-name: tabularization
+log_name: tabularization

@@ -14,6 +14,8 @@ print_help() {
     echo "  TASKS_DIR                   Directory containing task-specific data"
     echo "  OUTPUT_MODEL_DIR            Output directory for models"
     echo "  N_PARALLEL_WORKERS          Number of parallel workers to use"
+    echo "  WINDOW_SIZES                Comma-separated list of window sizes (e.g., '2h,12h,1d,7d,30d,365d,full')"
+    echo "  AGGREGATIONS                Comma-separated list of aggregations (e.g., 'code/count,value/sum')"
     echo
     echo "Additional arguments will be passed to the underlying commands."
 }
@@ -25,7 +27,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 fi
 
 # Check if we have the minimum required number of arguments
-if [ "$#" -lt 7 ]; then
+if [ "$#" -lt 9 ]; then
     echo "Error: Not enough arguments provided."
     print_help
     exit 1
@@ -39,8 +41,10 @@ TASKS="$4"
 TASKS_DIR="$5"
 OUTPUT_MODEL_DIR="$6"
 N_PARALLEL_WORKERS="$7"
+WINDOW_SIZES="$8"
+AGGREGATIONS="$9"
 
-shift 7
+shift 9
 
 # Split the TASKS string into an array
 IFS=',' read -ra TASK_ARRAY <<< "$TASKS"
@@ -54,6 +58,8 @@ echo "TASKS:" "${TASK_ARRAY[@]}"
 echo "TASKS_DIR: $TASKS_DIR"
 echo "OUTPUT_MODEL_DIR: $OUTPUT_MODEL_DIR"
 echo "N_PARALLEL_WORKERS: $N_PARALLEL_WORKERS"
+echo "WINDOW_SIZES: $WINDOW_SIZES"
+echo "AGGREGATIONS: $AGGREGATIONS"
 echo "Additional arguments:" "$@"
 echo
 
@@ -73,19 +79,21 @@ MEDS_transform-reshard_to_split \
 # describe codes
 echo "Describing codes"
 meds-tab-describe \
-    "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR"
+    "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" "$@"
 
 echo "Tabularizing static data"
 meds-tab-tabularize-static \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
-    do_overwrite=False "$@"
+    do_overwrite=False "tabularization.window_sizes=[${WINDOW_SIZES}]" "tabularization.aggs=[${AGGREGATIONS}]" "$@"
+
 
 meds-tab-tabularize-time-series \
     --multirun \
     worker="range(0,$N_PARALLEL_WORKERS)" \
     hydra/launcher=joblib \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
-    do_overwrite=False "$@"
+    do_overwrite=False "tabularization.window_sizes=[${WINDOW_SIZES}]" "tabularization.aggs=[${AGGREGATIONS}]" "$@"
+
 
 for TASK in "${TASK_ARRAY[@]}"
 do
@@ -93,14 +101,14 @@ do
     meds-tab-cache-task \
     hydra/launcher=joblib \
     "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" "task_name=${TASK}" do_overwrite=False "$@"
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "task_name=${TASK}" do_overwrite=False \
+    "tabularization.window_sizes=[${WINDOW_SIZES}]" "tabularization.aggs=[${AGGREGATIONS}]" "$@"
 
   echo "Running xgboost for task: $TASK"
   meds-tab-xgboost \
       --multirun \
-      worker="range(0,$N_PARALLEL_WORKERS)" \
       "input_dir=${MIMICIV_MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR" \
       "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" do_overwrite=False \
       "hydra.sweeper.n_trials=1000" "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
-      "$@"
+      "tabularization.window_sizes=[${WINDOW_SIZES}]" "tabularization.aggs=[${AGGREGATIONS}]" "$@"
 done
