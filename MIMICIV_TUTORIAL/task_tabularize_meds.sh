@@ -27,7 +27,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 fi
 
 # Check if we have the minimum required number of arguments
-if [ "$#" -lt 8 ]; then
+if [ "$#" -lt 9 ]; then
     echo "Error: Not enough arguments provided."
     print_help
     exit 1

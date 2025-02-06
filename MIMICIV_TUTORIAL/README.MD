@@ -129,15 +129,14 @@ To benchmark a model on a specific task, use the benchmarking script.
 Make sure to install hydra_profiler which allows you to track the runtime and memory usage of the pipeline:
 
 ```console
-pip install hydra_profiler
+pip install git+ssh://git@github.com/Oufattole/hydra_profiler.git@dev
 ```
 
 ### (Recommended Approach) Selective Task Tabularization
 
 ```console
-pip install hydra-profiler
 
-export ROOT_DIR=/storage/shared/mimic-iv/meds_tab_tutorial_task/
+export ROOT_DIR=???
 export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
 export MIMICIV_MEDS_DIR=${ROOT_DIR}/meds/ # set to the directory in which you want to store the raw MIMIC-IV data
 export OUTPUT_TABULARIZATION_DIR=${ROOT_DIR}/meds_tab/ # set to the output directory for the tabularized data
@@ -155,13 +154,13 @@ TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
     ${WINDOW_SIZES} ${AGGREGATIONS} \
-    "++hydra.callbacks.profiler._target_=hydra_profiler.profiler.ProfilerCallback"
+    "++hydra.callbacks.profiler._target_=hydra_profiler.psutil_profiler.ProfilerCallback"
 ```
 
 ### (Not Recommended Approach) Full Data Tabularization and XGBoost Baseline
 
 ```console
-export ROOT_DIR=/storage/shared/mimic-iv/meds_tab_tutorial/
+export ROOT_DIR=???
 
 
 export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
@@ -174,5 +173,5 @@ bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $O
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
     "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]" \
-    "++hydra.callbacks.profiler._target_=hydra_profiler.profiler.ProfilerCallback"
+    "++hydra.callbacks.profiler._target_=hydra_profiler.psutil_profiler.ProfilerCallback"
 ```
