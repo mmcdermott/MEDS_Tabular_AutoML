@@ -17,7 +17,7 @@ from ..describe_codes import (
     convert_to_freq_dict,
 )
 from ..file_name import list_subdir_files
-from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
+from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, write_df
 
 
 @hydra.main(
@@ -30,7 +30,6 @@ def main(cfg: DictConfig):
         cfg: The configuration object for the tabularization process, loaded from a Hydra
             YAML configuration file.
     """
-    stage_init(cfg, ["input_dir"])
     iter_wrapper = load_tqdm(cfg.tqdm)
     if not cfg.loguru_init:
         hydra_loguru_init()

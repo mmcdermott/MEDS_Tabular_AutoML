@@ -1,13 +1,12 @@
 """The base class for core dataset processing logic and script utilities."""
 import os
-import sys
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 from loguru import logger
-from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf import ListConfig, OmegaConf
 from scipy.sparse import coo_array
 
 WRITE_USE_PYARROW = True
@@ -428,52 +427,3 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     file_name = relative_path.name.split(".")[0]
 
     return str(relative_parent / file_name)
-
-
-def current_script_name() -> str:
-    """Returns the name of the module that called this function."""
-
-    main_module = sys.modules["__main__"]
-    main_func = getattr(main_module, "main", None)
-    if main_func and callable(main_func):
-        func_module = main_func.__module__
-        if func_module == "__main__":
-            return Path(sys.argv[0]).stem
-        else:
-            return func_module.split(".")[-1]
-
-    logger.warning("Can't find main function in __main__ module. Using sys.argv[0] as a fallback.")
-    return Path(sys.argv[0]).stem
-
-
-def stage_init(cfg: DictConfig, keys: list[str]):
-    """Initializes the stage by logging the configuration and the stage-specific paths.
-
-    Args:
-        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
-            stage specific configuration.
-
-    Returns: The data input directory, stage output directory, and metadata input directory.
-    """
-    logger.info(
-        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
-    )
-
-    chk_kwargs = {k: OmegaConf.select(cfg, k) for k in keys}
-
-    def chk(x: Path | None) -> str:
-        if x is None:
-            return "❌"
-        return "✅" if x.exists() and str(x) != "" else "❌"
-
-    paths_strs = [
-        f"  - {k}: {chk(Path(v) if v is not None else None)} "
-        f"{str(Path(v).resolve()) if v is not None else 'None'}"
-        for k, v in chk_kwargs.items()
-    ]
-
-    logger_strs = [
-        f"Stage config:\n{OmegaConf.to_yaml(cfg)}",
-        "Paths: (checkbox indicates if it exists)",
-    ]
-    logger.debug("\n".join(logger_strs + paths_strs))

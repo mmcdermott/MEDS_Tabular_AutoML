@@ -8,7 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 from MEDS_tabular_automl.base_model import BaseModel
 
 from .. import LAUNCH_MODEL_CFG
-from ..utils import hydra_loguru_init, stage_init
+from ..utils import hydra_loguru_init
 
 
 @hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
@@ -21,10 +21,6 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
-    stage_init(
-        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
-    )
-
     if not cfg.loguru_init:
         hydra_loguru_init()
 

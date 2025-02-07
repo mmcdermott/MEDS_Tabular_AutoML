@@ -30,7 +30,6 @@ from ..utils import (
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
-    stage_init,
     write_df,
 )
 
@@ -80,14 +79,6 @@ def main(
 
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
     """
-    stage_init(
-        cfg,
-        [
-            "input_code_metadata_fp",
-            "input_dir",
-            "tabularization.filtered_code_metadata_fp",
-        ],
-    )
 
     if cfg.input_label_dir:
         if not Path(cfg.input_label_dir).is_dir():
