@@ -4,7 +4,6 @@ do_overwrite: False
 seed: 1
 tqdm: False
 worker: 0
-loguru_init: False
 
 log_dir: ${output_dir}/.logs/
 cache_dir: ${output_dir}/.cache

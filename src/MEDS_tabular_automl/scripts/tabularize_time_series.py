@@ -6,12 +6,12 @@ import polars as pl
 pl.enable_string_cache()
 
 import gc
+import logging
 from itertools import product
 from pathlib import Path
 
 import hydra
 import numpy as np
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -24,10 +24,11 @@ from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     get_shard_prefix,
-    hydra_loguru_init,
     load_tqdm,
     write_df,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(
@@ -68,8 +69,7 @@ def main(
             raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
+
     # Produce ts representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)

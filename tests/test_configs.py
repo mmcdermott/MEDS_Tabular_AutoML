@@ -76,7 +76,6 @@ def test_generate_subsets_configs():
         "seed": 1,
         "hydra.verbose": True,
         "tqdm": False,
-        "loguru_init": True,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": f"{stdout_ws.strip()}",
     }

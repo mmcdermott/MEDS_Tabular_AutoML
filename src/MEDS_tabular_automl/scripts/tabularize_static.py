@@ -28,7 +28,6 @@ from ..utils import (
     STATIC_VALUE_AGGREGATION,
     filter_to_codes,
     get_shard_prefix,
-    hydra_loguru_init,
     load_tqdm,
     write_df,
 )
@@ -85,8 +84,6 @@ def main(
             raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # Step 1: Cache the filtered features that will be used in the tabularization process and modeling
     def read_fn(_):

@@ -1,15 +1,17 @@
+import logging
 from pathlib import Path
 from pickle import dump
 
 import meds
 import numpy as np
 import scipy.sparse as sp
-from loguru import logger
 from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
 from .base_model import BaseModel
 from .tabular_dataset import TabularDataset as SklearnIterator
+
+logger = logging.getLogger(__name__)
 
 
 class SklearnMatrix:

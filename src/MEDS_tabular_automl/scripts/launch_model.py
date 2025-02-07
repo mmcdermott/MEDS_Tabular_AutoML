@@ -1,14 +1,15 @@
 import json
+import logging
 from pathlib import Path
 
 import hydra
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 from MEDS_tabular_automl.base_model import BaseModel
 
 from .. import LAUNCH_MODEL_CFG
-from ..utils import hydra_loguru_init
 
 
 @hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
@@ -21,8 +22,6 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     try:
         cfg.tabularization._resolved_codes

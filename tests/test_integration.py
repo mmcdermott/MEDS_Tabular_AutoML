@@ -59,7 +59,6 @@ def test_integration(tmp_path):
         "seed": 1,
         "hydra.verbose": True,
         "tqdm": False,
-        "loguru_init": True,
     }
 
     describe_codes_config = {**shared_config}
@@ -305,7 +304,7 @@ def test_integration(tmp_path):
             overrides = ["--multirun"] + overrides
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
-        assert "Performance of best model:" in stderr
+        assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
         if model == "xgboost":
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
@@ -346,7 +345,7 @@ def test_integration(tmp_path):
             overrides = ["--multirun"] + overrides
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
-        assert "Performance of best model:" in stderr
+        assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
         if model == "xgboost":
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1

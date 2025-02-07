@@ -1,11 +1,13 @@
+import logging
 import shutil
 from pathlib import Path
 
 import polars as pl
 from hydra.experimental.callback import Callback
 from hydra.utils import instantiate
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 
 class MockModelLauncher:  # pragma: no cover

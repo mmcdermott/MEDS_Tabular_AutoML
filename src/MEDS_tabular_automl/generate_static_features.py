@@ -10,10 +10,13 @@ Functions:
 - get_flat_static_rep: Produces a tabular representation of static data features.
 """
 
+import logging
+
 import numpy as np
 import polars as pl
-from loguru import logger
 from scipy.sparse import coo_array, csr_array
+
+logger = logging.getLogger(__name__)
 
 from MEDS_tabular_automl.utils import (
     STATIC_CODE_AGGREGATION,

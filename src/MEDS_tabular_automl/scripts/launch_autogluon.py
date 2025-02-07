@@ -1,10 +1,12 @@
 import json
+import logging
 from pathlib import Path
 
 import hydra
 import pandas as pd
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 try:
     import autogluon.tabular as ag
@@ -14,7 +16,6 @@ except ImportError:
 from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
 from .. import LAUNCH_MODEL_CFG
-from ..utils import hydra_loguru_init
 
 
 def check_autogluon():
@@ -32,8 +33,6 @@ def main(cfg: DictConfig) -> float:
         cfg: The configuration dictionary specifying model and training parameters.
     """
     check_autogluon()
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")

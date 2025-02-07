@@ -1,12 +1,9 @@
 """The base class for core dataset processing logic and script utilities."""
-import os
 from pathlib import Path
 
-import hydra
 import numpy as np
 import polars as pl
-from loguru import logger
-from omegaconf import ListConfig, OmegaConf
+from omegaconf import ListConfig
 from scipy.sparse import coo_array
 
 WRITE_USE_PYARROW = True
@@ -27,15 +24,6 @@ VALUE_AGGREGATIONS = [
     "value/min",
     "value/max",
 ]
-
-
-def hydra_loguru_init() -> None:
-    """Adds loguru output to the logs that hydra scrapes.
-
-    Must be called from a hydra main!
-    """
-    hydra_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    logger.add(os.path.join(hydra_path, "main.log"))
 
 
 def filter_to_codes(
@@ -110,9 +98,6 @@ def filter_to_codes(
             f"\n- tabularization.max_include_codes: {max_include_codes}"
         )
     return ListConfig(sorted(feature_freqs["code"].to_list()))
-
-
-OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
 
 
 def load_tqdm(use_tqdm: bool):

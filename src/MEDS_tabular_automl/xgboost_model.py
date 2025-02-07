@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
@@ -6,13 +7,14 @@ import numpy as np
 import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
-from loguru import logger
 from meds_evaluation.schema import BINARY_CLASSIFICATION_SCHEMA_DICT
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
 from .base_model import BaseModel
 from .tabular_dataset import TabularDataset
+
+logger = logging.getLogger(__name__)
 
 
 class XGBIterator(xgb.DataIter, TabularDataset):

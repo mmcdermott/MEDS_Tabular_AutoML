@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+import logging
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -22,11 +22,12 @@ from ..utils import (
     get_events_df,
     get_shard_prefix,
     get_unique_time_events_df,
-    hydra_loguru_init,
     load_matrix,
     load_tqdm,
     write_df,
 )
+
+logger = logging.getLogger(__name__)
 
 VALID_AGGREGATIONS = [
     *VALUE_AGGREGATIONS,
@@ -128,8 +129,6 @@ def main(cfg: DictConfig):
         cfg: The configuration for processing, loaded from a YAML file.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
     # Produce ts representation
 
     # shuffle tasks

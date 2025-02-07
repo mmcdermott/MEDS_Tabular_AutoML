@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
+import logging
 from collections import defaultdict
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -17,7 +17,9 @@ from ..describe_codes import (
     convert_to_freq_dict,
 )
 from ..file_name import list_subdir_files
-from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, write_df
+from ..utils import get_shard_prefix, load_tqdm, write_df
+
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(
@@ -31,8 +33,6 @@ def main(cfg: DictConfig):
             YAML configuration file.
     """
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")
