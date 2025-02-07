@@ -184,7 +184,7 @@ class SklearnModel(BaseModel):
         if not hasattr(self.model, "save_model"):
             logger.info(f"Model {self.model.__class__.__name__} does not have a save_model method.")
             logger.info("Model will be saved using pickle dump.")
-            if not str(output_fp.resolve()).endswith(".pkl"):
+            if output_fp.suffix != ".pkl":
                 raise ValueError("Model file extension must be .pkl.")
             with open(output_fp, "wb") as f:
                 dump(self.model, f, protocol=5)
