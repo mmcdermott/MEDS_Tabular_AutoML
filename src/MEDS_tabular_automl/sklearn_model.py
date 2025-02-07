@@ -1,6 +1,7 @@
 from pathlib import Path
 from pickle import dump
 
+import meds
 import numpy as np
 import scipy.sparse as sp
 from loguru import logger
@@ -139,13 +140,13 @@ class SklearnModel(BaseModel):
             The evaluation metric as the ROC AUC score.
         """
         # depending on split point to correct data
-        if split == "tuning":
+        if split == meds.tuning_split:
             dsplit = self.dtuning
             isplit = self.ituning
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             dsplit = self.dheld_out
             isplit = self.iheld_out
-        elif split == "train":
+        elif split == meds.train_split:
             dsplit = self.dtrain
             isplit = self.itrain
         else:

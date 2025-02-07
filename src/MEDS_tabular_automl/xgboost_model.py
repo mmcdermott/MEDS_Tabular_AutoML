@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from pathlib import Path
 
+import meds
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
@@ -133,13 +134,13 @@ class XGBoostModel(BaseModel):
 
     def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
         """Helper Function that retrieves model predictions and labels."""
-        if split == "tuning":
+        if split == meds.tuning_split:
             y_pred = self.model.predict(self.dtuning)
             y_true = self.dtuning.get_label()
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             y_pred = self.model.predict(self.dheld_out)
             y_true = self.dheld_out.get_label()
-        elif split == "train":
+        elif split == meds.train_split:
             y_pred = self.model.predict(self.dtrain)
             y_true = self.dtrain.get_label()
         else:
@@ -154,11 +155,11 @@ class XGBoostModel(BaseModel):
         """
         y_true, y_pred = self._predict(split)
 
-        if split == "tuning":
+        if split == meds.tuning_split:
             xgb_iterator = self.ituning
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             xgb_iterator = self.iheld_out
-        elif split == "train":
+        elif split == meds.train_split:
             xgb_iterator = self.itrain
         else:
             raise ValueError(f"Invalid split for evaluation: {split}")
