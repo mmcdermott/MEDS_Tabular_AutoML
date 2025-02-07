@@ -20,7 +20,6 @@ class SklearnMatrix:
         Args:
             data
         """
-        super().__init__()
         self.data = data
         self.labels = labels
 

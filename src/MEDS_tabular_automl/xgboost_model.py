@@ -105,7 +105,6 @@ class XGBoostModel(BaseModel):
         Args:
             cfg: The configuration dictionary.
         """
-        super().__init__()
         self.cfg = cfg
         self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
 
