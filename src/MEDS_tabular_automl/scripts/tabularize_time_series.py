@@ -6,7 +6,6 @@ import polars as pl
 pl.enable_string_cache()
 
 import gc
-from importlib.resources import files
 from itertools import product
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import TABULARIZATION_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
@@ -30,12 +30,10 @@ from ..utils import (
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
 
-
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(
+    version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
+)
 def main(
     cfg: DictConfig,
 ):

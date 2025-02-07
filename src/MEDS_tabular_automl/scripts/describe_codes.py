@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
 from collections import defaultdict
-from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -11,6 +10,7 @@ from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import DESCRIBE_CODES_CFG
 from ..describe_codes import (
     compute_feature_frequencies,
     convert_to_df,
@@ -19,12 +19,10 @@ from ..describe_codes import (
 from ..file_name import list_subdir_files
 from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
 
-
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(
+    version_base=None, config_path=str(DESCRIBE_CODES_CFG.parent), config_name=DESCRIBE_CODES_CFG.stem
+)
 def main(cfg: DictConfig):
     """Computes feature frequencies and stores them to disk.
 

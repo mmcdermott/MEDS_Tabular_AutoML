@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -12,6 +11,7 @@ from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import CACHE_TASK_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..utils import (
@@ -28,11 +28,6 @@ from ..utils import (
     stage_init,
     write_df,
 )
-
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
-
 
 VALID_AGGREGATIONS = [
     *VALUE_AGGREGATIONS,
@@ -123,7 +118,7 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     return sp.coo_array(csr)
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(CACHE_TASK_CFG.parent), config_name=CACHE_TASK_CFG.stem)
 def main(cfg: DictConfig):
     """Performs row splicing of tabularized data for a specific task based on configuration.
 

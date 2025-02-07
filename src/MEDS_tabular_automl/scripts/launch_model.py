@@ -1,5 +1,4 @@
 import json
-from importlib.resources import files
 from pathlib import Path
 
 import hydra
@@ -8,14 +7,11 @@ from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.base_model import BaseModel
 
+from .. import LAUNCH_MODEL_CFG
 from ..utils import hydra_loguru_init, stage_init
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
 
-
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
 def main(cfg: DictConfig) -> float:
     """Optimizes the model based on the provided configuration.
 
