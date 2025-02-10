@@ -11,7 +11,7 @@ from MEDS_tabular_automl.base_model import BaseModel
 from ..utils import hydra_loguru_init, stage_init
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 

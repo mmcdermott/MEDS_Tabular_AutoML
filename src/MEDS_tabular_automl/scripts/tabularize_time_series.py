@@ -13,13 +13,13 @@ from pathlib import Path
 import hydra
 import numpy as np
 from loguru import logger
+from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
 from ..generate_ts_features import get_flat_ts_rep
-from ..mapper import wrap as rwlock_wrap
 from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
@@ -31,7 +31,7 @@ from ..utils import (
 )
 
 config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
-if not config_yaml.is_file():
+if not config_yaml.is_file():  # pragma: no cover
     raise FileNotFoundError("Core configuration not successfully installed!")
 
 
@@ -134,7 +134,9 @@ def main(
 
         def write_fn(out_matrix, out_fp):
             coo_matrix = out_matrix.tocoo()
-            write_df(coo_matrix, out_fp, do_overwrite=cfg.do_overwrite)
+            write_df(
+                coo_matrix, out_fp, do_compress=cfg.tabularization.do_compress, do_overwrite=cfg.do_overwrite
+            )
             del coo_matrix
             del out_matrix
             gc.collect()
@@ -146,7 +148,6 @@ def main(
             write_fn,
             compute_fn,
             do_overwrite=cfg.do_overwrite,
-            do_return=False,
         )
 
 
