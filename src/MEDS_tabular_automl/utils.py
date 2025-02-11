@@ -430,6 +430,30 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     return str(relative_parent / file_name)
 
 
+def get_shard_filename(base_path: Path, fp: Path) -> str:
+    """Extracts the shard filename from a file path by removing the raw_cohort_dir.
+
+    Args:
+        base_path: The base path to remove from the file path.
+        fp: The full file path from which to extract the shard filename.
+
+    Returns:
+        The relative shard filename (the file path relative to the base path with the suffix).
+
+    Examples:
+        >>> get_shard_filename(Path("/a/b/c"), Path("/a/b/c/d.parquet"))
+        'd.parquet'
+        >>> get_shard_filename(Path("/a/b/c"), Path("/a/b/c/d/e.csv.gz"))
+        'd/e.csv.gz'
+    """
+
+    relative_path = fp.relative_to(base_path)
+    relative_parent = relative_path.parent
+    file_name = relative_path.name
+
+    return str(relative_parent / file_name)
+
+
 def current_script_name() -> str:
     """Returns the name of the module that called this function."""
 
