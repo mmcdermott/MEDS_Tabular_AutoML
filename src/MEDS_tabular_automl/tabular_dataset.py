@@ -51,16 +51,15 @@ class TabularDataset(TimeableMixin):
         self.cfg = cfg
         self.split = split
         # Load shards for this split
+        split_label_cache_dir = Path(cfg.path.input_label_cache_dir) / split
         self._data_shards = sorted(
-            [
-                shard.stem
-                for shard in list_subdir_files(Path(cfg.path.input_label_cache_dir) / split, "parquet")
-            ]
+            [shard.stem for shard in list_subdir_files(split_label_cache_dir, "parquet")]
         )
         if len(self._data_shards) == 0:
             raise ValueError(
-                "No labels found in the `input_label_cache_dir` "
-                + str(Path(cfg.path.input_label_cache_dir).resolve())
+                f"No {split} labels found in the `input_label_cache_dir` "
+                + str(split_label_cache_dir.resolve())
+                + ". Model pipeline currently requires train, tuning, and test splits."
             )
         self.valid_event_ids, self.labels = None, None
 
