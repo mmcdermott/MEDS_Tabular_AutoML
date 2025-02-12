@@ -27,6 +27,7 @@ from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     filter_to_codes,
+    get_shard_filename,
     get_shard_prefix,
     hydra_loguru_init,
     load_tqdm,
@@ -143,7 +144,7 @@ def main(
     np.random.shuffle(tabularization_tasks)
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
         if cfg.input_label_dir:
-            label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
+            label_fp = Path(cfg.input_label_dir) / get_shard_filename(cfg.input_dir, shard_fp)
             label_df = pl.scan_parquet(label_fp)
         else:
             label_df = None

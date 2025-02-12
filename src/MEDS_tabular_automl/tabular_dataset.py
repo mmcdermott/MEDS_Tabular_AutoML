@@ -51,18 +51,16 @@ class TabularDataset(TimeableMixin):
         self.cfg = cfg
         self.split = split
         # Load shards for this split
+        self.split_label_cache_dir = Path(cfg.path.input_label_cache_dir) / split
         self._data_shards = sorted(
-            [
-                shard.stem
-                for shard in list_subdir_files(Path(cfg.path.input_label_cache_dir) / split, "parquet")
-            ]
+            [shard.stem for shard in list_subdir_files(self.split_label_cache_dir, "parquet")]
         )
         if len(self._data_shards) == 0:
             raise ValueError(
-                "No labels found in the `input_label_cache_dir` "
-                + str(Path(cfg.path.input_label_cache_dir).resolve())
+                f"No {split} labels found in the `input_label_cache_dir` "
+                + str(self.split_label_cache_dir.resolve())
+                + ". Model pipeline currently requires train, tuning, and test splits."
             )
-        self.valid_event_ids, self.labels = None, None
 
         self.codes_set, self.code_masks, self.num_features = self._get_code_set()
 
@@ -72,7 +70,7 @@ class TabularDataset(TimeableMixin):
         self.valid_event_ids, self.labels = self._load_ids_and_labels()
         # check if the labels are empty
         if len(self.labels) == 0:
-            raise ValueError("No labels found.")
+            raise ValueError(f"No labels found for split '{self.split}' in {self.split_label_cache_dir}.")
 
     @TimeableMixin.TimeAs
     def _get_code_masks(self, feature_columns: list, codes_set: set) -> Mapping[str, list[bool]]:
@@ -127,9 +125,7 @@ class TabularDataset(TimeableMixin):
             to lists of corresponding labels.
         """
         label_fps = {
-            shard: (Path(self.cfg.path.input_label_cache_dir) / self.split / shard).with_suffix(".parquet")
-            for shard in self._data_shards
-            for shard in self._data_shards
+            shard: (self.split_label_cache_dir / shard).with_suffix(".parquet") for shard in self._data_shards
         }
         cached_labels, cached_event_ids = dict(), dict()
         for shard, label_fp in label_fps.items():
