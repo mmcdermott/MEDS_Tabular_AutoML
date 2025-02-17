@@ -1,21 +1,18 @@
 import json
-from importlib.resources import files
+import logging
 from pathlib import Path
 
 import hydra
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 from MEDS_tabular_automl.base_model import BaseModel
 
-from ..utils import hydra_loguru_init, stage_init
-
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+from .. import LAUNCH_MODEL_CFG
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
 def main(cfg: DictConfig) -> float:
     """Optimizes the model based on the provided configuration.
 
@@ -25,12 +22,6 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
-    stage_init(
-        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
-    )
-
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     try:
         cfg.tabularization._resolved_codes

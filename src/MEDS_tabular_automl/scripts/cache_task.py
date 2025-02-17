@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
-from importlib.resources import files
+import logging
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import CACHE_TASK_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..utils import (
@@ -22,17 +22,12 @@ from ..utils import (
     get_events_df,
     get_shard_prefix,
     get_unique_time_events_df,
-    hydra_loguru_init,
     load_matrix,
     load_tqdm,
-    stage_init,
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
-
+logger = logging.getLogger(__name__)
 
 VALID_AGGREGATIONS = [
     *VALUE_AGGREGATIONS,
@@ -123,7 +118,7 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     return sp.coo_array(csr)
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(CACHE_TASK_CFG.parent), config_name=CACHE_TASK_CFG.stem)
 def main(cfg: DictConfig):
     """Performs row splicing of tabularized data for a specific task based on configuration.
 
@@ -133,19 +128,7 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
-    stage_init(
-        cfg,
-        [
-            "input_dir",
-            "input_label_dir",
-            "input_tabularized_dir",
-            "output_dir",
-            "tabularization.filtered_code_metadata_fp",
-        ],
-    )
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
     # Produce ts representation
 
     # shuffle tasks

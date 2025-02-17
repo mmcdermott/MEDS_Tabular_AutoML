@@ -1,11 +1,12 @@
 import json
-from importlib.resources import files
+import logging
 from pathlib import Path
 
 import hydra
 import pandas as pd
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
+
+logger = logging.getLogger(__name__)
 
 try:
     import autogluon.tabular as ag
@@ -14,11 +15,7 @@ except ImportError:
 
 from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
-from ..utils import hydra_loguru_init, stage_init
-
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+from .. import LAUNCH_MODEL_CFG
 
 
 def check_autogluon():
@@ -28,7 +25,7 @@ def check_autogluon():
         )
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
 def main(cfg: DictConfig) -> float:
     """Launches AutoGluon after collecting data based on the provided configuration.
 
@@ -36,11 +33,6 @@ def main(cfg: DictConfig) -> float:
         cfg: The configuration dictionary specifying model and training parameters.
     """
     check_autogluon()
-    stage_init(
-        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
-    )
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")

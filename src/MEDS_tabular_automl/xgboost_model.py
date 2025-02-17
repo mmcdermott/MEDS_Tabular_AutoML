@@ -1,17 +1,20 @@
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
+import meds
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
-from loguru import logger
 from meds_evaluation.schema import BINARY_CLASSIFICATION_SCHEMA_DICT
 from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import roc_auc_score
 
 from .base_model import BaseModel
 from .tabular_dataset import TabularDataset
+
+logger = logging.getLogger(__name__)
 
 
 class XGBIterator(xgb.DataIter, TabularDataset):
@@ -105,7 +108,6 @@ class XGBoostModel(BaseModel):
         Args:
             cfg: The configuration dictionary.
         """
-        super().__init__()
         self.cfg = cfg
         self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
 
@@ -134,13 +136,13 @@ class XGBoostModel(BaseModel):
 
     def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
         """Helper Function that retrieves model predictions and labels."""
-        if split == "tuning":
+        if split == meds.tuning_split:
             y_pred = self.model.predict(self.dtuning)
             y_true = self.dtuning.get_label()
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             y_pred = self.model.predict(self.dheld_out)
             y_true = self.dheld_out.get_label()
-        elif split == "train":
+        elif split == meds.train_split:
             y_pred = self.model.predict(self.dtrain)
             y_true = self.dtrain.get_label()
         else:
@@ -155,11 +157,11 @@ class XGBoostModel(BaseModel):
         """
         y_true, y_pred = self._predict(split)
 
-        if split == "tuning":
+        if split == meds.tuning_split:
             xgb_iterator = self.ituning
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             xgb_iterator = self.iheld_out
-        elif split == "train":
+        elif split == meds.train_split:
             xgb_iterator = self.itrain
         else:
             raise ValueError(f"Invalid split for evaluation: {split}")

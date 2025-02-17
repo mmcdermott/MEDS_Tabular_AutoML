@@ -47,7 +47,6 @@ class TabularDataset(TimeableMixin):
             split: The data split to use, which can be one of "train", "tuning",
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
-        super().__init__(cache_prefix=Path(cfg.path.cache_dir))
         self.cfg = cfg
         self.split = split
         # Load shards for this split

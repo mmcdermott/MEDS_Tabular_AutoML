@@ -155,7 +155,6 @@ def test_tabularize(tmp_path):
         "seed": 1,
         "hydra.verbose": True,
         "tqdm": False,
-        "loguru_init": True,
     }
 
     describe_codes_config = {**shared_config}
