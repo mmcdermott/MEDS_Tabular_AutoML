@@ -8,6 +8,8 @@ from mixins import TimeableMixin
 from omegaconf import DictConfig
 from scipy.stats import pearsonr
 
+from sklearn.model_selection import train_test_split
+
 from .describe_codes import get_feature_columns
 from .file_name import get_model_files, list_subdir_files
 from .utils import get_feature_indices
@@ -49,6 +51,8 @@ class TabularDataset(TimeableMixin):
         """
         super().__init__(cache_prefix=Path(cfg.path.cache_dir))
         self.cfg = cfg
+        # print(self.cfg)
+        # exit()
         self.split = split
         # Load shards for this split
         self._data_shards = sorted(
@@ -382,29 +386,67 @@ class TabularDataset(TimeableMixin):
         return df
 
     def get_data_shards(self, idx: int | list[int]) -> tuple[sp.csc_matrix, np.ndarray]:
-        """Retrieves the feature data and labels for specific shards.
+        """Retrieves the feature data and labels for specific shards, with optional stratified sampling.
 
         Args:
             idx: Index of the shard to retrieve or list of indices.
+            stratify: Whether to perform stratified sampling.
+            sample_fraction: Fraction of the data to sample (between 0 and 1).
 
         Returns:
             A tuple where the first element is a sparse matrix containing the
             feature data, and the second element is a numpy array containing the labels.
         """
-        X = []
-        y = []
-        if isinstance(idx, int):
-            idx = [idx]
-        for i in idx:
-            X_, y_ = self._get_shard_by_index(i)
-            X.append(self._impute_and_scale_data(X_))
-            y.append(y_)
-        if len(X) == 0 or len(y) == 0:
-            raise ValueError("No data found in the shards or labels. Please check input files.")
-        X = sp.vstack(X)
-        y = np.concatenate(y, axis=0)
+        try:
+            X = []
+            y = []
+            if isinstance(idx, int):
+                idx = [idx]
+            for i in idx:
+                X_, y_ = self._get_shard_by_index(i)
+                
+                # if self.split == "train" and "stratify" in self.cfg['model'] and self.cfg['model'].stratify < 1.0:
+                #     sample_fraction = self.cfg['model'].stratify
+                #     print("stratified sampling applied on shard", i, sample_fraction, self.split)
+                #     # print(y_)
+                #     # print(X_)
+                #     X_, _, y_, _ = train_test_split(
+                #         X_, y_.to_numpy(),
+                #         train_size=sample_fraction,
+                #         stratify=y_,
+                #         random_state=42  # optional for reproducibility
+                #     )
+                    # exit()
 
-        return X, y
+                # OK because not fitting just transforming
+                X.append(self._impute_and_scale_data(X_))
+                y.append(y_)
+            if len(X) == 0 or len(y) == 0:
+                raise ValueError("No data found in the shards or labels. Please check input files.")
+            
+            X = sp.vstack(X)
+            y = np.concatenate(y, axis=0)
+
+            if self.split == "train" and "stratify" in self.cfg['model'] and self.cfg['model'].stratify < 1.0:
+                sample_fraction = self.cfg['model'].stratify
+                print("stratified sampling", sample_fraction, self.split, X.shape)
+                # print(y.shape)
+                # print(X.shape)
+                X, _, y, _ = train_test_split(
+                    X, y,
+                    train_size=sample_fraction,
+                    stratify=y,
+                    random_state=42  # optional for reproducibility
+                )
+
+            
+
+            return X, y
+        except Exception as e:
+            import traceback
+            print(f"Error while getting data shards: {e}")
+            traceback.print_exc()
+            exit()
 
     def get_data(self) -> tuple[sp.csc_matrix, np.ndarray]:
         """Retrieves the feature data and labels for the current split.
