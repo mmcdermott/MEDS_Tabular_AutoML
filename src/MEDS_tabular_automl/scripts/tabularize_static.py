@@ -138,10 +138,10 @@ def main(
 
         def compute_fn(shard_df):
             return get_flat_static_rep(
-                agg=agg,
+                agg=agg,  # noqa: B023
                 feature_columns=feature_columns,
                 shard_df=shard_df,
-                label_df=label_df,
+                label_df=label_df,  # noqa: B023
             )
 
         def write_fn(data, out_df):

@@ -97,16 +97,16 @@ def main(
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
-            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)
+            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)  # noqa: B023
 
             # Summarize data -- applying aggregations on a specific window size + aggregation combination
             summary_df = generate_summary(
                 feature_columns,
                 index_df,
                 sparse_matrix,
-                window_size,
-                agg,
-                label_df,
+                window_size,  # noqa: B023
+                agg,  # noqa: B023
+                label_df,  # noqa: B023
             )
 
             if not summary_df.shape[1]:
