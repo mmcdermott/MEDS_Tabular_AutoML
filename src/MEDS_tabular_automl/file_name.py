@@ -50,7 +50,7 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         >>> tmpdir.cleanup()
     """
 
-    return sorted(list(Path(root).glob(f"**/*.{ext}")))
+    return sorted(Path(root).glob(f"**/*.{ext}"))
 
 
 def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:

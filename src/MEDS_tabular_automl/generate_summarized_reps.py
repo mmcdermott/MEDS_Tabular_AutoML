@@ -334,7 +334,7 @@ def generate_summary(
     # Generate summaries for each window size and aggregation
     code_type, _ = agg.split("/")
     # only iterate through code_types that exist in the dataframe columns
-    if not any([c.endswith(code_type) for c in ts_columns]):
+    if not any(c.endswith(code_type) for c in ts_columns):
         raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
 
     logger.info(

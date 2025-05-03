@@ -198,7 +198,7 @@ def test_integration(tmp_path):
             f"Time-Series Data matrix Should have {expected_num_rows} rows but has {ts_matrix.shape[0]}!"
         )
     output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -250,7 +250,7 @@ def test_integration(tmp_path):
         cache_config,
         "task_specific_caching",
     )
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -301,7 +301,7 @@ def test_integration(tmp_path):
             script = "meds-tab-autogluon"
         else:
             script = "meds-tab-model"
-            overrides = ["--multirun"] + overrides
+            overrides = ["--multirun", *overrides]
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
@@ -342,7 +342,7 @@ def test_integration(tmp_path):
             script = "meds-tab-autogluon"
         else:
             script = "meds-tab-model"
-            overrides = ["--multirun"] + overrides
+            overrides = ["--multirun", *overrides]
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"

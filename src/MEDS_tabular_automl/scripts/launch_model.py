@@ -7,9 +7,13 @@ from omegaconf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 
-from MEDS_tabular_automl.base_model import BaseModel
+
+from typing import TYPE_CHECKING
 
 from .. import LAUNCH_MODEL_CFG
+
+if TYPE_CHECKING:
+    from MEDS_tabular_automl.base_model import BaseModel
 
 
 @hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
