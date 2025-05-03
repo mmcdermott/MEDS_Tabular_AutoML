@@ -1,4 +1,5 @@
 """The base class for core dataset processing logic and script utilities."""
+
 from pathlib import Path
 
 import numpy as np

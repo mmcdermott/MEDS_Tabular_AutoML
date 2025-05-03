@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 """Aggregates time-series data for feature columns across different window sizes."""
+
 import polars as pl
 
 pl.enable_string_cache()

@@ -260,7 +260,7 @@ def compute_agg(
 
     Dataframe is expected to only have the relevant columns for aggregating. It should have the subject_id and
     time columns, and then only code columns if agg is a code aggregation or only value columns if it is
-    a value aggreagation.
+    a value aggregation.
 
     Args:
         index_df: The DataFrame with 'subject_id' and 'time' columns used for grouping.

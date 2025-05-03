@@ -185,9 +185,9 @@ def test_tabularize(tmp_path):
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
-    assert (
-        len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4
-    ), "MEDS train split Data Files Should be 4!"
+    assert len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4, (
+        "MEDS train split Data Files Should be 4!"
+    )
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
@@ -240,14 +240,14 @@ def test_tabularize(tmp_path):
             .shape[0]
         )
         assert static_matrix.shape[0] == expected_num_rows, (
-            f"Static Data matrix Should have {expected_num_rows}" f" rows but has {static_matrix.shape[0]}!"
+            f"Static Data matrix Should have {expected_num_rows} rows but has {static_matrix.shape[0]}!"
         )
     allowed_codes = cfg.tabularization._resolved_codes
     num_allowed_codes = len(allowed_codes)
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
-    assert num_allowed_codes == len(
-        feature_columns
-    ), f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
+    assert num_allowed_codes == len(feature_columns), (
+        f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
+    )
 
     tabularize_time_series.main(cfg)
 
@@ -274,7 +274,7 @@ def test_tabularize(tmp_path):
             .shape[0]
         )
         assert ts_matrix.shape[0] == expected_num_rows, (
-            f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
+            f"Time-Series Data matrix Should have {expected_num_rows} rows but has {ts_matrix.shape[0]}!"
         )
     output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
     for split in split_json:
@@ -345,7 +345,7 @@ def test_tabularize(tmp_path):
         overrides = ["model_launcher=xgboost"] + [f"{k}={v}" for k, v in failure_xgboost_config.items()]
         cfg = compose(config_name="launch_model", overrides=overrides, return_hydra_config=True)
 
-    assert 0.0 == launch_model.main(cfg)
+    assert launch_model.main(cfg) == 0.0
 
     xgboost_config = {
         **shared_config,

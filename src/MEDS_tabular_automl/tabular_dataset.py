@@ -321,7 +321,7 @@ class TabularDataset(TimeableMixin):
         Raises:
             ValueError: If any of the required files for the shard do not exist.
         """
-        # get all window_size x aggreagation files using the file resolver
+        # get all window_size x aggregation files using the file resolver
         files = get_model_files(self.cfg, self.split, self._data_shards[idx])
 
         if not all(file.exists() for file in files):

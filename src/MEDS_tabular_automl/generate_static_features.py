@@ -190,7 +190,7 @@ def summarize_static_measurements(
         # rename code to feature name
         remap_cols = {
             input_name: output_name
-            for input_name, output_name in zip(static_first_codes, static_features)
+            for input_name, output_name in zip(static_first_codes, static_features, strict=False)
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(
@@ -216,7 +216,7 @@ def summarize_static_measurements(
         )
         remap_cols = {
             input_name: output_name
-            for input_name, output_name in zip(static_present_codes, static_features)
+            for input_name, output_name in zip(static_present_codes, static_features, strict=False)
             if input_name in static_present_pivot_df.columns
         }
         # rename columns to final feature names

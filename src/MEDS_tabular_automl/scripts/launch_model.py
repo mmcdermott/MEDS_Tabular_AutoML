@@ -26,7 +26,7 @@ def main(cfg: DictConfig) -> float:
     try:
         cfg.tabularization._resolved_codes
     except ValueError as e:
-        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {str(e)}")
+        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {e!s}")
         return 0.0
 
     model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)

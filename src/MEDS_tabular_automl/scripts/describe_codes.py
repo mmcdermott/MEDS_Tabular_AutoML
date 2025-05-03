@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
+
 import logging
 from collections import defaultdict
 from pathlib import Path

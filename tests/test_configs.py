@@ -29,7 +29,7 @@ from tests.test_integration import run_command
 @pytest.mark.parametrize("normalization", ["standard_scaler", "max_abs_scaler"])
 def test_model_config(model_launcher_override, imputer, normalization, tmp_path):
     input_dir = "/foo/"
-    code_metadata_fp = f"/{str(tmp_path)}/codes.parquet"
+    code_metadata_fp = f"/{tmp_path!s}/codes.parquet"
     model_launcher_config_kwargs = {
         "input_dir": input_dir,
         "output_dir": "/bar/",
@@ -51,17 +51,17 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
     model_launcher = hydra.utils.instantiate(cfg.model_launcher)
     match model_launcher_override:
         case "xgboost":
-            assert isinstance(
-                model_launcher, XGBoostModel
-            ), "model_launcher should be an instance of XGBoostModel"
+            assert isinstance(model_launcher, XGBoostModel), (
+                "model_launcher should be an instance of XGBoostModel"
+            )
         case "autogluon":
-            assert isinstance(
-                model_launcher, DictConfig
-            ), "model_launcher should not be a DictConfig for autogluon"
+            assert isinstance(model_launcher, DictConfig), (
+                "model_launcher should not be a DictConfig for autogluon"
+            )
         case _:
-            assert isinstance(
-                model_launcher, SklearnModel
-            ), "model_launcher should be an instance of SklearnModel"
+            assert isinstance(model_launcher, SklearnModel), (
+                "model_launcher should be an instance of SklearnModel"
+            )
     assert cfg.tabularization.window_sizes
 
 
