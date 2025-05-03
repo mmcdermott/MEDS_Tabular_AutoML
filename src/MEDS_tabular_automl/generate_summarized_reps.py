@@ -139,10 +139,8 @@ def get_rolling_window_indicies(
     ╞═══════════╪═══════════╡
     └───────────┴───────────┘
     """
-    if window_size == "full":
-        timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
-    else:
-        timedelta = pd.Timedelta(window_size)
+    timedelta = pd.Timedelta(150 * 52, unit="W") if window_size == "full" else pd.Timedelta(window_size)
+
     windows = (
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
