@@ -51,7 +51,7 @@ generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
 
 [project.optional-dependencies]
 dev = ["pre-commit<4", "ruff"]
-tests = ["pytest", "pytest-cov[toml]", "rootutils"]
+tests = ["pytest", "pytest-cov[toml]"]
 profiling = ["mprofile", "matplotlib"]
 autogluon = ["autogluon; python_version=='3.11.*'"]  # Environment marker to restrict AutoGluon to Python 3.11
 docs = [
