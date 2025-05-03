@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
 
 import logging
@@ -235,7 +233,3 @@ def main(cfg: DictConfig):
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

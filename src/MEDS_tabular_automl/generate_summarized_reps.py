@@ -1,13 +1,9 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import polars as pl
-
-pl.enable_string_cache()
-import logging
-
 from scipy.sparse import coo_array, csr_array, sparray
-
-logger = logging.getLogger(__name__)
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names
 from MEDS_tabular_automl.utils import (
@@ -16,6 +12,9 @@ from MEDS_tabular_automl.utils import (
     get_min_dtype,
     load_tqdm,
 )
+
+pl.enable_string_cache()
+logger = logging.getLogger(__name__)
 
 
 def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array:

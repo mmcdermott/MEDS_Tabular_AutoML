@@ -64,7 +64,3 @@ def main(cfg: DictConfig) -> float:
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
     return auc
-
-
-if __name__ == "__main__":
-    main()

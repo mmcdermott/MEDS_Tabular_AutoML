@@ -167,8 +167,7 @@ class XGBoostModel(BaseModel):
             raise ValueError(f"Invalid split for evaluation: {split}")
         _, cached_labels = xgb_iterator._load_ids_and_labels(load_ids=False, load_labels=True)
         parquet_files = [
-            Path(self.cfg.path.input_label_cache_dir) / split / f"{key}.parquet"
-            for key in cached_labels
+            Path(self.cfg.path.input_label_cache_dir) / split / f"{key}.parquet" for key in cached_labels
         ]
         labels = pl.concat([pl.read_parquet(fp) for fp in parquet_files])
         if "event_id" not in labels.schema:

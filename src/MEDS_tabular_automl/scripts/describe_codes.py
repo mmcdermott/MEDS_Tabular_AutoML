@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
 
 import logging
@@ -88,7 +87,3 @@ def main(cfg: DictConfig):
         do_overwrite=cfg.do_overwrite,
     )
     logger.info("Stored feature columns and frequencies.")
-
-
-if __name__ == "__main__":
-    main()

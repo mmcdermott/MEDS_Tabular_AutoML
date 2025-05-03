@@ -16,8 +16,6 @@ import numpy as np
 import polars as pl
 from scipy.sparse import coo_array, csr_array
 
-logger = logging.getLogger(__name__)
-
 from MEDS_tabular_automl.utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
@@ -26,6 +24,8 @@ from MEDS_tabular_automl.utils import (
     get_unique_time_events_df,
     parse_static_feature_column,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> csr_array:

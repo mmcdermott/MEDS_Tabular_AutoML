@@ -1,10 +1,4 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
-
-import polars as pl
-
-pl.enable_string_cache()
 
 import gc
 import logging
@@ -13,6 +7,7 @@ from pathlib import Path
 
 import hydra
 import numpy as np
+import polars as pl
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -28,6 +23,9 @@ from ..utils import (
     load_tqdm,
     write_df,
 )
+
+pl.enable_string_cache()
+
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +136,3 @@ def main(
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

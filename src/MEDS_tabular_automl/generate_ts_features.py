@@ -5,14 +5,14 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_array
 
-logger = logging.getLogger(__name__)
-
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
     VALUE_AGGREGATIONS,
     get_events_df,
     get_feature_names,
 )
+
+logger = logging.getLogger(__name__)
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
