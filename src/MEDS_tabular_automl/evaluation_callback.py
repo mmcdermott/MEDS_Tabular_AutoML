@@ -183,7 +183,7 @@ class EvaluationCallback(Callback):
             >>> cb = EvaluationCallback()
             >>>
             >>> # Test the method (this will log to console)
-            >>> cb.log_performance(best_model_performance)  # Doctest: +ELLIPSIS
+            >>> cb.log_performance(best_model_performance)
         """
         best_model = best_model_performance["trial_name"][0]
         tuning_auc = best_model_performance["tuning_auc"][0]
