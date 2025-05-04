@@ -5,14 +5,14 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_array
 
-logger = logging.getLogger(__name__)
-
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
     VALUE_AGGREGATIONS,
     get_events_df,
     get_feature_names,
 )
+
+logger = logging.getLogger(__name__)
 
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
@@ -121,7 +121,7 @@ def summarize_dynamic_measurements(
 
     # Generate sparse matrix
     if agg in CODE_AGGREGATIONS:
-        code_df = df.drop(*(id_cols + ["numeric_value"]))
+        code_df = df.drop(*([*id_cols, "numeric_value"]))
         data, (rows, cols) = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:
         value_df = df.drop(*id_cols)

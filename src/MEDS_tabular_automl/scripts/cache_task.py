@@ -1,6 +1,5 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
+
 import logging
 from pathlib import Path
 
@@ -201,15 +200,15 @@ def main(cfg: DictConfig):
         def read_fn(in_fp_tuple):
             meds_data_fp, data_fp = in_fp_tuple
             # TODO: replace this with more intelligent locking
-            if not Path(shard_label_fp).exists():
-                logger.info(f"Extracting labels for {shard_label_fp}")
-                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)
+            if not Path(shard_label_fp).exists():  # noqa: B023
+                logger.info(f"Extracting labels for {shard_label_fp}")  # noqa: B023
+                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)  # noqa: B023
                 meds_data_df = read_meds_data_df(meds_data_fp)
                 extracted_events = extract_labels(meds_data_df)
-                write_lazyframe(extracted_events, shard_label_fp)
+                write_lazyframe(extracted_events, shard_label_fp)  # noqa: B023
             else:
-                logger.info(f"Labels already exist, reading from {shard_label_fp}")
-            shard_label_df = pl.scan_parquet(shard_label_fp)
+                logger.info(f"Labels already exist, reading from {shard_label_fp}")  # noqa: B023
+            shard_label_df = pl.scan_parquet(shard_label_fp)  # noqa: B023
             matrix = load_matrix(data_fp)
             return shard_label_df, matrix
 
@@ -234,7 +233,3 @@ def main(cfg: DictConfig):
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

@@ -1,4 +1,5 @@
 """The base class for core dataset processing logic and script utilities."""
+
 from pathlib import Path
 
 import numpy as np
@@ -178,19 +179,19 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
         The minimal dtype that can represent the array, or the array's dtype if it is non-numeric.
 
     Examples:
-        >>> get_min_dtype(np.array([1, 2, 3])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, -128])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, -128]))
         dtype('...')
-        >>> get_min_dtype(np.array([1.0, 2.0, 3.0])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1.0, 2.0, 3.0]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, np.nan])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, np.nan]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, "a"])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, "a"]))
         dtype('...')
     """
     if np.issubdtype(array.dtype, np.integer):

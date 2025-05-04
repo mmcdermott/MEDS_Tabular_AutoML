@@ -1,15 +1,16 @@
 import json
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-logger = logging.getLogger(__name__)
-
-from MEDS_tabular_automl.base_model import BaseModel
-
 from .. import LAUNCH_MODEL_CFG
+
+if TYPE_CHECKING:
+    from MEDS_tabular_automl.base_model import BaseModel
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
@@ -24,9 +25,9 @@ def main(cfg: DictConfig) -> float:
     """
 
     try:
-        cfg.tabularization._resolved_codes
+        cfg.tabularization._resolved_codes  # noqa: B018
     except ValueError as e:
-        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {str(e)}")
+        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {e!s}")
         return 0.0
 
     model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
@@ -60,7 +61,3 @@ def main(cfg: DictConfig) -> float:
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
     return auc
-
-
-if __name__ == "__main__":
-    main()

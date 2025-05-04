@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Tabularizes static data in MEDS format into tabular representations."""
 
 from itertools import product
@@ -7,10 +6,6 @@ from pathlib import Path
 import hydra
 import numpy as np
 import polars as pl
-
-pl.enable_string_cache()
-
-
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -31,6 +26,8 @@ from ..utils import (
     load_tqdm,
     write_df,
 )
+
+pl.enable_string_cache()
 
 
 @hydra.main(
@@ -76,12 +73,11 @@ def main(
             do_update: bool = True
             seed: The seed to use for random number generation.
 
-    .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
-    """
+    .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html
+    """  # noqa: E501
 
-    if cfg.input_label_dir:
-        if not Path(cfg.input_label_dir).is_dir():
-            raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+        raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
 
@@ -142,10 +138,10 @@ def main(
 
         def compute_fn(shard_df):
             return get_flat_static_rep(
-                agg=agg,
+                agg=agg,  # noqa: B023
                 feature_columns=feature_columns,
                 shard_df=shard_df,
-                label_df=label_df,
+                label_df=label_df,  # noqa: B023
             )
 
         def write_fn(data, out_df):
@@ -159,7 +155,3 @@ def main(
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

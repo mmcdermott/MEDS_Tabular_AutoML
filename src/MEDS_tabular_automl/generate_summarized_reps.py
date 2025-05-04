@@ -1,13 +1,9 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import polars as pl
-
-pl.enable_string_cache()
-import logging
-
 from scipy.sparse import coo_array, csr_array, sparray
-
-logger = logging.getLogger(__name__)
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names
 from MEDS_tabular_automl.utils import (
@@ -16,6 +12,9 @@ from MEDS_tabular_automl.utils import (
     get_min_dtype,
     load_tqdm,
 )
+
+pl.enable_string_cache()
+logger = logging.getLogger(__name__)
 
 
 def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array:
@@ -140,10 +139,8 @@ def get_rolling_window_indicies(
     ╞═══════════╪═══════════╡
     └───────────┴───────────┘
     """
-    if window_size == "full":
-        timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
-    else:
-        timedelta = pd.Timedelta(window_size)
+    timedelta = pd.Timedelta(150 * 52, unit="W") if window_size == "full" else pd.Timedelta(window_size)
+
     windows = (
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
@@ -260,7 +257,7 @@ def compute_agg(
 
     Dataframe is expected to only have the relevant columns for aggregating. It should have the subject_id and
     time columns, and then only code columns if agg is a code aggregation or only value columns if it is
-    a value aggreagation.
+    a value aggregation.
 
     Args:
         index_df: The DataFrame with 'subject_id' and 'time' columns used for grouping.
@@ -334,7 +331,7 @@ def generate_summary(
     # Generate summaries for each window size and aggregation
     code_type, _ = agg.split("/")
     # only iterate through code_types that exist in the dataframe columns
-    if not any([c.endswith(code_type) for c in ts_columns]):
+    if not any(c.endswith(code_type) for c in ts_columns):
         raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
 
     logger.info(

@@ -146,7 +146,7 @@ def get_feature_columns(fp: Path) -> list[str]:
         ...     get_feature_columns(f.name)
         ['A', 'D', 'E']
     """
-    return sorted(list(get_feature_freqs(fp).keys()))
+    return sorted(get_feature_freqs(fp).keys())
 
 
 def get_feature_freqs(fp: Path) -> dict[str, int]:

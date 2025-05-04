@@ -6,23 +6,11 @@ import hydra
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
-logger = logging.getLogger(__name__)
-
-try:
-    import autogluon.tabular as ag
-except ImportError:
-    ag = None
-
 from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
 from .. import LAUNCH_MODEL_CFG
 
-
-def check_autogluon():
-    if ag is None:
-        raise ImportError(
-            "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
-        )
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
@@ -32,7 +20,13 @@ def main(cfg: DictConfig) -> float:
     Args:
         cfg: The configuration dictionary specifying model and training parameters.
     """
-    check_autogluon()
+
+    try:
+        import autogluon.tabular as ag
+    except ImportError as e:
+        raise ImportError(
+            "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
+        ) from e
 
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")
@@ -88,7 +82,3 @@ def main(cfg: DictConfig) -> float:
     }
     with open(model_performance_log_filepath, "w") as f:
         json.dump(performance_dict, f)
-
-
-if __name__ == "__main__":
-    main()

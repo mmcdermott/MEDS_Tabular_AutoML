@@ -1,9 +1,4 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
-import polars as pl
-
-pl.enable_string_cache()
 
 import gc
 import logging
@@ -12,6 +7,7 @@ from pathlib import Path
 
 import hydra
 import numpy as np
+import polars as pl
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
@@ -27,6 +23,9 @@ from ..utils import (
     load_tqdm,
     write_df,
 )
+
+pl.enable_string_cache()
+
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +63,8 @@ def main(
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
 
-    if cfg.input_label_dir:
-        if not Path(cfg.input_label_dir).is_dir():
-            raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+        raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
 
@@ -99,16 +97,16 @@ def main(
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
-            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)
+            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)  # noqa: B023
 
             # Summarize data -- applying aggregations on a specific window size + aggregation combination
             summary_df = generate_summary(
                 feature_columns,
                 index_df,
                 sparse_matrix,
-                window_size,
-                agg,
-                label_df,
+                window_size,  # noqa: B023
+                agg,  # noqa: B023
+                label_df,  # noqa: B023
             )
 
             if not summary_df.shape[1]:
@@ -138,7 +136,3 @@ def main(
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

@@ -1,7 +1,3 @@
-import rootutils
-
-root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
-
 import glob
 import json
 import shutil
@@ -84,9 +80,9 @@ def test_integration(tmp_path):
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
-    assert (
-        len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4
-    ), "MEDS train split Data Files Should be 4!"
+    assert len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4, (
+        "MEDS train split Data Files Should be 4!"
+    )
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))
@@ -149,14 +145,14 @@ def test_integration(tmp_path):
             .shape[0]
         )
         assert static_matrix.shape[0] == expected_num_rows, (
-            f"Static Data matrix Should have {expected_num_rows}" f" rows but has {static_matrix.shape[0]}!"
+            f"Static Data matrix Should have {expected_num_rows} rows but has {static_matrix.shape[0]}!"
         )
     allowed_codes = cfg.tabularization._resolved_codes
     num_allowed_codes = len(allowed_codes)
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
-    assert num_allowed_codes == len(
-        feature_columns
-    ), f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
+    assert num_allowed_codes == len(feature_columns), (
+        f"Should have {len(feature_columns)} codes but has {num_allowed_codes}"
+    )
 
     # Step 3: Run the time series tabularization script
     tabularize_config = {
@@ -195,10 +191,10 @@ def test_integration(tmp_path):
             .shape[0]
         )
         assert ts_matrix.shape[0] == expected_num_rows, (
-            f"Time-Series Data matrix Should have {expected_num_rows}" f" rows but has {ts_matrix.shape[0]}!"
+            f"Time-Series Data matrix Should have {expected_num_rows} rows but has {ts_matrix.shape[0]}!"
         )
     output_files = list_subdir_files(str(Path(cfg.output_tabularized_dir).resolve()), "npz")
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -250,7 +246,7 @@ def test_integration(tmp_path):
         cache_config,
         "task_specific_caching",
     )
-    for split in split_json.keys():
+    for split in split_json:
         for window in cfg.tabularization.window_sizes:
             for agg in cfg.tabularization.aggs:
                 if agg.startswith("static"):
@@ -301,7 +297,7 @@ def test_integration(tmp_path):
             script = "meds-tab-autogluon"
         else:
             script = "meds-tab-model"
-            overrides = ["--multirun"] + overrides
+            overrides = ["--multirun", *overrides]
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
@@ -342,7 +338,7 @@ def test_integration(tmp_path):
             script = "meds-tab-autogluon"
         else:
             script = "meds-tab-model"
-            overrides = ["--multirun"] + overrides
+            overrides = ["--multirun", *overrides]
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
