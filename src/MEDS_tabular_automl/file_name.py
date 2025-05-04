@@ -17,7 +17,6 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         subdirectories of the given directory.
 
     Examples:
-        >>> import tempfile
         >>> tmpdir = tempfile.TemporaryDirectory()
         >>> root = Path(tmpdir.name)
         >>> subdir_1 = root / "subdir_1"

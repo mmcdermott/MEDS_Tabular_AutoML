@@ -51,20 +51,19 @@ def filter_to_codes(
         inclusion frequency.
 
     Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, .35, None)
         ['E']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
         Traceback (most recent call last):
@@ -279,7 +278,6 @@ def write_df(
         TypeError: If the type of 'df' is not supported for writing.
 
     Examples:
-        >>> import tempfile
         >>> from polars.testing import assert_frame_equal
         >>> df_polars = pl.DataFrame({"a": [1, 2, 3]})
         >>> df_coo_array = coo_array(([1, 2, 3], ([0, 1, 2], [0, 0, 0])), shape=(3, 1))
@@ -296,9 +294,16 @@ def write_df(
         ...     fp = Path(tmpdir) / "test_compressed.npz"
         ...     write_df(df_coo_array, fp, do_compress=True, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
-        ...     import pytest
-        ...     with pytest.raises(FileExistsError):
-        ...         write_df(df_coo_array, fp, do_overwrite=False)
+
+    Errors are raised if the file already exists and 'do_overwrite' is not set to True.
+
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     fp = Path(tmpdir) / "test.parquet"
+        ...     fp.touch()
+        ...     write_df(df_coo_array, fp, do_overwrite=False)
+        Traceback (most recent call last):
+            ...
+        FileExistsError: /tmp/tmp.../test.parquet exists and do_overwrite is False!
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
