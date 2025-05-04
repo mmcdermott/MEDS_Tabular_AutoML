@@ -276,41 +276,25 @@ def compute_agg(
     Returns:
         The aggregated sparse matrix.
     """
-    # group_df = (
-    #     index_df.with_row_index("index")
-    #     .group_by(["subject_id", "time"], maintain_order=True)
-    #     .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
-    #     .collect()
-    # ) # remove duplicates and sort?
-    # index_df = group_df.lazy().select(pl.col("subject_id", "time"))
-    # windows = group_df.select(pl.col("min_index", "max_index"))
-
-    # print(index_df.collect())
-    # print(windows)
-    # print(index_df.collect())
-    # exit()
+    group_df = (
+        index_df.with_row_index("index")
+        .group_by(["subject_id", "time"], maintain_order=True)
+        .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
+        .collect()
+    )
+    index_df = group_df.lazy().select(pl.col("subject_id", "time"))
+    windows = group_df.select(pl.col("min_index", "max_index"))
+    
+    logger.info("Step 1.5: Running sparse aggregation.")
+    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
 
     if label_df is not None:
         logger.info("Step 2: computing rolling windows and aggregating.")
         windows = get_rolling_window_indicies(index_df, window_size, label_df)
     else:
-        group_df = (
-            index_df.with_row_index("index")
-            .group_by(["subject_id", "time"], maintain_order=True)
-            .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
-            .collect()
-        ) # remove duplicates and sort?
-        index_df = group_df.lazy().select(pl.col("subject_id", "time"))
-        windows = group_df.select(pl.col("min_index", "max_index"))
-
-        logger.info("Step 1.5: Running sparse aggregation.")
-        matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
-        # aggregate over same timestamps?
-
         logger.info("Step 2: computing rolling windows and aggregating.")
         windows = get_rolling_window_indicies(index_df, window_size)
 
-    # aggregate over the rolling windows
     logger.info("Starting final sparse aggregations.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
     return matrix
