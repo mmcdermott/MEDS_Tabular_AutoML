@@ -51,7 +51,7 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
             )
         case "autogluon":
             assert isinstance(model_launcher, DictConfig), (
-                "model_launcher should not be a DictConfig for autogluon"
+                "model_launcher should be a DictConfig for autogluon"
             )
         case _:
             assert isinstance(model_launcher, SklearnModel), (
