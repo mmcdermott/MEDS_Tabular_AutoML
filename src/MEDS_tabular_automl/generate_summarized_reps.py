@@ -141,7 +141,6 @@ def get_rolling_window_indicies(
         timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
     else:
         timedelta = pd.Timedelta(window_size)
-    print("COMPUTING WINDOWS")
     windows = (
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
@@ -149,13 +148,13 @@ def get_rolling_window_indicies(
         .select(pl.col("min_index"), pl.col("max_index") + 1)
         .collect()
     )
-    print("COMPUTING LABELS")
     if label_df is not None:
         event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
+
         if "time" not in label_df.schema:
             label_df = label_df.rename({"prediction_time": "time"})
+            
         windows = (
-            # label_df.rename({"prediction_time": "time"})
             label_df
             .join_asof(event_df, by="subject_id", on="time")
             .select(windows.columns)
