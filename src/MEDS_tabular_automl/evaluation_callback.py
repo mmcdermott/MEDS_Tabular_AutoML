@@ -10,17 +10,6 @@ from omegaconf import DictConfig, OmegaConf
 logger = logging.getLogger(__name__)
 
 
-class MockModelLauncher:  # pragma: no cover
-    def load_model(self, model_path):
-        pass
-
-    def _build(self):
-        pass
-
-    def predict(self, split):
-        return pl.DataFrame({"predictions": [0.1, 0.2]})
-
-
 class EvaluationCallback(Callback):
     def on_multirun_end(self, config: DictConfig, **kwargs):
         """Find best model based on log files and logger.info its performance and hyperparameters.
@@ -176,14 +165,13 @@ class EvaluationCallback(Callback):
             ...         "test_auc": [0.9, 0.8, 0.7, 0.6],
             ...     }
             ... )
-            >>> k = 2
             >>> cb = EvaluationCallback()
             >>> with tempfile.TemporaryDirectory() as sweep_dir:
             ...     for trial in performance["trial_name"]:
             ...         out_fp = Path(sweep_dir) / trial / "model.json"
             ...         out_fp.parent.mkdir(parents=True)
             ...         _ = out_fp.write_text(json.dumps({"model_name": trial, "content": "dummy data"}))
-            ...     cb.delete_below_top_k_models(performance, k, sweep_dir)
+            ...     cb.delete_below_top_k_models(performance, k=2, sweep_dir)
             ...     sorted(p.name for p in Path(sweep_dir).iterdir())
             ['trial1', 'trial2']
         """

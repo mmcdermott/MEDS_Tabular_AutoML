@@ -4,6 +4,8 @@ import polars as pl
 
 from MEDS_tabular_automl.utils import get_feature_names
 
+SUFFIXES = ["code", "value", "static/present", "static/first"]
+
 
 def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
     """Converts a dictionary of code frequencies to a Polars DataFrame.
@@ -91,12 +93,15 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         ...     ],
         ...     'numeric_value': [1, None, 2, 2, None, None, 3]
         ... }).lazy()
-        >>> assert (
-        ...     convert_to_freq_dict(compute_feature_frequencies(data).lazy()) == {
-        ...         'B/static/present': 2, 'C/static/present': 1, 'A/static/present': 1, 'B/static/first': 2,
-        ...         'C/static/first': 1, 'A/static/first': 1, 'A/code': 1, 'C/code': 2
-        ...     }
-        ... )
+        >>> dict(sorted(convert_to_freq_dict(compute_feature_frequencies(data).lazy()).items()))
+        {'A/code': 1,
+         'A/static/first': 1,
+         'A/static/present': 1,
+         'B/static/first': 2,
+         'B/static/present': 2,
+         'C/code': 2,
+         'C/static/first': 1,
+         'C/static/present': 1}
     """
     static_df = shard_df.filter(
         pl.col("subject_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
@@ -190,16 +195,11 @@ def clear_code_aggregation_suffix(code: str) -> str:
             ...
         ValueError: Code A does not have a recognized aggregation suffix!
     """
-    if code.endswith("/code"):
-        return code[:-5]
-    elif code.endswith("/value"):
-        return code[:-6]
-    elif code.endswith("/static/present"):
-        return code[:-15]
-    elif code.endswith("/static/first"):
-        return code[:-13]
-    else:
-        raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
+    for sfx in SUFFIXES:
+        if code.endswith(f"/{sfx}"):
+            return code[: -(1 + len(sfx))]
+
+    raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
 
 
 def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
