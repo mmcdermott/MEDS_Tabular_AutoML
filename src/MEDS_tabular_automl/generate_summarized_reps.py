@@ -150,8 +150,12 @@ def get_rolling_window_indicies(
     )
     if label_df is not None:
         event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
+
+        if "time" not in label_df.schema:
+            label_df = label_df.rename({"prediction_time": "time"})
+            
         windows = (
-            label_df.rename({"prediction_time": "time"})
+            label_df
             .join_asof(event_df, by="subject_id", on="time")
             .select(windows.columns)
             .fill_null(0)
@@ -279,13 +283,14 @@ def compute_agg(
     )
     index_df = group_df.lazy().select(pl.col("subject_id", "time"))
     windows = group_df.select(pl.col("min_index", "max_index"))
+    
+    logger.info("Step 1.5: Running sparse aggregation.")
+    matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
 
     if label_df is not None:
         logger.info("Step 2: computing rolling windows and aggregating.")
         windows = get_rolling_window_indicies(index_df, window_size, label_df)
     else:
-        logger.info("Step 1.5: Running sparse aggregation.")
-        matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
         logger.info("Step 2: computing rolling windows and aggregating.")
         windows = get_rolling_window_indicies(index_df, window_size)
 
@@ -329,7 +334,7 @@ def generate_summary(
 
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
-    code_type, _ = agg.split("/")
+    code_type, _ = agg.split("/") # code or value like in code/count
     # only iterate through code_types that exist in the dataframe columns
     if not any([c.endswith(code_type) for c in ts_columns]):
         raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
