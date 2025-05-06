@@ -51,7 +51,7 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
         A COOrdinate formatted sparse matrix containing only the rows specified by label_df's event_ids.
 
     Raises:
-        ValueError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
+        IndexError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
 
     Examples:
         >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
