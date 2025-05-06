@@ -171,7 +171,7 @@ class EvaluationCallback(Callback):
             ...         out_fp = Path(sweep_dir) / trial / "model.json"
             ...         out_fp.parent.mkdir(parents=True)
             ...         _ = out_fp.write_text(json.dumps({"model_name": trial, "content": "dummy data"}))
-            ...     cb.delete_below_top_k_models(performance, k=2, sweep_dir)
+            ...     cb.delete_below_top_k_models(performance=performance, k=2, sweep_results_dir=sweep_dir)
             ...     sorted(p.name for p in Path(sweep_dir).iterdir())
             ['trial1', 'trial2']
         """

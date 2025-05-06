@@ -61,7 +61,7 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
             ...
         ValueError: DataFrame must have columns 'code' and 'count', but has columns ['code', 'value']!
     """
-    if not df.columns == ["code", "count"]:
+    if not df.collect_schema().names() == ["code", "count"]:
         raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
     return dict(df.collect().iter_rows())
 
