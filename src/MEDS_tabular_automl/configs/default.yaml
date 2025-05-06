@@ -5,13 +5,14 @@ seed: 1
 tqdm: False
 worker: 0
 
-log_dir: ${output_dir}/.logs/
+log_dir: ${output_dir}/.logs/${now:%Y-%m-%d}_${now:%H-%M-%S}/
 cache_dir: ${output_dir}/.cache
 
 hydra:
   verbose: False
   job:
-    name: MEDS_TAB_${name}_${worker}_${now:%Y-%m-%d_%H-%M-%S}
+    name: MEDS_TAB__LOG_NAME_${log_name}__WORKER_${worker}__HYDRA_JOB_NUM_${hydra.job.num}__DATE_${now:%Y-%m-%d}_${now:%H-%M-%S}
+    num: 0
   sweep:
     dir: ${log_dir}
   run:
