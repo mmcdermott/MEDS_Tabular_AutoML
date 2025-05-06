@@ -51,69 +51,60 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
         A COOrdinate formatted sparse matrix containing only the rows specified by label_df's event_ids.
 
     Raises:
-        ValueError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
+        IndexError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
 
-    Example:
-    >>> import polars as pl
-    >>> import scipy.sparse as sp
-    >>> import pytest
-    >>>
-    >>> # Create a sample sparse matrix
-    >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
-    >>>
-    >>> # Create a label DataFrame with specific event IDs
-    >>> label_df = pl.DataFrame({"event_id": [1, 3]})
-    >>>
-    >>> # Generate row-cached matrix
-    >>> result = generate_row_cached_matrix(matrix, label_df.lazy())
-    >>>
-    >>> # Check the shape and contents of the result
-    >>> result.shape
-    (2, 3)
-    >>> result.toarray().tolist()
-    [[0, 3, 0], [0, 6, 0]]
-    >>>
-    >>> # Demonstrate ValueError when event_id exceeds matrix rows
-    >>> with pytest.raises(ValueError,
-    ...                    match="Label_df event_ids must be valid indexes of sparse matrix: 4 <= 4"):
-    ...     generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [4]}).lazy())
+    Examples:
+        >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
+        >>> result = generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [1, 3]}).lazy())
+        >>> result.toarray()
+        array([[0, 3, 0],
+               [0, 6, 0]])
 
-    >>> # Handle events with no history -- i.e. where valid_ids are -1
-    >>> matrix = np.array([
-    ...     [1, 2, 3],
-    ...     [4, 5, 6],
-    ...     [7, 8, 9],
-    ...     [10, 11, 12],
-    ...     [13, 14, 15]
-    ... ])
-    >>>
-    >>> label_df = pl.DataFrame({
-    ...     "event_id": [0, 2, -1, 4]
-    ... }).lazy()
-    >>> result = generate_row_cached_matrix(matrix, label_df)
-    >>>
-    >>> # Check that the result contains the correct rows
-    >>> result.toarray().tolist()
-    [[1, 2, 3], [7, 8, 9], [0, 0, 0], [13, 14, 15]]
+    It should handle events with no history (i.e., where valid_ids are -1) by setting them to 0:
 
-    Test case with no labels
-    >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
-    >>> result = generate_row_cached_matrix(matrix, label_df)
-    >>> result.toarray().tolist()
-    []
+        >>> result = generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [0, 2, -1, 3]}).lazy())
+        >>> result.toarray()
+        array([[1, 0, 2],
+               [4, 0, 5],
+               [0, 0, 0],
+               [0, 6, 0]])
+
+    And with no labels
+
+        >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
+        >>> result = generate_row_cached_matrix(matrix, label_df)
+        >>> result.toarray()
+        array([], shape=(0, 3), dtype=int64)
+
+    Errors are raised when the max event ID exceeds the number of rows in the matrix:
+
+        >>> generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [4]}).lazy())
+        Traceback (most recent call last):
+            ...
+        IndexError: label_df event_ids must be valid indexes into a sparse matrix with 4 rows; Got index of 4
+        which is out of bounds!
     """
-    label_len = label_df.select(pl.col("event_id").max()).collect().item()
+
+    event_ids = label_df.select("event_id").collect()["event_id"]
+    label_len = event_ids.max()
     if label_len and matrix.shape[0] <= label_len:
-        raise ValueError(
-            f"Label_df event_ids must be valid indexes of sparse matrix: {matrix.shape[0]} <= {label_len}"
+        raise IndexError(
+            f"label_df event_ids must be valid indexes into a sparse matrix with {matrix.shape[0]} rows; "
+            f"Got index of {label_len} which is out of bounds!"
         )
+
     csr: sp.csr_array = sp.csr_array(matrix)
-    valid_ids = label_df.select(pl.col("event_id")).collect().to_series().to_numpy()
+
+    valid_ids = event_ids.to_numpy()
+
     csr = csr[valid_ids, :]
+
     indices_with_no_past_data = valid_ids == -1
+
     if indices_with_no_past_data.any().item():
         csr[indices_with_no_past_data] = 0
         csr.eliminate_zeros()
+
     return sp.coo_array(csr)
 
 

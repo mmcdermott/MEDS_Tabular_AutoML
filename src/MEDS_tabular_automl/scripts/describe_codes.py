@@ -37,12 +37,6 @@ def main(cfg: DictConfig):
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")
 
-    def write_fn(df, out_fp):
-        write_df(df, out_fp)
-
-    def read_fn(in_fp):
-        return pl.scan_parquet(in_fp)
-
     # Map: Iterates through shards and caches feature frequencies
     train_shards = list_subdir_files(cfg.input_dir, "parquet")
     np.random.shuffle(train_shards)
@@ -53,8 +47,8 @@ def main(cfg: DictConfig):
         rwlock_wrap(
             shard_fp,
             out_fp,
-            read_fn,
-            write_fn,
+            pl.scan_parquet,
+            write_df,
             compute_feature_frequencies,
             do_overwrite=cfg.do_overwrite,
         )
@@ -71,9 +65,6 @@ def main(cfg: DictConfig):
         feature_df = convert_to_df(feature_freqs)
         return feature_df
 
-    def write_fn(df, out_fp):
-        write_df(df, out_fp)
-
     def read_fn(feature_dir):
         files = list_subdir_files(feature_dir, "parquet")
         return [pl.scan_parquet(fp) for fp in files]
@@ -82,7 +73,7 @@ def main(cfg: DictConfig):
         Path(cfg.cache_dir),
         Path(cfg.output_filepath),
         read_fn,
-        write_fn,
+        write_df,
         compute_fn,
         do_overwrite=cfg.do_overwrite,
     )

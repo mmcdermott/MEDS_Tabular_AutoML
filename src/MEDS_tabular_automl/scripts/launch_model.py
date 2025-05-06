@@ -1,15 +1,12 @@
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
 from .. import LAUNCH_MODEL_CFG
 
-if TYPE_CHECKING:
-    from MEDS_tabular_automl.base_model import BaseModel
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +27,7 @@ def main(cfg: DictConfig) -> float:
         logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {e!s}")
         return 0.0
 
-    model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
+    model_launcher = hydra.utils.instantiate(cfg.model_launcher)
 
     model_launcher.train()
     auc = model_launcher.evaluate()
@@ -48,11 +45,13 @@ def main(cfg: DictConfig) -> float:
     # save model config
     config_fp = trial_output_dir / f"{cfg.path.config_log_stem}.log"
     with open(config_fp, "w") as f:
+        # TODO: Check for OmegaConf.save
         f.write(OmegaConf.to_yaml(cfg))
 
     # save model performance
     model_performance_fp = trial_output_dir / f"{cfg.path.performance_log_stem}.log"
     with open(model_performance_fp, "w") as f:
+        # TODO: Use JSON hre, not CSV.
         f.write("trial_name,tuning_auc,test_auc\n")
         f.write(
             f"{trial_output_dir.stem},{model_launcher.evaluate()},"
