@@ -7,7 +7,7 @@ import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
-from MEDS_transforms.mapreduce.utils import rwlock_wrap
+from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
 from .. import CACHE_TASK_CFG

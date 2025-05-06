@@ -8,7 +8,7 @@ from pathlib import Path
 import hydra
 import numpy as np
 import polars as pl
-from MEDS_transforms.mapreduce.utils import rwlock_wrap
+from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
 from .. import TABULARIZATION_CFG
