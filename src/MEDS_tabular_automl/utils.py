@@ -1,13 +1,10 @@
 """The base class for core dataset processing logic and script utilities."""
-import os
-import sys
+
 from pathlib import Path
 
-import hydra
 import numpy as np
 import polars as pl
-from loguru import logger
-from omegaconf import DictConfig, ListConfig, OmegaConf
+from omegaconf import ListConfig
 from scipy.sparse import coo_array
 
 WRITE_USE_PYARROW = True
@@ -28,15 +25,6 @@ VALUE_AGGREGATIONS = [
     "value/min",
     "value/max",
 ]
-
-
-def hydra_loguru_init() -> None:
-    """Adds loguru output to the logs that hydra scrapes.
-
-    Must be called from a hydra main!
-    """
-    hydra_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    logger.add(os.path.join(hydra_path, "main.log"))
 
 
 def filter_to_codes(
@@ -63,20 +51,19 @@ def filter_to_codes(
         inclusion frequency.
 
     Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
         ['D']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, .35, None)
         ['E']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
         Traceback (most recent call last):
@@ -111,9 +98,6 @@ def filter_to_codes(
             f"\n- tabularization.max_include_codes: {max_include_codes}"
         )
     return ListConfig(sorted(feature_freqs["code"].to_list()))
-
-
-OmegaConf.register_new_resolver("filter_to_codes", filter_to_codes, replace=True)
 
 
 def load_tqdm(use_tqdm: bool):
@@ -194,19 +178,19 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
         The minimal dtype that can represent the array, or the array's dtype if it is non-numeric.
 
     Examples:
-        >>> get_min_dtype(np.array([1, 2, 3])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e9)]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, int(1e18)]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, -128])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, -128]))
         dtype('...')
-        >>> get_min_dtype(np.array([1.0, 2.0, 3.0])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1.0, 2.0, 3.0]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, np.nan])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, np.nan]))
         dtype('...')
-        >>> get_min_dtype(np.array([1, 2, 3, "a"])) # doctest:+ELLIPSIS
+        >>> get_min_dtype(np.array([1, 2, 3, "a"]))
         dtype('...')
     """
     if np.issubdtype(array.dtype, np.integer):
@@ -294,7 +278,6 @@ def write_df(
         TypeError: If the type of 'df' is not supported for writing.
 
     Examples:
-        >>> import tempfile
         >>> from polars.testing import assert_frame_equal
         >>> df_polars = pl.DataFrame({"a": [1, 2, 3]})
         >>> df_coo_array = coo_array(([1, 2, 3], ([0, 1, 2], [0, 0, 0])), shape=(3, 1))
@@ -311,9 +294,16 @@ def write_df(
         ...     fp = Path(tmpdir) / "test_compressed.npz"
         ...     write_df(df_coo_array, fp, do_compress=True, do_overwrite=True)
         ...     assert load_matrix(fp).toarray().tolist() == [[1], [2], [3]]
-        ...     import pytest
-        ...     with pytest.raises(FileExistsError):
-        ...         write_df(df_coo_array, fp, do_overwrite=False)
+
+    Errors are raised if the file already exists and 'do_overwrite' is not set to True.
+
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     fp = Path(tmpdir) / "test.parquet"
+        ...     fp.touch()
+        ...     write_df(df_coo_array, fp, do_overwrite=False)
+        Traceback (most recent call last):
+            ...
+        FileExistsError: /tmp/tmp.../test.parquet exists and do_overwrite is False!
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
@@ -428,52 +418,3 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     file_name = relative_path.name.split(".")[0]
 
     return str(relative_parent / file_name)
-
-
-def current_script_name() -> str:
-    """Returns the name of the module that called this function."""
-
-    main_module = sys.modules["__main__"]
-    main_func = getattr(main_module, "main", None)
-    if main_func and callable(main_func):
-        func_module = main_func.__module__
-        if func_module == "__main__":
-            return Path(sys.argv[0]).stem
-        else:
-            return func_module.split(".")[-1]
-
-    logger.warning("Can't find main function in __main__ module. Using sys.argv[0] as a fallback.")
-    return Path(sys.argv[0]).stem
-
-
-def stage_init(cfg: DictConfig, keys: list[str]):
-    """Initializes the stage by logging the configuration and the stage-specific paths.
-
-    Args:
-        cfg: The global configuration object, which should have a ``cfg.stage_cfg`` attribute containing the
-            stage specific configuration.
-
-    Returns: The data input directory, stage output directory, and metadata input directory.
-    """
-    logger.info(
-        f"Running {current_script_name()} with the following configuration:\n{OmegaConf.to_yaml(cfg)}"
-    )
-
-    chk_kwargs = {k: OmegaConf.select(cfg, k) for k in keys}
-
-    def chk(x: Path | None) -> str:
-        if x is None:
-            return "❌"
-        return "✅" if x.exists() and str(x) != "" else "❌"
-
-    paths_strs = [
-        f"  - {k}: {chk(Path(v) if v is not None else None)} "
-        f"{str(Path(v).resolve()) if v is not None else 'None'}"
-        for k, v in chk_kwargs.items()
-    ]
-
-    logger_strs = [
-        f"Stage config:\n{OmegaConf.to_yaml(cfg)}",
-        "Paths: (checkbox indicates if it exists)",
-    ]
-    logger.debug("\n".join(logger_strs + paths_strs))

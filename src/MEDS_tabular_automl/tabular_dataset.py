@@ -47,7 +47,6 @@ class TabularDataset(TimeableMixin):
             split: The data split to use, which can be one of "train", "tuning",
                 or "held_out". This determines which subset of the data is loaded and processed.
         """
-        super().__init__(cache_prefix=Path(cfg.path.cache_dir))
         self.cfg = cfg
         self.split = split
         # Load shards for this split
@@ -131,7 +130,7 @@ class TabularDataset(TimeableMixin):
             for shard in self._data_shards
             for shard in self._data_shards
         }
-        cached_labels, cached_event_ids = dict(), dict()
+        cached_labels, cached_event_ids = {}, {}
         for shard, label_fp in label_fps.items():
             label_df = pl.scan_parquet(label_fp)
             if "event_id" not in label_df.schema:
@@ -322,7 +321,7 @@ class TabularDataset(TimeableMixin):
         Raises:
             ValueError: If any of the required files for the shard do not exist.
         """
-        # get all window_size x aggreagation files using the file resolver
+        # get all window_size x aggregation files using the file resolver
         files = get_model_files(self.cfg, self.split, self._data_shards[idx])
 
         if not all(file.exists() for file in files):
@@ -460,7 +459,7 @@ class TabularDataset(TimeableMixin):
 
         return all_feats
 
-    def get_column_names(self, indices: list[int] = None) -> list[str]:
+    def get_column_names(self, indices: list[int] | None = None) -> list[str]:
         """Retrieves the names of the columns in the data.
 
         Returns:

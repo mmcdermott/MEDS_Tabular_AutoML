@@ -1,30 +1,30 @@
-#!/usr/bin/env python
 """This Python script, stores the configuration parameters and feature columns used in the output."""
+
+import logging
 from collections import defaultdict
-from importlib.resources import files
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import DESCRIBE_CODES_CFG
 from ..describe_codes import (
     compute_feature_frequencies,
     convert_to_df,
     convert_to_freq_dict,
 )
 from ..file_name import list_subdir_files
-from ..utils import get_shard_prefix, hydra_loguru_init, load_tqdm, stage_init, write_df
+from ..utils import get_shard_prefix, load_tqdm, write_df
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/describe_codes.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(
+    version_base=None, config_path=str(DESCRIBE_CODES_CFG.parent), config_name=DESCRIBE_CODES_CFG.stem
+)
 def main(cfg: DictConfig):
     """Computes feature frequencies and stores them to disk.
 
@@ -32,19 +32,10 @@ def main(cfg: DictConfig):
         cfg: The configuration object for the tabularization process, loaded from a Hydra
             YAML configuration file.
     """
-    stage_init(cfg, ["input_dir"])
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # 0. Identify Output Columns and Frequencies
     logger.info("Iterating through shards and caching feature frequencies.")
-
-    def write_fn(df, out_fp):
-        write_df(df, out_fp)
-
-    def read_fn(in_fp):
-        return pl.scan_parquet(in_fp)
 
     # Map: Iterates through shards and caches feature frequencies
     train_shards = list_subdir_files(cfg.input_dir, "parquet")
@@ -56,8 +47,8 @@ def main(cfg: DictConfig):
         rwlock_wrap(
             shard_fp,
             out_fp,
-            read_fn,
-            write_fn,
+            pl.scan_parquet,
+            write_df,
             compute_feature_frequencies,
             do_overwrite=cfg.do_overwrite,
         )
@@ -74,9 +65,6 @@ def main(cfg: DictConfig):
         feature_df = convert_to_df(feature_freqs)
         return feature_df
 
-    def write_fn(df, out_fp):
-        write_df(df, out_fp)
-
     def read_fn(feature_dir):
         files = list_subdir_files(feature_dir, "parquet")
         return [pl.scan_parquet(fp) for fp in files]
@@ -85,12 +73,8 @@ def main(cfg: DictConfig):
         Path(cfg.cache_dir),
         Path(cfg.output_filepath),
         read_fn,
-        write_fn,
+        write_df,
         compute_fn,
         do_overwrite=cfg.do_overwrite,
     )
     logger.info("Stored feature columns and frequencies.")
-
-
-if __name__ == "__main__":
-    main()

@@ -4,6 +4,8 @@ import polars as pl
 
 from MEDS_tabular_automl.utils import get_feature_names
 
+SUFFIXES = ["code", "value", "static/present", "static/first"]
+
 
 def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
     """Converts a dictionary of code frequencies to a Polars DataFrame.
@@ -51,7 +53,6 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
         - Eliminate this function and just use a DataFrame throughout. See #14
 
     Example:
-        >>> import polars as pl
         >>> data = pl.DataFrame({"code": [1, 2, 3, 4, 5], "count": [10, 20, 30, 40, 50]}).lazy()
         >>> convert_to_freq_dict(data)
         {1: 10, 2: 20, 3: 30, 4: 40, 5: 50}
@@ -60,7 +61,7 @@ def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
             ...
         ValueError: DataFrame must have columns 'code' and 'count', but has columns ['code', 'value']!
     """
-    if not df.columns == ["code", "count"]:
+    if not df.collect_schema().names() == ["code", "count"]:
         raise ValueError(f"DataFrame must have columns 'code' and 'count', but has columns {df.columns}!")
     return dict(df.collect().iter_rows())
 
@@ -78,7 +79,6 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         during the evaluation.
 
     Examples:
-        >>> from datetime import datetime
         >>> data = pl.DataFrame({
         ...     'subject_id': [1, 1, 2, 2, 3, 3, 3],
         ...     'code': ['A', 'A', 'B', 'B', 'C', 'C', 'C'],
@@ -93,12 +93,15 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         ...     ],
         ...     'numeric_value': [1, None, 2, 2, None, None, 3]
         ... }).lazy()
-        >>> assert (
-        ...     convert_to_freq_dict(compute_feature_frequencies(data).lazy()) == {
-        ...         'B/static/present': 2, 'C/static/present': 1, 'A/static/present': 1, 'B/static/first': 2,
-        ...         'C/static/first': 1, 'A/static/first': 1, 'A/code': 1, 'C/code': 2
-        ...     }
-        ... )
+        >>> dict(sorted(convert_to_freq_dict(compute_feature_frequencies(data).lazy()).items()))
+        {'A/code': 1,
+         'A/static/first': 1,
+         'A/static/present': 1,
+         'B/static/first': 2,
+         'B/static/present': 2,
+         'C/code': 2,
+         'C/static/first': 1,
+         'C/static/present': 1}
     """
     static_df = shard_df.filter(
         pl.col("subject_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
@@ -140,13 +143,12 @@ def get_feature_columns(fp: Path) -> list[str]:
         Sorted list of column names.
 
     Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
         ...     get_feature_columns(f.name)
         ['A', 'D', 'E']
     """
-    return sorted(list(get_feature_freqs(fp).keys()))
+    return sorted(get_feature_freqs(fp).keys())
 
 
 def get_feature_freqs(fp: Path) -> dict[str, int]:
@@ -159,8 +161,7 @@ def get_feature_freqs(fp: Path) -> dict[str, int]:
         Dictionary of feature frequencies.
 
     Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> with NamedTemporaryFile() as f:
+        >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
         ...     get_feature_freqs(f.name)
         {'E': 1, 'D': 3, 'A': 2}
@@ -194,16 +195,11 @@ def clear_code_aggregation_suffix(code: str) -> str:
             ...
         ValueError: Code A does not have a recognized aggregation suffix!
     """
-    if code.endswith("/code"):
-        return code[:-5]
-    elif code.endswith("/value"):
-        return code[:-6]
-    elif code.endswith("/static/present"):
-        return code[:-15]
-    elif code.endswith("/static/first"):
-        return code[:-13]
-    else:
-        raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
+    for sfx in SUFFIXES:
+        if code.endswith(f"/{sfx}"):
+            return code[: -(1 + len(sfx))]
+
+    raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
 
 
 def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
@@ -218,14 +214,14 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         pl.LazyFrame: A filtered LazyFrame containing only the allowed and not rare codes/values.
 
     Examples:
-        >>> from tempfile import NamedTemporaryFile
-        >>> fp = NamedTemporaryFile()
-        >>> pl.DataFrame({
-        ...     "code": ["A", "A", "A", "A", "D", "D", "E", "E"],
-        ...     "time": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
-        ...     "numeric_value": [1, None, 2, 2, None, 5, None, 3]
-        ... }).write_parquet(fp.name)
-        >>> filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
+        >>> with tempfile.NamedTemporaryFile() as fp:
+        ...     df = pl.DataFrame({
+        ...         "code": ["A", "A", "A", "A", "D", "D", "E", "E"],
+        ...         "time": [None, None, "2021-01-01", "2021-01-01", None, None, "2021-01-03", "2021-01-04"],
+        ...         "numeric_value": [1, None, 2, 2, None, 5, None, 3]
+        ...     })
+        ...     df.write_parquet(fp.name)
+        ...     filter_parquet(fp.name, ["A/code", "D/static/present", "E/code", "E/value"]).collect()
         shape: (6, 3)
         ┌──────┬────────────┬───────────────┐
         │ code ┆ time       ┆ numeric_value │
@@ -239,7 +235,6 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         │ E    ┆ 2021-01-03 ┆ null          │
         │ E    ┆ 2021-01-04 ┆ 3             │
         └──────┴────────────┴───────────────┘
-        >>> fp.close()
     """
     df = pl.scan_parquet(fp)
     # Drop values that are rare

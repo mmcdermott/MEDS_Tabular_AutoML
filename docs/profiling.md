@@ -29,7 +29,7 @@ The only method that was able to tabularize eICU data was MEDS-Tab. We ran our m
 
 a) 100 Patients
 
-**Table 1: 6,374 Codes, 2,065,608 Rows, Output Shape \[132,461, 6,374\]**
+**Table 1: 6,374 Codes, 2,065,608 Rows, Output Shape [132,461, 6,374]**
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
@@ -37,7 +37,7 @@ a) 100 Patients
 
 b) 500 Patients
 
-**Table 2: 18,314 Codes, 8,737,355 Rows, Output Shape \[565,014, 18,314\]**
+**Table 2: 18,314 Codes, 8,737,355 Rows, Output Shape [565,014, 18,314]**
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
@@ -51,7 +51,7 @@ a) 10 Patients
 
 This table illustrates the efficiency of MEDS-Tab in processing a small subset of patients with extremely low computational cost and high data throughput, outperforming `tsfresh` and `catabra` in terms of both time and memory efficiency.
 
-**Table 3: 1,504 Codes, 23,346 Rows, Output Shape \[2,127, 1,504\]**
+**Table 3: 1,504 Codes, 23,346 Rows, Output Shape [2,127, 1,504]**
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
@@ -63,7 +63,7 @@ b) 100 Patients
 
 The performance gap was further highlighted with an increased number of patients and codes. For a moderate patient count, MEDS-Tab demonstrated superior performance with significantly lower wall times and memory usage compared to `tsfresh` and `catabra`.
 
-**Table 4: 4,154 Codes, 150,789 Rows, Output Shape \[15,664, 4,154\]**
+**Table 4: 4,154 Codes, 150,789 Rows, Output Shape [15,664, 4,154]**
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |
@@ -75,7 +75,7 @@ c) 500 Patients
 
 Scaling further to 500 patients, MEDS-Tab maintained consistent performance, reinforcing its capability to manage large datasets efficiently. Because of the set time limit of 10 minutes, we could not get results for `catabra` and `tsfresh`. In comparison, MEDS-Tab processed the data in about 15 seconds, making it at least 40 times faster for the given patient scale.
 
-**Table 5: 48,115 Codes, 795,368 Rows, Output Shape \[75,595, 8,115\]**
+**Table 5: 48,115 Codes, 795,368 Rows, Output Shape [75,595, 8,115]**
 
 | Wall Time | Avg Memory | Peak Memory | Output Size | Method   |
 | --------- | ---------- | ----------- | ----------- | -------- |

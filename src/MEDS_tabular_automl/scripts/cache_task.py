@@ -1,17 +1,16 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
-from importlib.resources import files
+
+import logging
 from pathlib import Path
 
 import hydra
 import numpy as np
 import polars as pl
 import scipy.sparse as sp
-from loguru import logger
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import CACHE_TASK_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..utils import (
@@ -22,17 +21,12 @@ from ..utils import (
     get_events_df,
     get_shard_prefix,
     get_unique_time_events_df,
-    hydra_loguru_init,
     load_matrix,
     load_tqdm,
-    stage_init,
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/task_specific_caching.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
-
+logger = logging.getLogger(__name__)
 
 VALID_AGGREGATIONS = [
     *VALUE_AGGREGATIONS,
@@ -57,73 +51,64 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
         A COOrdinate formatted sparse matrix containing only the rows specified by label_df's event_ids.
 
     Raises:
-        ValueError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
+        IndexError: If the maximum event_id in label_df exceeds the number of rows in the matrix.
 
-    Example:
-    >>> import polars as pl
-    >>> import scipy.sparse as sp
-    >>> import pytest
-    >>>
-    >>> # Create a sample sparse matrix
-    >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
-    >>>
-    >>> # Create a label DataFrame with specific event IDs
-    >>> label_df = pl.DataFrame({"event_id": [1, 3]})
-    >>>
-    >>> # Generate row-cached matrix
-    >>> result = generate_row_cached_matrix(matrix, label_df.lazy())
-    >>>
-    >>> # Check the shape and contents of the result
-    >>> result.shape
-    (2, 3)
-    >>> result.toarray().tolist()
-    [[0, 3, 0], [0, 6, 0]]
-    >>>
-    >>> # Demonstrate ValueError when event_id exceeds matrix rows
-    >>> with pytest.raises(ValueError,
-    ...                    match="Label_df event_ids must be valid indexes of sparse matrix: 4 <= 4"):
-    ...     generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [4]}).lazy())
+    Examples:
+        >>> matrix = sp.coo_array([[1, 0, 2], [0, 3, 0], [4, 0, 5], [0, 6, 0]])
+        >>> result = generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [1, 3]}).lazy())
+        >>> result.toarray()
+        array([[0, 3, 0],
+               [0, 6, 0]])
 
-    >>> # Handle events with no history -- i.e. where valid_ids are -1
-    >>> matrix = np.array([
-    ...     [1, 2, 3],
-    ...     [4, 5, 6],
-    ...     [7, 8, 9],
-    ...     [10, 11, 12],
-    ...     [13, 14, 15]
-    ... ])
-    >>>
-    >>> label_df = pl.DataFrame({
-    ...     "event_id": [0, 2, -1, 4]
-    ... }).lazy()
-    >>> result = generate_row_cached_matrix(matrix, label_df)
-    >>>
-    >>> # Check that the result contains the correct rows
-    >>> result.toarray().tolist()
-    [[1, 2, 3], [7, 8, 9], [0, 0, 0], [13, 14, 15]]
+    It should handle events with no history (i.e., where valid_ids are -1) by setting them to 0:
 
-    Test case with no labels
-    >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
-    >>> result = generate_row_cached_matrix(matrix, label_df)
-    >>> result.toarray().tolist()
-    []
+        >>> result = generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [0, 2, -1, 3]}).lazy())
+        >>> result.toarray()
+        array([[1, 0, 2],
+               [4, 0, 5],
+               [0, 0, 0],
+               [0, 6, 0]])
+
+    And with no labels
+
+        >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
+        >>> result = generate_row_cached_matrix(matrix, label_df)
+        >>> result.toarray()
+        array([], shape=(0, 3), dtype=int64)
+
+    Errors are raised when the max event ID exceeds the number of rows in the matrix:
+
+        >>> generate_row_cached_matrix(matrix, pl.DataFrame({"event_id": [4]}).lazy())
+        Traceback (most recent call last):
+            ...
+        IndexError: label_df event_ids must be valid indexes into a sparse matrix with 4 rows; Got index of 4
+        which is out of bounds!
     """
-    label_len = label_df.select(pl.col("event_id").max()).collect().item()
+
+    event_ids = label_df.select("event_id").collect()["event_id"]
+    label_len = event_ids.max()
     if label_len and matrix.shape[0] <= label_len:
-        raise ValueError(
-            f"Label_df event_ids must be valid indexes of sparse matrix: {matrix.shape[0]} <= {label_len}"
+        raise IndexError(
+            f"label_df event_ids must be valid indexes into a sparse matrix with {matrix.shape[0]} rows; "
+            f"Got index of {label_len} which is out of bounds!"
         )
+
     csr: sp.csr_array = sp.csr_array(matrix)
-    valid_ids = label_df.select(pl.col("event_id")).collect().to_series().to_numpy()
+
+    valid_ids = event_ids.to_numpy()
+
     csr = csr[valid_ids, :]
+
     indices_with_no_past_data = valid_ids == -1
+
     if indices_with_no_past_data.any().item():
         csr[indices_with_no_past_data] = 0
         csr.eliminate_zeros()
+
     return sp.coo_array(csr)
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(CACHE_TASK_CFG.parent), config_name=CACHE_TASK_CFG.stem)
 def main(cfg: DictConfig):
     """Performs row splicing of tabularized data for a specific task based on configuration.
 
@@ -133,19 +118,7 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
-    stage_init(
-        cfg,
-        [
-            "input_dir",
-            "input_label_dir",
-            "input_tabularized_dir",
-            "output_dir",
-            "tabularization.filtered_code_metadata_fp",
-        ],
-    )
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
     # Produce ts representation
 
     # shuffle tasks
@@ -218,15 +191,15 @@ def main(cfg: DictConfig):
         def read_fn(in_fp_tuple):
             meds_data_fp, data_fp = in_fp_tuple
             # TODO: replace this with more intelligent locking
-            if not Path(shard_label_fp).exists():
-                logger.info(f"Extracting labels for {shard_label_fp}")
-                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)
+            if not Path(shard_label_fp).exists():  # noqa: B023
+                logger.info(f"Extracting labels for {shard_label_fp}")  # noqa: B023
+                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)  # noqa: B023
                 meds_data_df = read_meds_data_df(meds_data_fp)
                 extracted_events = extract_labels(meds_data_df)
-                write_lazyframe(extracted_events, shard_label_fp)
+                write_lazyframe(extracted_events, shard_label_fp)  # noqa: B023
             else:
-                logger.info(f"Labels already exist, reading from {shard_label_fp}")
-            shard_label_df = pl.scan_parquet(shard_label_fp)
+                logger.info(f"Labels already exist, reading from {shard_label_fp}")  # noqa: B023
+            shard_label_df = pl.scan_parquet(shard_label_fp)  # noqa: B023
             matrix = load_matrix(data_fp)
             return shard_label_df, matrix
 
@@ -251,7 +224,3 @@ def main(cfg: DictConfig):
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

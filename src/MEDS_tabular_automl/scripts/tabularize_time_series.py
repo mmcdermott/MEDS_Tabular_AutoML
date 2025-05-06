@@ -1,21 +1,17 @@
-#!/usr/bin/env python
-
 """Aggregates time-series data for feature columns across different window sizes."""
-import polars as pl
-
-pl.enable_string_cache()
 
 import gc
-from importlib.resources import files
+import logging
 from itertools import product
 from pathlib import Path
 
 import hydra
 import numpy as np
-from loguru import logger
+import polars as pl
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import TABULARIZATION_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
@@ -24,18 +20,19 @@ from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     get_shard_prefix,
-    hydra_loguru_init,
     load_tqdm,
-    stage_init,
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+pl.enable_string_cache()
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+logger = logging.getLogger(__name__)
+
+
+@hydra.main(
+    version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
+)
 def main(
     cfg: DictConfig,
 ):
@@ -65,22 +62,12 @@ def main(
         FileNotFoundError: If specified directories or files in the configuration are not found.
         ValueError: If required columns like 'code' or 'value' are missing in the data files.
     """
-    stage_init(
-        cfg,
-        [
-            "input_code_metadata_fp",
-            "input_dir",
-            "tabularization.filtered_code_metadata_fp",
-        ],
-    )
 
-    if cfg.input_label_dir:
-        if not Path(cfg.input_label_dir).is_dir():
-            raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+        raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
+
     # Produce ts representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
@@ -110,16 +97,16 @@ def main(
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
-            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)
+            index_df, sparse_matrix = get_flat_ts_rep(agg, feature_columns, shard_df)  # noqa: B023
 
             # Summarize data -- applying aggregations on a specific window size + aggregation combination
             summary_df = generate_summary(
                 feature_columns,
                 index_df,
                 sparse_matrix,
-                window_size,
-                agg,
-                label_df,
+                window_size,  # noqa: B023
+                agg,  # noqa: B023
+                label_df,  # noqa: B023
             )
 
             if not summary_df.shape[1]:
@@ -149,7 +136,3 @@ def main(
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

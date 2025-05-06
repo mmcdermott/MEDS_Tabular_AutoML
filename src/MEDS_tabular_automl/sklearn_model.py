@@ -1,14 +1,17 @@
+import logging
 from pathlib import Path
 from pickle import dump
 
+import meds
 import numpy as np
 import scipy.sparse as sp
-from loguru import logger
 from omegaconf import DictConfig
 from sklearn.metrics import roc_auc_score
 
 from .base_model import BaseModel
 from .tabular_dataset import TabularDataset as SklearnIterator
+
+logger = logging.getLogger(__name__)
 
 
 class SklearnMatrix:
@@ -20,7 +23,6 @@ class SklearnMatrix:
         Args:
             data
         """
-        super().__init__()
         self.data = data
         self.labels = labels
 
@@ -140,13 +142,13 @@ class SklearnModel(BaseModel):
             The evaluation metric as the ROC AUC score.
         """
         # depending on split point to correct data
-        if split == "tuning":
+        if split == meds.tuning_split:
             dsplit = self.dtuning
             isplit = self.ituning
-        elif split == "held_out":
+        elif split == meds.held_out_split:
             dsplit = self.dheld_out
             isplit = self.iheld_out
-        elif split == "train":
+        elif split == meds.train_split:
             dsplit = self.dtrain
             isplit = self.itrain
         else:
@@ -185,7 +187,7 @@ class SklearnModel(BaseModel):
         if not hasattr(self.model, "save_model"):
             logger.info(f"Model {self.model.__class__.__name__} does not have a save_model method.")
             logger.info("Model will be saved using pickle dump.")
-            if not str(output_fp.resolve()).endswith(".pkl"):
+            if output_fp.suffix != ".pkl":
                 raise ValueError("Model file extension must be .pkl.")
             with open(output_fp, "wb") as f:
                 dump(self.model, f, protocol=5)

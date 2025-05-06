@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Tabularizes static data in MEDS format into tabular representations."""
 
 from itertools import product
@@ -7,14 +6,10 @@ from pathlib import Path
 import hydra
 import numpy as np
 import polars as pl
-
-pl.enable_string_cache()
-
-from importlib.resources import files
-
 from MEDS_transforms.mapreduce.utils import rwlock_wrap
 from omegaconf import DictConfig
 
+from .. import TABULARIZATION_CFG
 from ..describe_codes import (
     convert_to_df,
     filter_parquet,
@@ -28,18 +23,16 @@ from ..utils import (
     STATIC_VALUE_AGGREGATION,
     filter_to_codes,
     get_shard_prefix,
-    hydra_loguru_init,
     load_tqdm,
-    stage_init,
     write_df,
 )
 
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/tabularization.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+pl.enable_string_cache()
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(
+    version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
+)
 def main(
     cfg: DictConfig,
 ):
@@ -80,24 +73,13 @@ def main(
             do_update: bool = True
             seed: The seed to use for random number generation.
 
-    .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html # noqa: E501
-    """
-    stage_init(
-        cfg,
-        [
-            "input_code_metadata_fp",
-            "input_dir",
-            "tabularization.filtered_code_metadata_fp",
-        ],
-    )
+    .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html
+    """  # noqa: E501
 
-    if cfg.input_label_dir:
-        if not Path(cfg.input_label_dir).is_dir():
-            raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+        raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     # Step 1: Cache the filtered features that will be used in the tabularization process and modeling
     def read_fn(_):
@@ -156,10 +138,10 @@ def main(
 
         def compute_fn(shard_df):
             return get_flat_static_rep(
-                agg=agg,
+                agg=agg,  # noqa: B023
                 feature_columns=feature_columns,
                 shard_df=shard_df,
-                label_df=label_df,
+                label_df=label_df,  # noqa: B023
             )
 
         def write_fn(data, out_df):
@@ -173,7 +155,3 @@ def main(
             compute_fn,
             do_overwrite=cfg.do_overwrite,
         )
-
-
-if __name__ == "__main__":
-    main()

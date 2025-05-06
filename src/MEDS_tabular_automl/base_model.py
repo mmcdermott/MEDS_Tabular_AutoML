@@ -1,11 +1,13 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING
 
 from mixins import TimeableMixin
 from omegaconf import DictConfig
 
-T = TypeVar("T")
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class BaseModel(ABC, TimeableMixin):
@@ -28,5 +30,5 @@ class BaseModel(ABC, TimeableMixin):
         pass
 
     @classmethod
-    def initialize(cls: T, **kwargs) -> T:
+    def initialize(cls: BaseModel, **kwargs) -> BaseModel:
         return cls(DictConfig(kwargs, flags={"allow_objects": True}))
