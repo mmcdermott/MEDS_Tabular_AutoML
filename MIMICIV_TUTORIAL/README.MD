@@ -110,7 +110,7 @@ We recommend using this script, as opposed to the task specific script, when tab
 
 ```console
 export N_PARALLEL_WORKERS=48 # Set number of workers
-export RESHARD_DIR=${ROOT_DIR}/reshareded_meds/ # set to directory to output reshareded meds data
+export RESHARD_DIR=${ROOT_DIR}/resharded_meds/ # set to directory to output resharded meds data
 TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
 bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
     "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
