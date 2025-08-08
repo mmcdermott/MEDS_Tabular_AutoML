@@ -1,21 +1,16 @@
 import json
-from importlib.resources import files
+import logging
 from pathlib import Path
 
 import hydra
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-from MEDS_tabular_automl.base_model import BaseModel
+from .. import LAUNCH_MODEL_CFG
 
-from ..utils import hydra_loguru_init, stage_init
-
-config_yaml = files("MEDS_tabular_automl").joinpath("configs/launch_model.yaml")
-if not config_yaml.is_file():  # pragma: no cover
-    raise FileNotFoundError("Core configuration not successfully installed!")
+logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base=None, config_path=str(config_yaml.parent.resolve()), config_name=config_yaml.stem)
+@hydra.main(version_base=None, config_path=str(LAUNCH_MODEL_CFG.parent), config_name=LAUNCH_MODEL_CFG.stem)
 def main(cfg: DictConfig) -> float:
     """Optimizes the model based on the provided configuration.
 
@@ -25,20 +20,14 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
-    stage_init(
-        cfg, ["input_dir", "input_label_cache_dir", "output_dir", "tabularization.filtered_code_metadata_fp"]
-    )
-
-    if not cfg.loguru_init:
-        hydra_loguru_init()
 
     try:
-        cfg.tabularization._resolved_codes
+        cfg.tabularization._resolved_codes  # noqa: B018
     except ValueError as e:
-        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {str(e)}")
+        logger.warning(f"No codes meet loading criteria, trial returning 0 AUC: {e!s}")
         return 0.0
 
-    model_launcher: BaseModel = hydra.utils.instantiate(cfg.model_launcher)
+    model_launcher = hydra.utils.instantiate(cfg.model_launcher)
 
     model_launcher.train()
     auc = model_launcher.evaluate()
@@ -56,11 +45,13 @@ def main(cfg: DictConfig) -> float:
     # save model config
     config_fp = trial_output_dir / f"{cfg.path.config_log_stem}.log"
     with open(config_fp, "w") as f:
+        # TODO: Check for OmegaConf.save
         f.write(OmegaConf.to_yaml(cfg))
 
     # save model performance
     model_performance_fp = trial_output_dir / f"{cfg.path.performance_log_stem}.log"
     with open(model_performance_fp, "w") as f:
+        # TODO: Use JSON hre, not CSV.
         f.write("trial_name,tuning_auc,test_auc\n")
         f.write(
             f"{trial_output_dir.stem},{model_launcher.evaluate()},"
@@ -69,7 +60,3 @@ def main(cfg: DictConfig) -> float:
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
     return auc
-
-
-if __name__ == "__main__":
-    main()

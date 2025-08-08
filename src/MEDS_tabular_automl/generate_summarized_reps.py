@@ -1,9 +1,8 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import polars as pl
-
-pl.enable_string_cache()
-from loguru import logger
 from scipy.sparse import coo_array, csr_array, sparray
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names
@@ -13,6 +12,9 @@ from MEDS_tabular_automl.utils import (
     get_min_dtype,
     load_tqdm,
 )
+
+pl.enable_string_cache()
+logger = logging.getLogger(__name__)
 
 
 def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array:
@@ -137,10 +139,8 @@ def get_rolling_window_indicies(
     ╞═══════════╪═══════════╡
     └───────────┴───────────┘
     """
-    if window_size == "full":
-        timedelta = pd.Timedelta(150 * 52, unit="W")  # just use 150 years as time delta
-    else:
-        timedelta = pd.Timedelta(window_size)
+    timedelta = pd.Timedelta(150 * 52, unit="W") if window_size == "full" else pd.Timedelta(window_size)
+
     windows = (
         index_df.with_row_index("index")
         .rolling(index_column="time", period=timedelta, group_by="subject_id")
@@ -153,10 +153,9 @@ def get_rolling_window_indicies(
 
         if "time" not in label_df.schema:
             label_df = label_df.rename({"prediction_time": "time"})
-            
+
         windows = (
-            label_df
-            .join_asof(event_df, by="subject_id", on="time")
+            label_df.join_asof(event_df, by="subject_id", on="time")
             .select(windows.columns)
             .fill_null(0)
             .collect()
@@ -283,7 +282,7 @@ def compute_agg(
     )
     index_df = group_df.lazy().select(pl.col("subject_id", "time"))
     windows = group_df.select(pl.col("min_index", "max_index"))
-    
+
     logger.info("Step 1.5: Running sparse aggregation.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
 
@@ -334,9 +333,9 @@ def generate_summary(
 
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
-    code_type, _ = agg.split("/") # code or value like in code/count
+    code_type, _ = agg.split("/")  # code or value like in code/count
     # only iterate through code_types that exist in the dataframe columns
-    if not any([c.endswith(code_type) for c in ts_columns]):
+    if not any(c.endswith(code_type) for c in ts_columns):
         raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
 
     logger.info(

@@ -1,22 +1,13 @@
+import logging
 import shutil
 from pathlib import Path
 
+import hydra
 import polars as pl
 from hydra.experimental.callback import Callback
-from hydra.utils import instantiate
-from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 
-
-class MockModelLauncher:  # pragma: no cover
-    def load_model(self, model_path):
-        pass
-
-    def _build(self):
-        pass
-
-    def predict(self, split):
-        return pl.DataFrame({"predictions": [0.1, 0.2]})
+logger = logging.getLogger(__name__)
 
 
 class EvaluationCallback(Callback):
@@ -33,57 +24,43 @@ class EvaluationCallback(Callback):
         Raises:
             FileNotFoundError: If log files are incomplete or not found
 
-        Example:
-            >>> import tempfile
-            >>> import polars as pl
-            >>> from pathlib import Path
-            >>> from omegaconf import OmegaConf
-            >>>
-            >>> # Create a temporary directory for testing
-            >>> temp_dir = tempfile.mkdtemp()
-            >>> # Setup mock sweep results directory
-            >>> sweep_results_dir = Path(temp_dir) / 'sweep_results'
-            >>> sweep_results_dir.mkdir()
-            >>>
-            >>> # Create mock trial directories
-            >>> trial_names = ['trial1', 'trial2']
-            >>> for trial in trial_names:
-            ...     trial_path = sweep_results_dir / trial
-            ...     trial_path.mkdir()
-            ...
-            ...     # Create mock performance log
-            ...     performance_log = pl.DataFrame({
-            ...         'trial_name': [trial],
-            ...         'tuning_auc': [0.9 if trial == 'trial1' else 0.8],
-            ...         'test_auc': [0.85 if trial == 'trial1' else 0.75]
-            ...     })
-            ...     performance_log.write_csv(trial_path / 'performance.log')
-            >>>
-            >>> # Create configuration
-            >>> config = OmegaConf.create({
-            ...     'path': {
-            ...         'sweep_results_dir': str(sweep_results_dir),
-            ...         'performance_log_stem': 'performance',
-            ...         'best_trial_dir': str(Path(temp_dir) / 'best_trial'),
-            ...     },
-            ...     'time_output_model_dir': str(Path(temp_dir) / 'output'),
-            ...     'prediction_splits': ['test'],
-            ...     'delete_below_top_k': 1
-            ... })
-            >>>
-            >>> # Create a mock evaluation callback
+        Examples:
             >>> cb = EvaluationCallback()
-            >>>
-            >>> # Run the method
-            >>> Path(config.time_output_model_dir).mkdir()
-            >>> result = cb.on_multirun_end(config)
-            >>>
-            >>> # Verify results
-            >>> result['trial_name'][0] == 'trial1'
-            True
-            >>> # Clean up the temporary directory
-            >>> import shutil
-            >>> shutil.rmtree(temp_dir)
+            >>> with tempfile.TemporaryDirectory() as temp_dir:
+            ...     temp_dir = Path(temp_dir)
+            ...     sweep_results_dir = temp_dir / "sweep_results"
+            ...     time_output_model_dir = temp_dir / "output"
+            ...     time_output_model_dir.mkdir()
+            ...
+            ...     for trial, tuning_auc, test_auc in [('trial1', 0.9, 0.65), ('trial2', 0.8, 0.75)]:
+            ...         trial_path = sweep_results_dir / trial
+            ...         trial_path.mkdir(parents=True)
+            ...
+            ...         performance_log = pl.DataFrame(
+            ...             {"trial_name": [trial], "tuning_auc": [tuning_auc], "test_auc": [test_auc]}
+            ...         )
+            ...         performance_log.write_csv(trial_path / 'performance.log')
+            ...
+            ...     config = DictConfig({
+            ...         'path': {
+            ...             'sweep_results_dir': str(sweep_results_dir),
+            ...             'performance_log_stem': 'performance',
+            ...             'best_trial_dir': str(temp_dir / 'best_trial'),
+            ...         },
+            ...         'time_output_model_dir': str(time_output_model_dir),
+            ...         'prediction_splits': ['test'],
+            ...         'delete_below_top_k': 1
+            ...     })
+            ...     best_model_performance = cb.on_multirun_end(config)
+            >>> best_model_performance
+            shape: (1, 3)
+            ┌────────────┬────────────┬──────────┐
+            │ trial_name ┆ tuning_auc ┆ test_auc │
+            │ ---        ┆ ---        ┆ ---      │
+            │ str        ┆ f64        ┆ f64      │
+            ╞════════════╪════════════╪══════════╡
+            │ trial1     ┆ 0.9        ┆ 0.65     │
+            └────────────┴────────────┴──────────┘
         """
         log_fp = Path(config.path.sweep_results_dir)
 
@@ -120,31 +97,21 @@ class EvaluationCallback(Callback):
             best_trial_dir (Path): Directory of the best trial
             splits (List[str]): Data splits to generate predictions for
 
-        Example:
-        >>> import tempfile
-        >>> import polars as pl
-        >>> from pathlib import Path
-        >>> from unittest.mock import Mock, patch
-        >>> import shutil
-        >>>
-        >>> temp_dir = tempfile.mkdtemp()
-        >>> best_trial_dir = Path(temp_dir)
-        >>>
-        >>> # Create mock config and xgboost files
-        >>> _ = (best_trial_dir / 'config.log').write_text('''
-        ... model_launcher:
-        ...   _target_: MEDS_tabular_automl.evaluation_callback.MockModelLauncher
-        ... ''')
-        >>> (best_trial_dir / 'xgboost.json').touch()
-        >>>
-        >>> # Mock model launcher
-        >>>
-        >>> cb = EvaluationCallback()
-        >>> cb.store_predictions(best_trial_dir, ['test'])
-        >>> # Verify predictions file was created
-        >>> (best_trial_dir / 'test_predictions.parquet').exists()
-        True
-        >>> shutil.rmtree(temp_dir)
+        Examples:
+            >>> cb = EvaluationCallback()
+            >>> pred_df = pl.DataFrame({"predictions": [0.1, 0.2]})
+            >>> with (
+            ...     tempfile.TemporaryDirectory() as temp_dir,
+            ...     patch("hydra.utils.instantiate", return_value=Mock(predict=Mock(return_value=pred_df)))
+            ... ):
+            ...     best_trial_dir = Path(temp_dir) / "best_trial"
+            ...     best_trial_dir.mkdir()
+            ...     OmegaConf.save({"model_launcher": {}}, best_trial_dir / "config.log")
+            ...     (best_trial_dir / "xgboost.json").touch()
+            ...     cb.store_predictions(best_trial_dir, ['test'])
+            ...     # Verify predictions file was created
+            ...     (best_trial_dir / 'test_predictions.parquet').exists()
+            True
         """
         config = Path(best_trial_dir) / "config.log"
         xgboost_fp = Path(best_trial_dir) / "xgboost.json"
@@ -153,7 +120,7 @@ class EvaluationCallback(Callback):
             return
 
         cfg = OmegaConf.load(config)
-        model_launcher = instantiate(cfg.model_launcher)
+        model_launcher = hydra.utils.instantiate(cfg.model_launcher)
         model_launcher.load_model(xgboost_fp)
         model_launcher._build()
 
@@ -168,20 +135,8 @@ class EvaluationCallback(Callback):
             best_model_performance (polars.DataFrame): Performance data of the best model
 
         Example:
-            >>> import polars as pl
-            >>>
-            >>> # Create a mock performance DataFrame
-            >>> best_model_performance = pl.DataFrame({
-            ...     'trial_name': ['trial1'],
-            ...     'tuning_auc': [0.85],
-            ...     'test_auc': [0.82]
-            ... })
-            >>>
-            >>> # Create an instance of the evaluation callback
             >>> cb = EvaluationCallback()
-            >>>
-            >>> # Test the method (this will log to console)
-            >>> cb.log_performance(best_model_performance)  # Doctest: +ELLIPSIS
+            >>> cb.log_performance(pl.DataFrame({'trial_name': ['T'], 'tuning_auc': [0], 'test_auc': [1]}))
         """
         best_model = best_model_performance["trial_name"][0]
         tuning_auc = best_model_performance["tuning_auc"][0]
@@ -203,10 +158,6 @@ class EvaluationCallback(Callback):
             sweep_results_dir: Directory containing trial results.
 
         Example:
-            >>> import tempfile
-            >>> import json
-            >>> import polars as pl
-            >>> from pathlib import Path
             >>> performance = pl.DataFrame(
             ...     {
             ...         "trial_name": ["trial1", "trial2", "trial3", "trial4"],
@@ -214,17 +165,14 @@ class EvaluationCallback(Callback):
             ...         "test_auc": [0.9, 0.8, 0.7, 0.6],
             ...     }
             ... )
-            >>> k = 2
+            >>> cb = EvaluationCallback()
             >>> with tempfile.TemporaryDirectory() as sweep_dir:
             ...     for trial in performance["trial_name"]:
-            ...         trial_dir = Path(sweep_dir) / trial
-            ...         trial_dir.mkdir()
-            ...         with open(trial_dir / "model.json", 'w') as f:
-            ...             json.dump({"model_name": trial, "content": "dummy data"}, f)
-            ...     cb = EvaluationCallback()
-            ...     cb.delete_below_top_k_models(performance, k, sweep_dir)
-            ...     remaining_trials = sorted(p.name for p in Path(sweep_dir).iterdir())
-            >>> remaining_trials
+            ...         out_fp = Path(sweep_dir) / trial / "model.json"
+            ...         out_fp.parent.mkdir(parents=True)
+            ...         _ = out_fp.write_text(json.dumps({"model_name": trial, "content": "dummy data"}))
+            ...     cb.delete_below_top_k_models(performance=performance, k=2, sweep_results_dir=sweep_dir)
+            ...     sorted(p.name for p in Path(sweep_dir).iterdir())
             ['trial1', 'trial2']
         """
         logger.info(f"Deleting all models except top {k} models.")

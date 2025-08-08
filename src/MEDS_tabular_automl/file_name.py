@@ -1,4 +1,5 @@
 """Helper functions for getting file names and paths for MEDS tabular automl tasks."""
+
 from pathlib import Path
 
 from omegaconf import DictConfig
@@ -16,7 +17,6 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         subdirectories of the given directory.
 
     Examples:
-        >>> import tempfile
         >>> tmpdir = tempfile.TemporaryDirectory()
         >>> root = Path(tmpdir.name)
         >>> subdir_1 = root / "subdir_1"
@@ -32,7 +32,7 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         >>> (root / "subdir_2" / "4.csv").touch()
         >>> (root / "subdir_1" / "A" / "5.csv").touch()
         >>> (root / "subdir_1" / "A" / "15.csv.gz").touch()
-        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "csv")] # doctest: +NORMALIZE_WHITESPACE
+        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "csv")]
         [PosixPath('1.csv'),
          PosixPath('2.csv'),
          PosixPath('subdir_1/3.csv'),
@@ -49,7 +49,7 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         >>> tmpdir.cleanup()
     """
 
-    return sorted(list(Path(root).glob(f"**/*.{ext}")))
+    return sorted(Path(root).glob(f"**/*.{ext}"))
 
 
 def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
@@ -79,13 +79,13 @@ def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
         ...         "aggs": ["code/count", "value/sum", "static/present"],
         ...     }
         ... })
-        >>> get_model_files(cfg, "train", "0") # doctest: +NORMALIZE_WHITESPACE
+        >>> get_model_files(cfg, "train", "0")
         [PosixPath('data/train/0/1d/code/count.npz'),
          PosixPath('data/train/0/1d/value/sum.npz'),
          PosixPath('data/train/0/7d/code/count.npz'),
          PosixPath('data/train/0/7d/value/sum.npz'),
          PosixPath('data/train/0/none/static/present.npz')]
-        >>> get_model_files(cfg, "test/IID", "3/0") # doctest: +NORMALIZE_WHITESPACE
+        >>> get_model_files(cfg, "test/IID", "3/0")
         [PosixPath('data/test/IID/3/0/1d/code/count.npz'),
          PosixPath('data/test/IID/3/0/1d/value/sum.npz'),
          PosixPath('data/test/IID/3/0/7d/code/count.npz'),

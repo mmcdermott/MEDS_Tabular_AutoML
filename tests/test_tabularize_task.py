@@ -1,7 +1,3 @@
-import rootutils
-
-root = rootutils.setup_root(__file__, dotenv=True, pythonpath=True, cwd=True)
-
 import json
 from io import StringIO
 from pathlib import Path
@@ -155,7 +151,6 @@ def test_tabularize(tmp_path):
         "seed": 1,
         "hydra.verbose": True,
         "tqdm": False,
-        "loguru_init": True,
     }
 
     describe_codes_config = {**shared_config}
@@ -181,9 +176,9 @@ def test_tabularize(tmp_path):
 
     # Check the files are not empty
     meds_files = list_subdir_files(Path(cfg.input_dir), "parquet")
-    assert (
-        len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4
-    ), "MEDS train split Data Files Should be 4!"
+    assert len(list_subdir_files(Path(cfg.input_dir), "parquet")) == 4, (
+        "MEDS train split Data Files Should be 4!"
+    )
     for f in meds_files:
         assert pl.read_parquet(f).shape[0] > 0, "MEDS Data Tabular Dataframe Should not be Empty!"
     split_json = json.load(StringIO(SPLITS_JSON))

@@ -52,16 +52,16 @@ Static aggregations are computed once per subject_id and static code. Dynamic ag
 
 We provide examples of these aggregations here. Notice that for dynamic aggregations, data within a lookback window (e.g., last 24 hours) is input to the aggregation function.
 
-| Aggregation      | Input Data                                 | Result | Explanation                                                           |
-| ---------------- | ------------------------------------------ | ------ | --------------------------------------------------------------------- |
-| `static/present` | Gender//Female                             | 1      | Indicates the presence (1) of the code "Gender//Female"               |
-| `static/first`   | Birth Weight: 3.2 kg                       | 3.2    | Returns the numeric value of the static measurement                   |
-| `code/count`     | Heart Rate: \[80, NULL, 78, 90\]           | 4      | Counts the occurrences of codes within the lookback window            |
-| `value/count`    | Heart Rate: \[80, 78, 90\]                 | 3      | Counts the number of measurements recorded within the lookback window |
-| `value/sum`      | Glucose Levels: \[100, 110, 105\]          | 315    | Sums the measurement values within the lookback window                |
-| `value/sum_sqd`  | Blood Pressure Readings: \[120, 125\]      | 30,025 | Sums the squares of the measurements (120² + 125²)                    |
-| `value/min`      | Temperature Readings: \[37.5, 38.0, 37.0\] | 37.0   | Finds the minimum value within the lookback window                    |
-| `value/max`      | Respiratory Rate: \[16, 18, 20\]           | 20     | Finds the maximum value within the lookback window                    |
+| Aggregation      | Input Data                               | Result | Explanation                                                           |
+| ---------------- | ---------------------------------------- | ------ | --------------------------------------------------------------------- |
+| `static/present` | Gender//Female                           | 1      | Indicates the presence (1) of the code "Gender//Female"               |
+| `static/first`   | Birth Weight: 3.2 kg                     | 3.2    | Returns the numeric value of the static measurement                   |
+| `code/count`     | Heart Rate: [80, NULL, 78, 90]           | 4      | Counts the occurrences of codes within the lookback window            |
+| `value/count`    | Heart Rate: [80, 78, 90]                 | 3      | Counts the number of measurements recorded within the lookback window |
+| `value/sum`      | Glucose Levels: [100, 110, 105]          | 315    | Sums the measurement values within the lookback window                |
+| `value/sum_sqd`  | Blood Pressure Readings: [120, 125]      | 30,025 | Sums the squares of the measurements (120² + 125²)                    |
+| `value/min`      | Temperature Readings: [37.5, 38.0, 37.0] | 37.0   | Finds the minimum value within the lookback window                    |
+| `value/max`      | Respiratory Rate: [16, 18, 20]           | 20     | Finds the maximum value within the lookback window                    |
 
 ## Lookback Window
 
