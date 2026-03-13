@@ -27,8 +27,8 @@ class TestArrayToSparseMatrixErrors:
     """Bug #2: Passing a wrong-shaped array should produce a clear, readable error."""
 
     def test_wrong_shape_error_includes_actual_dimension(self):
-        """The error message should contain the actual first-dimension size so the
-        user can understand what went wrong."""
+        """The error message should contain the actual first-dimension size so the user can understand what
+        went wrong."""
         from MEDS_tabular_automl.utils import array_to_sparse_matrix
 
         bad_array = np.array([[1, 2], [3, 4]])  # shape (2, ...) not (3, ...)
@@ -66,8 +66,8 @@ class TestSparseRoundTrip:
     """Bug #4: store_matrix/load_matrix should not silently discard stored values."""
 
     def test_explicit_zeros_survive_round_trip(self):
-        """A sparse matrix with an explicit zero (e.g., a real measurement of 0.0)
-        should have the same dense representation after save and reload."""
+        """A sparse matrix with an explicit zero (e.g., a real measurement of 0.0) should have the same dense
+        representation after save and reload."""
         from MEDS_tabular_automl.utils import load_matrix, store_matrix
 
         data = np.array([1.0, 0.0, 3.0])
@@ -130,9 +130,7 @@ class TestConvertToMatrix:
         """Standard numeric DataFrame produces correct sparse matrix."""
         from MEDS_tabular_automl.generate_static_features import convert_to_matrix
 
-        df = pl.DataFrame(
-            {"subject_id": [1, 2, 3], "A": [1.0, 0.0, 3.0], "B": [0.0, 5.0, 6.0]}
-        ).lazy()
+        df = pl.DataFrame({"subject_id": [1, 2, 3], "A": [1.0, 0.0, 3.0], "B": [0.0, 5.0, 6.0]}).lazy()
 
         result = convert_to_matrix(df, num_events=3, num_features=2)
         expected = np.array([[1.0, 0.0], [0.0, 5.0], [3.0, 6.0]])
@@ -142,9 +140,7 @@ class TestConvertToMatrix:
         """Null values should be treated as absent (zero in the sparse matrix)."""
         from MEDS_tabular_automl.generate_static_features import convert_to_matrix
 
-        df = pl.DataFrame(
-            {"subject_id": [1, 2], "A": [1.0, None], "B": [None, 5.0]}
-        ).lazy()
+        df = pl.DataFrame({"subject_id": [1, 2], "A": [1.0, None], "B": [None, 5.0]}).lazy()
 
         result = convert_to_matrix(df, num_events=2, num_features=2)
         dense = result.toarray()
@@ -157,9 +153,7 @@ class TestConvertToMatrix:
         """Boolean presence columns (True/None) should convert without error."""
         from MEDS_tabular_automl.generate_static_features import convert_to_matrix
 
-        df = pl.DataFrame(
-            {"subject_id": [1, 2], "present_A": [True, None], "present_B": [None, True]}
-        ).lazy()
+        df = pl.DataFrame({"subject_id": [1, 2], "present_A": [True, None], "present_B": [None, True]}).lazy()
 
         result = convert_to_matrix(df, num_events=2, num_features=2)
         dense = result.toarray()
@@ -172,9 +166,7 @@ class TestConvertToMatrix:
         """A DataFrame with all zeros produces an empty sparse matrix."""
         from MEDS_tabular_automl.generate_static_features import convert_to_matrix
 
-        df = pl.DataFrame(
-            {"subject_id": [1, 2], "A": [0.0, 0.0], "B": [0.0, 0.0]}
-        ).lazy()
+        df = pl.DataFrame({"subject_id": [1, 2], "A": [0.0, 0.0], "B": [0.0, 0.0]}).lazy()
 
         result = convert_to_matrix(df, num_events=2, num_features=2)
         assert result.nnz == 0
@@ -229,8 +221,8 @@ class TestFilterParquet:
     """Bug #10: Rare numeric values are nullified but code rows are kept."""
 
     def test_rare_value_nullified_but_row_kept(self):
-        """When a code's numeric_value is rare, the value is nulled but the row
-        remains — meaning the code still gets counted in code-based aggregations."""
+        """When a code's numeric_value is rare, the value is nulled but the row remains — meaning the code
+        still gets counted in code-based aggregations."""
         from MEDS_tabular_automl.describe_codes import filter_parquet
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -374,7 +366,9 @@ class TestRollingWindowEdgeCases:
 
     def test_single_event_per_patient_panics(self):
         """A patient with a single event causes a polars panic (discovered bug).
-        The code should guard against this edge case."""
+
+        The code should guard against this edge case.
+        """
         from MEDS_tabular_automl.generate_summarized_reps import get_rolling_window_indicies
 
         index_df = pl.DataFrame(
@@ -384,8 +378,7 @@ class TestRollingWindowEdgeCases:
             }
         ).lazy()
 
-        with pytest.raises(BaseException):
-            get_rolling_window_indicies(index_df, "7d")
+        get_rolling_window_indicies(index_df, "7d")
 
     def test_patients_have_independent_windows(self):
         """Events from different patients should not leak into each other's windows."""
@@ -394,9 +387,9 @@ class TestRollingWindowEdgeCases:
         index_df = pl.DataFrame(
             {
                 "subject_id": [1, 1, 2, 2],
-                "time": pl.Series(
-                    ["2021-01-01", "2021-01-02", "2021-01-01", "2021-01-02"]
-                ).str.strptime(pl.Datetime, "%Y-%m-%d"),
+                "time": pl.Series(["2021-01-01", "2021-01-02", "2021-01-01", "2021-01-02"]).str.strptime(
+                    pl.Datetime, "%Y-%m-%d"
+                ),
             }
         ).lazy()
 
@@ -539,7 +532,7 @@ class TestSparseAggregate:
         np.testing.assert_array_equal(np.array(result).flatten(), expected)
 
     def test_count_counts_stored_entries(self):
-        """count uses getnnz, which counts stored entries per column."""
+        """Count uses getnnz, which counts stored entries per column."""
         from MEDS_tabular_automl.generate_summarized_reps import sparse_aggregate
 
         matrix = csr_array(np.array([[1.0, 0.0], [2.0, 3.0], [0.0, 4.0]]))
@@ -549,7 +542,7 @@ class TestSparseAggregate:
         assert counts[1] == 2  # column 1: 3.0, 4.0
 
     def test_min_max_correctness(self):
-        """min and max should return column-wise extremes."""
+        """Min and max should return column-wise extremes."""
         from MEDS_tabular_automl.generate_summarized_reps import sparse_aggregate
 
         matrix = csr_array(np.array([[5.0, 1.0], [2.0, 8.0], [9.0, 3.0]]))
@@ -609,8 +602,7 @@ class TestDescribeCodes:
     """Tests for code frequency computation and feature column extraction."""
 
     def test_compute_feature_frequencies_separates_static_and_ts(self):
-        """Static events (time=null) and time-series events should produce
-        separate frequency entries."""
+        """Static events (time=null) and time-series events should produce separate frequency entries."""
         from MEDS_tabular_automl.describe_codes import compute_feature_frequencies
 
         data = pl.DataFrame(
