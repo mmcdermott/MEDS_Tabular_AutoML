@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, "release/*", "dev"]
 
 jobs:
   run_tests_ubuntu:
@@ -13,29 +12,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Setup package
+        uses: ./.github/actions/setup
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install packages
-        run: |
-          pip install .[tests]
-
-      #----------------------------------------------
-      #              run test suite
-      #----------------------------------------------
       - name: Run tests
-        run: |
-          pytest -v --doctest-modules --cov=src --ignore=docs
+        run: >
+          uv run pytest -v --cov=src --doctest-modules --ignore=docs
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4.0.1

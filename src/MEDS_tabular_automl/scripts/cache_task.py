@@ -188,18 +188,18 @@ def main(cfg: DictConfig):
 
             return shard_label_df
 
-        def read_fn(in_fp_tuple):
+        def read_fn(in_fp_tuple, _shard_label_fp=shard_label_fp):
             meds_data_fp, data_fp = in_fp_tuple
             # TODO: replace this with more intelligent locking
-            if not Path(shard_label_fp).exists():  # noqa: B023
-                logger.info(f"Extracting labels for {shard_label_fp}")  # noqa: B023
-                Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)  # noqa: B023
+            if not Path(_shard_label_fp).exists():
+                logger.info(f"Extracting labels for {_shard_label_fp}")
+                Path(_shard_label_fp).parent.mkdir(parents=True, exist_ok=True)
                 meds_data_df = read_meds_data_df(meds_data_fp)
                 extracted_events = extract_labels(meds_data_df)
-                write_lazyframe(extracted_events, shard_label_fp)  # noqa: B023
+                write_lazyframe(extracted_events, _shard_label_fp)
             else:
-                logger.info(f"Labels already exist, reading from {shard_label_fp}")  # noqa: B023
-            shard_label_df = pl.scan_parquet(shard_label_fp)  # noqa: B023
+                logger.info(f"Labels already exist, reading from {_shard_label_fp}")
+            shard_label_df = pl.scan_parquet(_shard_label_fp)
             matrix = load_matrix(data_fp)
             return shard_label_df, matrix
 

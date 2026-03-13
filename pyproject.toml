@@ -35,6 +35,8 @@ dependencies = [
   "meds-transforms~=0.5.0",
   "meds-evaluation",
 ]
+[dependency-groups]
+dev = ["pre-commit<4", "ruff", "pytest-cov[toml]"]
 
 [tool.setuptools_scm]
 
@@ -50,8 +52,6 @@ generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"
 
 
 [project.optional-dependencies]
-dev = ["pre-commit<4", "ruff"]
-tests = ["pytest", "pytest-cov[toml]"]
 profiling = ["mprofile", "matplotlib"]
 autogluon = ["autogluon; python_version=='3.11.*'"]  # Environment marker to restrict AutoGluon to Python 3.11
 docs = [
@@ -81,7 +81,7 @@ addopts = [
   "--ignore=docs",
   "--doctest-glob=*.md",
 ]
-python_classes = "!TestEnv"
+python_classes = ["Test", "!TestEnv"]
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
 
 [tool.coverage.report]

@@ -40,16 +40,16 @@ def convert_to_matrix(df: pl.DataFrame, num_events: int, num_features: int) -> c
         A sparse matrix representation of the DataFrame.
     """
     dense_matrix = df.drop("subject_id").collect().to_numpy()
-    data_list = []
-    rows = []
-    cols = []
-    for row in range(dense_matrix.shape[0]):
-        for col in range(dense_matrix.shape[1]):
-            data = dense_matrix[row, col]
-            if (data is not None) and (data != 0):
-                data_list.append(data)
-                rows.append(row)
-                cols.append(col)
+    # Handle object arrays (e.g., boolean columns with None) by casting safely
+    if dense_matrix.dtype == object:
+        # Replace None with 0, then cast to float
+        dense_matrix = np.where(dense_matrix == None, 0, dense_matrix).astype(np.float64)  # noqa: E711
+    # Use vectorized operations instead of Python-level double loop
+    non_nan = ~np.isnan(dense_matrix.astype(np.float64))
+    non_zero = dense_matrix != 0
+    mask = non_nan & non_zero
+    rows, cols = np.nonzero(mask)
+    data_list = dense_matrix[rows, cols].astype(np.float64)
     matrix = csr_array((data_list, (rows, cols)), shape=(num_events, num_features))
     return matrix
 
