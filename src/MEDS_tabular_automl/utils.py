@@ -163,7 +163,9 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
         AssertionError: If the input array's first dimension is not 3.
     """
     if not array.shape[0] == 3:
-        raise AssertionError("Array must have 3 dimensions: [data, row, col], currently has", array.shape[0])
+        raise AssertionError(
+            f"Array must have 3 dimensions: [data, row, col], currently has {array.shape[0]}"
+        )
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
 
@@ -217,11 +219,12 @@ def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int
         A tuple of a numpy array ([data, row, col]) and the shape of the original matrix.
     """
     data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
-    # Remove invalid indices
-    valid_indices = (data == 0) | np.isnan(data)
-    data = data[~valid_indices]
-    row = row[~valid_indices]
-    col = col[~valid_indices]
+    # Remove NaN entries (but preserve explicit zeros — they are valid stored values)
+    nan_mask = np.isnan(data)
+    if nan_mask.any():
+        data = data[~nan_mask]
+        row = row[~nan_mask]
+        col = col[~nan_mask]
     # reduce dtypes
     if len(data):
         data = data.astype(get_min_dtype(data), copy=False)
@@ -358,7 +361,7 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
     return events_df
 
 
-def get_feature_names(agg: str, feature_columns: list[str]) -> str:
+def get_feature_names(agg: str, feature_columns: list[str]) -> list[str]:
     """Extracts feature column names based on aggregation type from a list of column names.
 
     Args:

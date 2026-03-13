@@ -128,7 +128,6 @@ class TabularDataset(TimeableMixin):
         label_fps = {
             shard: (Path(self.cfg.path.input_label_cache_dir) / self.split / shard).with_suffix(".parquet")
             for shard in self._data_shards
-            for shard in self._data_shards
         }
         cached_labels, cached_event_ids = {}, {}
         for shard, label_fp in label_fps.items():

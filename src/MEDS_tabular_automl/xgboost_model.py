@@ -188,8 +188,8 @@ class XGBoostModel(BaseModel):
             schema={**BINARY_CLASSIFICATION_SCHEMA_DICT, "event_id": pl.Int64},
         )
         if not (predictions_df["boolean_value"] == labels["label"]).all():
-            mismatched_labels = predictions_df["boolean_value"] == labels["label"]
-            raise ValueError(f"Label mismatch: {sum(mismatched_labels)} incorrect predictions")
+            mismatched_labels = predictions_df["boolean_value"] != labels["label"]
+            raise ValueError(f"Label mismatch: {mismatched_labels.sum()} incorrect predictions")
 
         return predictions_df
 
