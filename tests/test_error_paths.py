@@ -352,9 +352,9 @@ def test_autogluon_import_error():
         patch.dict("sys.modules", {"autogluon": None, "autogluon.tabular": None}),
         pytest.raises(ImportError, match="AutoGluon could not be imported"),
     ):
-            try:
-                import autogluon.tabular as ag  # noqa: F401
-            except ImportError as e:
-                raise ImportError(
-                    "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
-                ) from e
+        try:
+            import autogluon.tabular as ag  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
+            ) from e

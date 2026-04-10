@@ -40,8 +40,19 @@ jobs:
           comment-on-alert: true
           fail-on-alert: false
 
-      - name: Compare with baseline (PRs only)
+      - name: Check if benchmark baseline exists
         if: github.event_name == 'pull_request'
+        id: check_baseline
+        run: |
+          if git ls-remote --heads origin gh-pages | grep -q gh-pages; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No gh-pages branch yet — skipping benchmark comparison"
+          fi
+
+      - name: Compare with baseline (PRs only)
+        if: github.event_name == 'pull_request' && steps.check_baseline.outputs.exists == 'true'
         uses: benchmark-action/github-action-benchmark@v1
         with:
           tool: "pytest"
