@@ -175,7 +175,7 @@ def summarize_static_measurements(
     │ i64        ┆ bool             ┆ bool             │
     ╞════════════╪══════════════════╪══════════════════╡
     │ 1          ┆ true             ┆ true             │
-    │ 2          ┆ true             ┆ null             │
+    │ 2          ┆ true             ┆ false            │
     └────────────┴──────────────────┴──────────────────┘
     """
     if agg == STATIC_VALUE_AGGREGATION:
@@ -185,7 +185,7 @@ def summarize_static_measurements(
         code_subset = df.filter(pl.col("code").is_in(static_first_codes))
         first_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
         static_value_pivot_df = first_code_subset.pivot(
-            index=["subject_id"], columns=["code"], values=["numeric_value"], aggregate_function=None
+            index=["subject_id"], on=["code"], values=["numeric_value"], aggregate_function=None
         )
         # rename code to feature name
         remap_cols = {
@@ -208,7 +208,7 @@ def summarize_static_measurements(
             .collect()
             .pivot(
                 index=["subject_id"],
-                columns=["code"],
+                on=["code"],
                 values="__indicator",
                 aggregate_function="sum",
             )

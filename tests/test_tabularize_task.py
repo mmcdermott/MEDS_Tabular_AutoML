@@ -218,7 +218,7 @@ def test_tabularize(tmp_path):
     meds_files = list(Path(cfg.input_dir).glob("**/*.parquet"))
     for med_fp in meds_files:
         label_fp = Path(cfg.input_label_dir) / med_fp.relative_to(med_fp.parents[1])
-        shard_subjects = pl.scan_parquet(med_fp).select(pl.col("subject_id").unique()).collect()
+        shard_subjects = pl.scan_parquet(med_fp).select(pl.col("subject_id").unique()).collect()["subject_id"]
         label_fp.parent.mkdir(parents=True, exist_ok=True)
         df.filter(pl.col("subject_id").is_in(shard_subjects)).write_parquet(label_fp)
         out_fp = Path(cfg.input_label_dir) / "0.parquet"

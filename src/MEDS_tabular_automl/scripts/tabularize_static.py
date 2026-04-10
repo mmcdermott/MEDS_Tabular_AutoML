@@ -27,8 +27,6 @@ from ..utils import (
     write_df,
 )
 
-pl.enable_string_cache()
-
 
 @hydra.main(
     version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
