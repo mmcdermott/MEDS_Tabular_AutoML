@@ -1,14 +1,11 @@
 """Tests for error handling paths and edge cases to achieve 100% coverage."""
 
-import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import polars as pl
 import pytest
-import scipy.sparse as sp
-from scipy.sparse import coo_array, csc_array, csr_array
+from scipy.sparse import coo_array, csr_array
 
 from MEDS_tabular_automl.generate_static_features import (
     get_sparse_static_rep,
@@ -17,7 +14,6 @@ from MEDS_tabular_automl.generate_static_features import (
 from MEDS_tabular_automl.generate_summarized_reps import sparse_aggregate
 from MEDS_tabular_automl.generate_ts_features import (
     get_long_code_df,
-    get_long_value_df,
     summarize_dynamic_measurements,
 )
 from MEDS_tabular_automl.utils import (
@@ -27,7 +23,6 @@ from MEDS_tabular_automl.utils import (
     get_unique_time_events_df,
     write_df,
 )
-
 
 # ============================================================================
 # utils.py error paths
@@ -136,8 +131,9 @@ def test_generate_summary_invalid_agg():
     m = csr_array(np.eye(3))
     df = pl.DataFrame({"subject_id": [1], "time": ["2021-01-01"]}).lazy()
     with pytest.raises(ValueError, match="Invalid aggregation"):
-        generate_summary(agg="invalid/agg", feature_columns=["A/code"], index_df=df, matrix=m,
-                         window_size="full")
+        generate_summary(
+            agg="invalid/agg", feature_columns=["A/code"], index_df=df, matrix=m, window_size="full"
+        )
 
 
 def test_generate_summary_empty_features():
@@ -155,8 +151,9 @@ def test_generate_summary_no_matching_columns():
     m = csr_array(np.eye(3))
     df = pl.DataFrame({"subject_id": [1], "time": ["2021-01-01"]}).lazy()
     with pytest.raises(ValueError, match="No columns found for aggregation"):
-        generate_summary(agg="code/count", feature_columns=["A/value"], index_df=df, matrix=m,
-                         window_size="full")
+        generate_summary(
+            agg="code/count", feature_columns=["A/value"], index_df=df, matrix=m, window_size="full"
+        )
 
 
 # ============================================================================
@@ -171,7 +168,6 @@ def test_get_long_code_df_unmapped_code():
     df = pl.DataFrame({"code": ["UNMAPPED"], "numeric_value": [1.0]}).lazy()
     with pytest.raises((ValueError, polars.exceptions.InvalidOperationError)):
         get_long_code_df(df, ["other_code/code"])
-
 
 
 # Note: The ValueError paths on lines 63 and 92 of generate_ts_features.py are
@@ -262,6 +258,7 @@ def test_sklearn_save_model_wrong_extension(tmp_path):
     class FakeModel:
         def fit(self, X, y):
             pass
+
         def predict_proba(self, X):
             pass
 
@@ -357,6 +354,5 @@ def test_autogluon_import_error():
                 import autogluon.tabular as ag  # noqa: F401
             except ImportError as e:
                 raise ImportError(
-                    "AutoGluon could not be imported. Please try installing it using:"
-                    " `pip install autogluon`"
+                    "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
                 ) from e
