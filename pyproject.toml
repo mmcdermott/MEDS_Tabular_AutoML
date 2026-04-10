@@ -23,7 +23,7 @@ dependencies = [
   "pyarrow",
   "hydra-core>=1.3.2,<2",
   "numpy",
-  "scipy<1.14.0",
+  "scipy",
   "pandas",
   "tqdm",
   "xgboost",
