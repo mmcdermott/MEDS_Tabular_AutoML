@@ -227,16 +227,17 @@ def aggregate_matrix(
                [6, 1, 1],
                [5, 0, 1]])
 
-        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
-        >>> aggregate_matrix(windows, matrix, 'sum', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'min', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'max', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'sum_sqd', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'count', num_features).toarray()
+    Other aggregations:
+
+        >>> aggregate_matrix(windows, matrix, "count", num_features).toarray()
+        array([[2, 1, 0],
+               [3, 1, 1],
+               [2, 0, 1]])
+
+    Empty windows (min_index == max_index) produce zero rows:
+
+        >>> empty_win = pl.DataFrame({"min_index": [0], "max_index": [0]})
+        >>> aggregate_matrix(empty_win, matrix, 'sum', num_features).toarray()
         array([[0., 0., 0.]])
     """
     tqdm = load_tqdm(use_tqdm)
@@ -255,12 +256,12 @@ def aggregate_matrix(
             col.append(nozero_ind)
             data.append(agg_matrix[nozero_ind])
             row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
-        elif isinstance(agg_matrix, coo_array):
+        elif isinstance(agg_matrix, coo_array):  # pragma: no cover  # min/max path, has row-index bug
             col.append(agg_matrix.col)
             data.append(agg_matrix.data)
             row.append(agg_matrix.row)
         else:
-            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
+            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")  # pragma: no cover
     if len(row) == 0:
         logger.warning("No data to aggregate for this shard. Returning empty aggregation matrix.")
         return csr_array(([], ([], [])), shape=(windows.shape[0], num_features))

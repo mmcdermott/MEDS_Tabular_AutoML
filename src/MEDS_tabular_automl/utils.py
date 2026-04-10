@@ -70,6 +70,12 @@ def filter_to_codes(
         ...
         ValueError: Code filtering criteria ...
         ...
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["A"], "count": [1]}).write_parquet(f.name)
+        ...     filter_to_codes(f.name, None, None, -0.5, None)
+        Traceback (most recent call last):
+        ...
+        ValueError: min_code_inclusion_frequency must be between 0 and 1.
     """
     feature_freqs = pl.read_parquet(code_metadata_fp)
 
@@ -108,6 +114,14 @@ def load_tqdm(use_tqdm: bool):
 
     Returns:
         A function that either encapsulates tqdm or simply returns the input it is given.
+
+    Examples:
+        >>> from tqdm import tqdm
+        >>> load_tqdm(True) is tqdm
+        True
+        >>> noop = load_tqdm(False)
+        >>> noop([1, 2, 3])
+        [1, 2, 3]
     """
     if use_tqdm:
         from tqdm import tqdm
@@ -317,6 +331,14 @@ def write_df(
         Traceback (most recent call last):
             ...
         FileExistsError: /tmp/tmp.../test.parquet exists and do_overwrite is False!
+
+    Unsupported types raise TypeError:
+
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     write_df("not a dataframe", Path(tmpdir) / "x.parquet")
+        Traceback (most recent call last):
+            ...
+        TypeError: Unsupported type for df: <class 'str'>
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
@@ -379,6 +401,17 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
         Traceback (most recent call last):
             ...
         ValueError: Time column must not have null values for time series data.
+
+    Raises ValueError for unsorted data:
+
+        >>> unsorted = pl.DataFrame({
+        ...     "subject_id": [2, 1],
+        ...     "time": pl.Series(["2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
+        ... }).lazy()
+        >>> get_unique_time_events_df(unsorted)
+        Traceback (most recent call last):
+            ...
+        ValueError: Data frame must be sorted by subject_id and time
     """
     if not events_df.select(pl.col("time")).null_count().collect().item() == 0:
         raise ValueError("Time column must not have null values for time series data.")
