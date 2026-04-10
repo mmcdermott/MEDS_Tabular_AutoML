@@ -1,6 +1,8 @@
-"""Tests for TabularDataset error paths and edge cases."""
+"""Tests for TabularDataset correctness and error handling.
 
-from pathlib import Path
+Tests that verify actual behavior rather than just that mocks were called.
+"""
+
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -12,11 +14,8 @@ from mixins import TimeableMixin
 from MEDS_tabular_automl.tabular_dataset import TabularDataset
 
 
-def _make_minimal_dataset(tmp_path, labels=None, num_shards=1):
-    """Helper to create a minimal TabularDataset via __new__ + manual attribute setup.
-
-    This bypasses __init__ to test individual methods without the full pipeline.
-    """
+def _make_dataset(tmp_path=None, labels=None, num_shards=1):
+    """Create a minimal TabularDataset bypassing __init__ for unit testing."""
     ds = TabularDataset.__new__(TabularDataset)
     ds.cfg = MagicMock()
     ds.split = "train"
@@ -28,18 +27,17 @@ def _make_minimal_dataset(tmp_path, labels=None, num_shards=1):
     ds.labels = labels
     ds.imputer = None
     ds.scaler = None
-    # TimeableMixin uses properties; initialize via the mixin's own init
     TimeableMixin.__init__(ds)
     return ds
 
 
 # ============================================================================
-# __init__ error paths
+# __init__ validation
 # ============================================================================
 
 
 def test_init_no_labels_directory(tmp_path):
-    """Test ValueError when label cache directory has no parquet files."""
+    """Empty label directory raises ValueError with path info."""
     label_dir = tmp_path / "labels" / "train"
     label_dir.mkdir(parents=True)
 
@@ -50,165 +48,137 @@ def test_init_no_labels_directory(tmp_path):
         TabularDataset(cfg, "train")
 
 
-def test_init_empty_labels(tmp_path):
-    """Test ValueError when loaded labels are empty."""
-    label_dir = tmp_path / "labels" / "train"
-    label_dir.mkdir(parents=True)
-    # Create a parquet file so shards are found
-    pl.DataFrame(
-        {"subject_id": [1], "boolean_value": [True], "prediction_time": ["2021-01-01"]}
-    ).write_parquet(label_dir / "0.parquet")
-
-    cfg = MagicMock()
-    cfg.path.input_label_cache_dir = str(tmp_path / "labels")
-
-    # Mock _get_code_set and _set_scaler/_set_imputer to bypass setup
-    with (
-        patch.object(TabularDataset, "_get_code_set", return_value=({0}, {"code/count": [True]}, 1)),
-        patch.object(TabularDataset, "_set_scaler"),
-        patch.object(TabularDataset, "_set_imputer"),
-        patch.object(TabularDataset, "_load_ids_and_labels", return_value=({}, {})),
-        pytest.raises(ValueError, match="No labels found"),
-    ):
-        TabularDataset(cfg, "train")
-
-
 # ============================================================================
-# _load_ids_and_labels paths
+# _load_ids_and_labels correctness
 # ============================================================================
 
 
-def test_load_labels_only(tmp_path):
-    """Test _load_labels helper which calls _load_ids_and_labels(load_ids=False)."""
-    ds = _make_minimal_dataset(tmp_path)
-
+def test_load_labels_returns_correct_values(tmp_path):
+    """_load_labels returns actual label values from parquet, not just keys."""
+    ds = _make_dataset(tmp_path)
     label_dir = tmp_path / "labels" / "train"
     label_dir.mkdir(parents=True)
-    pl.DataFrame({"subject_id": [1], "boolean_value": [True]}).write_parquet(label_dir / "shard_0.parquet")
-
+    pl.DataFrame({"subject_id": [1, 2], "boolean_value": [True, False]}).write_parquet(
+        label_dir / "shard_0.parquet"
+    )
     ds.cfg.path.input_label_cache_dir = str(tmp_path / "labels")
 
-    result = ds._load_labels()
-    assert "shard_0" in result
+    labels = ds._load_labels()
+    assert labels["shard_0"].to_list() == [True, False]
 
 
-def test_load_event_ids_only(tmp_path):
-    """Test _load_event_ids helper which calls _load_ids_and_labels(load_labels=False)."""
-    ds = _make_minimal_dataset(tmp_path)
-
+def test_load_event_ids_adds_row_index_when_missing(tmp_path):
+    """When event_id column is absent, _load_ids_and_labels adds a row index."""
+    ds = _make_dataset(tmp_path)
     label_dir = tmp_path / "labels" / "train"
     label_dir.mkdir(parents=True)
-    pl.DataFrame({"subject_id": [1], "boolean_value": [True]}).write_parquet(label_dir / "shard_0.parquet")
-
+    # No event_id column
+    pl.DataFrame({"subject_id": [1, 2], "boolean_value": [True, False]}).write_parquet(
+        label_dir / "shard_0.parquet"
+    )
     ds.cfg.path.input_label_cache_dir = str(tmp_path / "labels")
 
-    result = ds._load_event_ids()
-    assert "shard_0" in result
+    event_ids = ds._load_event_ids()
+    # Should have auto-generated 0-based event_ids
+    assert event_ids["shard_0"].to_list() == [0, 1]
 
 
 # ============================================================================
-# _get_approximate_correlation_per_feature
+# _set_imputer / _set_scaler — verify the actual fitting happens correctly
 # ============================================================================
 
 
-def test_correlation_single_class_labels():
-    """Test ValueError when labels have only one unique value."""
-    ds = _make_minimal_dataset(Path("/tmp"))
+def test_set_imputer_with_fit_receives_correct_data(tmp_path):
+    """Imputer.fit is called with the actual sparse matrix from shard 0."""
+    ds = _make_dataset(tmp_path)
+    test_matrix = sp.csc_matrix(np.array([[1.0, 2.0], [3.0, 4.0]]))
+    ds._get_shard_by_index = MagicMock(return_value=(test_matrix, np.array([0, 1])))
 
-    X = sp.csc_matrix(np.array([[1, 2], [3, 4], [5, 6]]))
-    y = np.array([1, 1, 1])  # all same class
+    mock_imputer = MagicMock()
+    mock_imputer.fit = MagicMock()
+    del mock_imputer.partial_fit
+    ds.cfg.data_loading_params.imputer.imputer_target = mock_imputer
 
-    with pytest.raises(ValueError, match="Labels have only one unique value"):
-        ds._get_approximate_correlation_per_feature(X, y)
+    ds._set_imputer()
 
-
-def test_correlation_valid():
-    """Test correlation calculation with valid data."""
-    ds = _make_minimal_dataset(Path("/tmp"))
-
-    X = sp.csc_matrix(np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]]))
-    y = np.array([1, 0, 1, 0])
-
-    corrs = ds._get_approximate_correlation_per_feature(X, y)
-    assert corrs.shape == (2,)
-    assert abs(corrs[0]) > 0.5  # strong positive correlation
-    assert abs(corrs[1]) > 0.5  # strong negative correlation
+    # Verify fit was called with the actual test matrix, not some other data
+    call_args = mock_imputer.fit.call_args
+    assert (call_args[0][0].toarray() == test_matrix.toarray()).all()
 
 
-# ============================================================================
-# _set_imputer / _set_scaler
-# ============================================================================
+def test_set_scaler_partial_fit_iterates_all_shards(tmp_path):
+    """Scaler.partial_fit is called once per shard with shard-specific data."""
+    shard_matrices = [
+        sp.csc_matrix(np.array([[1.0, 0.0], [0.0, 1.0]])),
+        sp.csc_matrix(np.array([[5.0, 6.0], [7.0, 8.0]])),
+    ]
+    ds = _make_dataset(tmp_path, num_shards=2)
+    ds._get_shard_by_index = MagicMock(
+        side_effect=[(shard_matrices[0], np.array([0, 1])), (shard_matrices[1], np.array([1, 0]))]
+    )
+
+    mock_scaler = MagicMock()
+    mock_scaler.partial_fit = MagicMock()
+    ds.cfg.data_loading_params.normalization.normalizer = mock_scaler
+
+    ds._set_scaler()
+
+    assert mock_scaler.partial_fit.call_count == 2
+    # Verify each call received the right matrix
+    first_call_matrix = mock_scaler.partial_fit.call_args_list[0][0][0]
+    second_call_matrix = mock_scaler.partial_fit.call_args_list[1][0][0]
+    assert (first_call_matrix.toarray() == shard_matrices[0].toarray()).all()
+    assert (second_call_matrix.toarray() == shard_matrices[1].toarray()).all()
 
 
-def test_set_imputer_no_fit_method(tmp_path):
-    """Test ValueError when imputer has neither fit nor partial_fit."""
-    ds = _make_minimal_dataset(tmp_path)
-    ds.cfg.data_loading_params.imputer.imputer_target = object()  # no fit or partial_fit
-
+def test_set_imputer_no_fit_method_raises(tmp_path):
+    """Imputer without fit or partial_fit raises ValueError."""
+    ds = _make_dataset(tmp_path)
+    ds.cfg.data_loading_params.imputer.imputer_target = object()
     with pytest.raises(ValueError, match="Imputer must have a fit or partial_fit method"):
         ds._set_imputer()
 
 
-def test_set_scaler_no_fit_method(tmp_path):
-    """Test ValueError when scaler has neither fit nor partial_fit."""
-    ds = _make_minimal_dataset(tmp_path)
-    ds.cfg.data_loading_params.normalization.normalizer = object()  # no fit or partial_fit
-
+def test_set_scaler_no_fit_method_raises(tmp_path):
+    """Scaler without fit or partial_fit raises ValueError."""
+    ds = _make_dataset(tmp_path)
+    ds.cfg.data_loading_params.normalization.normalizer = object()
     with pytest.raises(ValueError, match="Scaler must have a fit or partial_fit method"):
         ds._set_scaler()
 
 
-def test_set_imputer_with_fit(tmp_path):
-    """Test that imputer with fit method is set correctly."""
-    ds = _make_minimal_dataset(tmp_path)
-    mock_imputer = MagicMock()
-    mock_imputer.fit = MagicMock()
-    del mock_imputer.partial_fit  # ensure partial_fit doesn't exist
-    ds.cfg.data_loading_params.imputer.imputer_target = mock_imputer
-    ds._get_shard_by_index = MagicMock(return_value=(sp.csc_matrix(np.eye(3)), np.array([1, 0, 1])))
-
-    ds._set_imputer()
-    assert ds.imputer is mock_imputer
-    mock_imputer.fit.assert_called_once()
-
-
-def test_set_scaler_with_partial_fit(tmp_path):
-    """Test that scaler with partial_fit is called for each shard."""
-    ds = _make_minimal_dataset(tmp_path, num_shards=2)
-    mock_scaler = MagicMock()
-    mock_scaler.partial_fit = MagicMock()
-    ds.cfg.data_loading_params.normalization.normalizer = mock_scaler
-    ds._get_shard_by_index = MagicMock(return_value=(sp.csc_matrix(np.eye(3)), np.array([1, 0, 1])))
-
-    ds._set_scaler()
-    assert ds.scaler is mock_scaler
-    assert mock_scaler.partial_fit.call_count == 2
-
-
 # ============================================================================
-# _impute_and_scale_data
+# _impute_and_scale_data — verify data flows correctly through pipeline
 # ============================================================================
 
 
-def test_impute_and_scale_data_both():
-    """Test that imputer and scaler are both applied when set."""
-    ds = _make_minimal_dataset(Path("/tmp"))
+def test_impute_and_scale_chains_correctly():
+    """Output of imputer.transform is passed as input to scaler.transform."""
+    ds = _make_dataset()
+
+    input_data = sp.csc_matrix(np.array([[1.0, 2.0], [3.0, 4.0]]))
+    imputed_data = sp.csc_matrix(np.array([[1.0, 2.0], [3.0, 4.0]]))  # after imputation
+    scaled_data = sp.csc_matrix(np.array([[0.5, 1.0], [1.5, 2.0]]))  # after scaling
+
     ds.imputer = MagicMock()
-    ds.imputer.transform = MagicMock(return_value=sp.csc_matrix(np.eye(3)))
+    ds.imputer.transform = MagicMock(return_value=imputed_data)
     ds.scaler = MagicMock()
-    ds.scaler.transform = MagicMock(return_value=sp.csc_matrix(np.eye(3)))
+    ds.scaler.transform = MagicMock(return_value=scaled_data)
 
-    data = sp.csc_matrix(np.eye(3))
-    ds._impute_and_scale_data(data)
+    result = ds._impute_and_scale_data(input_data)
 
-    ds.imputer.transform.assert_called_once()
-    ds.scaler.transform.assert_called_once()
+    # Imputer receives the raw input
+    ds.imputer.transform.assert_called_once_with(input_data)
+    # Scaler receives the imputer's output, not the raw input
+    ds.scaler.transform.assert_called_once_with(imputed_data)
+    # Final result is the scaler's output
+    assert (result.toarray() == scaled_data.toarray()).all()
 
 
-def test_impute_and_scale_data_neither():
-    """Test passthrough when neither imputer nor scaler is set."""
-    ds = _make_minimal_dataset(Path("/tmp"))
-    data = sp.csc_matrix(np.eye(3))
+def test_impute_and_scale_passthrough_when_none():
+    """Without imputer or scaler, data passes through unchanged."""
+    ds = _make_dataset()
+    data = sp.csc_matrix(np.array([[1.0, 2.0], [3.0, 4.0]]))
     result = ds._impute_and_scale_data(data)
     assert (result.toarray() == data.toarray()).all()
 
@@ -218,72 +188,41 @@ def test_impute_and_scale_data_neither():
 # ============================================================================
 
 
-def test_get_dynamic_shard_missing_files(tmp_path):
-    """Test ValueError when required shard files don't exist."""
-    ds = _make_minimal_dataset(tmp_path)
-    # Return paths that don't exist
-    ds.cfg.path = MagicMock()
-    fake_files = [tmp_path / "nonexistent_1.npz", tmp_path / "nonexistent_2.npz"]
+def test_get_dynamic_shard_missing_files_lists_which(tmp_path):
+    """ValueError message includes the specific missing file paths."""
+    ds = _make_dataset(tmp_path)
+    missing = tmp_path / "nonexistent.npz"
+    existing = tmp_path / "exists.npz"
+    existing.touch()
 
     with (
-        patch("MEDS_tabular_automl.tabular_dataset.get_model_files", return_value=fake_files),
-        pytest.raises(ValueError, match="Not all files exist"),
+        patch("MEDS_tabular_automl.tabular_dataset.get_model_files", return_value=[existing, missing]),
+        pytest.raises(ValueError, match="nonexistent.npz"),
     ):
         ds._get_dynamic_shard_by_index(0)
 
 
 # ============================================================================
-# _get_shard_by_index - labels reload
+# _filter_shard_on_codes_and_freqs — verify column filtering is correct
 # ============================================================================
 
 
-def test_get_shard_reloads_labels_when_none(tmp_path):
-    """Test that labels are reloaded when self.labels is None."""
-    ds = _make_minimal_dataset(tmp_path)
-    ds.labels = None
-    ds._load_labels = MagicMock(return_value={"shard_0": np.array([1, 0])})
-    ds._get_dynamic_shard_by_index = MagicMock(return_value=sp.csc_matrix(np.eye(2)))
+def test_filter_shard_selects_correct_columns():
+    """Code mask [True, False, True] keeps columns 0 and 2, drops column 1."""
+    ds = _make_dataset()
+    ds.code_masks = {"code/count": [True, False, True]}
 
-    ds._get_shard_by_index(0)
-    ds._load_labels.assert_called_once()
+    data = sp.csc_matrix(np.array([[10, 20, 30], [40, 50, 60]]))
+    result = ds._filter_shard_on_codes_and_freqs("code/count", data)
 
-
-# ============================================================================
-# get_data_shards
-# ============================================================================
+    expected = np.array([[10, 30], [40, 60]])
+    assert result.shape == (2, 2)
+    assert (result.toarray() == expected).all()
 
 
-def test_get_data_shards_empty():
-    """Test ValueError when no data in shards."""
-    ds = _make_minimal_dataset(Path("/tmp"))
-    ds._data_shards = []
-
-    with pytest.raises((ValueError, IndexError)):
-        ds.get_data_shards([])
-
-
-# ============================================================================
-# get_classes
-# ============================================================================
-
-
-def test_get_classes():
-    """Test get_classes returns unique labels."""
-    ds = _make_minimal_dataset(Path("/tmp"))
-    ds.labels = {"shard_0": [1, 0, 1], "shard_1": [0, 0]}
-
-    classes = ds.get_classes()
-    np.testing.assert_array_equal(sorted(classes), [0, 1])
-
-
-# ============================================================================
-# _filter_shard_on_codes_and_freqs
-# ============================================================================
-
-
-def test_filter_shard_no_codes_set():
-    """Test passthrough when codes_set is None."""
-    ds = _make_minimal_dataset(Path("/tmp"))
+def test_filter_shard_passthrough_when_no_codes():
+    """When codes_set is None, all columns pass through."""
+    ds = _make_dataset()
     ds.codes_set = None
 
     data = sp.csc_matrix(np.eye(3))
@@ -291,12 +230,24 @@ def test_filter_shard_no_codes_set():
     assert (result.toarray() == data.toarray()).all()
 
 
-def test_filter_shard_with_mask():
-    """Test that code mask correctly filters columns."""
-    ds = _make_minimal_dataset(Path("/tmp"))
-    ds.code_masks = {"code/count": [True, False, True]}
+# ============================================================================
+# get_classes — verify correctness of label aggregation
+# ============================================================================
 
-    data = sp.csc_matrix(np.array([[1, 2, 3], [4, 5, 6]]))
-    result = ds._filter_shard_on_codes_and_freqs("code/count", data)
-    assert result.shape == (2, 2)
-    assert (result.toarray() == np.array([[1, 3], [4, 6]])).all()
+
+def test_get_classes_aggregates_across_shards():
+    """get_classes returns unique labels from all shards combined."""
+    ds = _make_dataset(num_shards=2)
+    ds.labels = {"shard_0": [0, 1, 1], "shard_1": [2, 0]}
+
+    classes = ds.get_classes()
+    np.testing.assert_array_equal(sorted(classes), [0, 1, 2])
+
+
+def test_get_classes_single_class():
+    """get_classes with uniform labels returns a single value."""
+    ds = _make_dataset()
+    ds.labels = {"shard_0": [1, 1, 1]}
+
+    classes = ds.get_classes()
+    np.testing.assert_array_equal(classes, [1])

@@ -161,6 +161,17 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
 
     Raises:
         AssertionError: If the input array's first dimension is not 3.
+
+    Examples:
+        >>> import numpy as np
+        >>> arr = np.array([[10.0, 20.0], [0, 1], [0, 1]])  # data, rows, cols
+        >>> result = array_to_sparse_matrix(arr, shape=(2, 2))
+        >>> result.toarray().tolist()
+        [[10.0, 0.0], [0.0, 20.0]]
+        >>> array_to_sparse_matrix(np.zeros((2, 5)), shape=(5, 5))
+        Traceback (most recent call last):
+            ...
+        AssertionError: Array must have 3 dimensions: [data, row, col], currently has 2
     """
     if not array.shape[0] == 3:
         raise AssertionError(
@@ -348,6 +359,26 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
 
     Returns:
         A LazyFrame with unique times, sorted by subject_id and time.
+
+    Examples:
+        >>> df = pl.DataFrame({
+        ...     "subject_id": [1, 1, 1, 2],
+        ...     "time": pl.Series(["2021-01-01", "2021-01-01", "2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
+        ...     "code": ["A", "A", "B", "C"],
+        ... }).lazy()
+        >>> result = get_unique_time_events_df(df).collect()
+        >>> result.shape
+        (3, 2)
+        >>> result.columns
+        ['subject_id', 'time']
+
+    Raises ValueError for null times:
+
+        >>> bad = pl.DataFrame({"subject_id": [1], "time": [None], "code": ["A"]}).lazy()
+        >>> get_unique_time_events_df(bad)
+        Traceback (most recent call last):
+            ...
+        ValueError: Time column must not have null values for time series data.
     """
     if not events_df.select(pl.col("time")).null_count().collect().item() == 0:
         raise ValueError("Time column must not have null values for time series data.")
@@ -372,6 +403,21 @@ def get_feature_names(agg: str, feature_columns: list[str]) -> str:
 
     Raises:
         ValueError: If the aggregation type is unknown or unsupported.
+
+    Examples:
+        >>> cols = ["A/static/present", "B/static/first", "C/code", "D/value"]
+        >>> get_feature_names("static/present", cols)
+        ['A/static/present']
+        >>> get_feature_names("static/first", cols)
+        ['B/static/first']
+        >>> get_feature_names("code/count", cols)
+        ['C/code']
+        >>> get_feature_names("value/sum", cols)
+        ['D/value']
+        >>> get_feature_names("invalid/agg", cols)
+        Traceback (most recent call last):
+            ...
+        ValueError: Unknown aggregation type invalid/agg
     """
     if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]:
         return [c for c in feature_columns if c.endswith(agg)]
