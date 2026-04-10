@@ -163,7 +163,9 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
         AssertionError: If the input array's first dimension is not 3.
     """
     if not array.shape[0] == 3:
-        raise AssertionError("Array must have 3 dimensions: [data, row, col], currently has", array.shape[0])
+        raise AssertionError(
+            f"Array must have 3 dimensions: [data, row, col], currently has {array.shape[0]}"
+        )
     data, row, col = array
     return coo_array((data, (row, col)), shape=shape)
 

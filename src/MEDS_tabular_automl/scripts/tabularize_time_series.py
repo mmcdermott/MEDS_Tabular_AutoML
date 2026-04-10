@@ -24,9 +24,6 @@ from ..utils import (
     write_df,
 )
 
-pl.enable_string_cache()
-
-
 logger = logging.getLogger(__name__)
 
 

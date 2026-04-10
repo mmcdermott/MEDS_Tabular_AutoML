@@ -161,7 +161,7 @@ def main(cfg: DictConfig):
         ).with_suffix(".npz")
 
         def read_meds_data_df(meds_data_fp):
-            if "numeric_value" not in pl.scan_parquet(meds_data_fp).columns:
+            if "numeric_value" not in pl.scan_parquet(meds_data_fp).collect_schema().names():
                 raise ValueError(
                     f"'numeric_value' column not found in raw data {meds_data_fp}. "
                     "You are maybe loading labels instead of meds data"
