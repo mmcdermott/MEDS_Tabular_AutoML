@@ -93,11 +93,6 @@ exclude_also = [
   "logger\\.debug", "except ImportError:", "if TYPE_CHECKING:",
   "if __name__ == .__main__.:",
 ]
-omit = [
-  "src/MEDS_tabular_automl/scripts/launch_autogluon.py",  # requires optional autogluon dependency
-  "src/MEDS_tabular_automl/scripts/tabularize_static.py",  # Hydra entry point, tested via subprocess
-  "src/MEDS_tabular_automl/scripts/tabularize_time_series.py",  # Hydra entry point, tested via subprocess
-]
 
 [tool.ruff]
 target-version = "py312"

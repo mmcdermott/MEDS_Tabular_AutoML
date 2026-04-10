@@ -227,12 +227,20 @@ def aggregate_matrix(
                [6, 1, 1],
                [5, 0, 1]])
 
-    Other aggregations:
+    Other aggregations (count returns ndarray, min/max return coo_array):
 
         >>> aggregate_matrix(windows, matrix, "count", num_features).toarray()
         array([[2, 1, 0],
                [3, 1, 1],
                [2, 0, 1]])
+        >>> aggregate_matrix(windows, matrix, "max", num_features).toarray()
+        array([[2, 1, 0],
+               [3, 1, 1],
+               [3, 0, 1]])
+        >>> aggregate_matrix(windows, matrix, "min", num_features).toarray()
+        array([[1, 0, 0],
+               [1, 0, 0],
+               [2, 0, 0]])
 
     Empty windows (min_index == max_index) produce zero rows:
 
@@ -256,12 +264,12 @@ def aggregate_matrix(
             col.append(nozero_ind)
             data.append(agg_matrix[nozero_ind])
             row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
-        elif isinstance(agg_matrix, coo_array):  # pragma: no cover  # min/max path, has row-index bug
+        elif isinstance(agg_matrix, coo_array):
             col.append(agg_matrix.col)
             data.append(agg_matrix.data)
-            row.append(agg_matrix.row)
+            row.append(np.full(len(agg_matrix.data), i, dtype=np.int32))
         else:
-            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")  # pragma: no cover
+            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
     if len(row) == 0:
         logger.warning("No data to aggregate for this shard. Returning empty aggregation matrix.")
         return csr_array(([], ([], [])), shape=(windows.shape[0], num_features))
