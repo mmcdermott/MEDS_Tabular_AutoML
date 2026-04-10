@@ -3,7 +3,7 @@ import logging
 import numpy as np
 import pandas as pd
 import polars as pl
-from scipy.sparse import coo_array, csr_array, sparray
+from scipy.sparse import coo_array, csc_array, csr_array, sparray
 
 from MEDS_tabular_automl.generate_ts_features import get_feature_names
 from MEDS_tabular_automl.utils import (
@@ -38,7 +38,7 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array
     elif agg == "sum_sqd":
         merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "count":
-        merged_matrix = (sparse_matrix != 0).sum(axis=0)
+        merged_matrix = np.diff(csc_array(sparse_matrix).indptr)
     else:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
     return merged_matrix
