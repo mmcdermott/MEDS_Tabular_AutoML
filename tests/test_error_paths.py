@@ -265,7 +265,7 @@ def test_sklearn_save_model_wrong_extension(tmp_path):
     sklearn_model = SklearnModel.__new__(SklearnModel)
     sklearn_model.model = FakeModel()
 
-    with pytest.raises(ValueError, match="Model file extension must be .pkl"):
+    with pytest.raises(ValueError, match=r"Model file extension must be \.pkl"):
         sklearn_model.save_model(tmp_path / "model.json")
 
 
@@ -348,8 +348,10 @@ def test_evaluation_callback_missing_logs(tmp_path):
 
 
 def test_autogluon_import_error():
-    with patch.dict("sys.modules", {"autogluon": None, "autogluon.tabular": None}):
-        with pytest.raises(ImportError, match="AutoGluon could not be imported"):
+    with (
+        patch.dict("sys.modules", {"autogluon": None, "autogluon.tabular": None}),
+        pytest.raises(ImportError, match="AutoGluon could not be imported"),
+    ):
             try:
                 import autogluon.tabular as ag  # noqa: F401
             except ImportError as e:

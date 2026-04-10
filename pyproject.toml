@@ -69,7 +69,7 @@ docs = [
 ]
 
 [dependency-groups]
-dev = ["pre-commit<4", "ruff", "pytest", "pytest-cov[toml]"]
+dev = ["pre-commit<4", "ruff", "pytest", "pytest-cov[toml]", "pytest-benchmark"]
 
 
 [project.urls]
@@ -81,7 +81,9 @@ addopts = [
   "--color=yes",
   "--doctest-modules",
   "--ignore=docs",
+  "--ignore=benchmark",
   "--doctest-glob=*.md",
+  "--benchmark-disable",
 ]
 python_classes = "!TestEnv"
 doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]

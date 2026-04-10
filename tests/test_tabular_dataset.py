@@ -1,13 +1,12 @@
 """Tests for TabularDataset error paths and edge cases."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import polars as pl
 import pytest
 import scipy.sparse as sp
-
 from mixins import TimeableMixin
 
 from MEDS_tabular_automl.tabular_dataset import TabularDataset
@@ -56,9 +55,9 @@ def test_init_empty_labels(tmp_path):
     label_dir = tmp_path / "labels" / "train"
     label_dir.mkdir(parents=True)
     # Create a parquet file so shards are found
-    pl.DataFrame({"subject_id": [1], "boolean_value": [True], "prediction_time": ["2021-01-01"]}).write_parquet(
-        label_dir / "0.parquet"
-    )
+    pl.DataFrame(
+        {"subject_id": [1], "boolean_value": [True], "prediction_time": ["2021-01-01"]}
+    ).write_parquet(label_dir / "0.parquet")
 
     cfg = MagicMock()
     cfg.path.input_label_cache_dir = str(tmp_path / "labels")
@@ -69,9 +68,9 @@ def test_init_empty_labels(tmp_path):
         patch.object(TabularDataset, "_set_scaler"),
         patch.object(TabularDataset, "_set_imputer"),
         patch.object(TabularDataset, "_load_ids_and_labels", return_value=({}, {})),
+        pytest.raises(ValueError, match="No labels found"),
     ):
-        with pytest.raises(ValueError, match="No labels found"):
-            TabularDataset(cfg, "train")
+        TabularDataset(cfg, "train")
 
 
 # ============================================================================
@@ -200,7 +199,7 @@ def test_impute_and_scale_data_both():
     ds.scaler.transform = MagicMock(return_value=sp.csc_matrix(np.eye(3)))
 
     data = sp.csc_matrix(np.eye(3))
-    result = ds._impute_and_scale_data(data)
+    ds._impute_and_scale_data(data)
 
     ds.imputer.transform.assert_called_once()
     ds.scaler.transform.assert_called_once()
@@ -226,9 +225,11 @@ def test_get_dynamic_shard_missing_files(tmp_path):
     ds.cfg.path = MagicMock()
     fake_files = [tmp_path / "nonexistent_1.npz", tmp_path / "nonexistent_2.npz"]
 
-    with patch("MEDS_tabular_automl.tabular_dataset.get_model_files", return_value=fake_files):
-        with pytest.raises(ValueError, match="Not all files exist"):
-            ds._get_dynamic_shard_by_index(0)
+    with (
+        patch("MEDS_tabular_automl.tabular_dataset.get_model_files", return_value=fake_files),
+        pytest.raises(ValueError, match="Not all files exist"),
+    ):
+        ds._get_dynamic_shard_by_index(0)
 
 
 # ============================================================================
@@ -243,7 +244,7 @@ def test_get_shard_reloads_labels_when_none(tmp_path):
     ds._load_labels = MagicMock(return_value={"shard_0": np.array([1, 0])})
     ds._get_dynamic_shard_by_index = MagicMock(return_value=sp.csc_matrix(np.eye(2)))
 
-    X, y = ds._get_shard_by_index(0)
+    ds._get_shard_by_index(0)
     ds._load_labels.assert_called_once()
 
 
