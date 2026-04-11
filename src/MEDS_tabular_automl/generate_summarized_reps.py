@@ -28,6 +28,38 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array
 
     Raises:
         ValueError: If the aggregation method is not implemented.
+
+    Examples:
+        >>> from scipy.sparse import csr_array
+        >>> m = csr_array([[1.0, 0, 3], [4, 0, 6], [0, 8, 0]])
+        >>> np.asarray(sparse_aggregate(m, "sum")).flatten().tolist()
+        [5.0, 8.0, 9.0]
+        >>> sparse_aggregate(m, "max").toarray().flatten().tolist()
+        [4.0, 8.0, 6.0]
+        >>> sparse_aggregate(m, "min").toarray().flatten().tolist()
+        [0.0, 0.0, 0.0]
+        >>> np.asarray(sparse_aggregate(m, "sum_sqd")).flatten().tolist()
+        [17.0, 64.0, 45.0]
+        >>> sparse_aggregate(m, "count").tolist()
+        [2, 1, 2]
+
+    Count includes explicit zeros stored in the sparse structure:
+
+        >>> import numpy as np
+        >>> from scipy.sparse import csr_array as csr
+        >>> m_with_zero = csr(np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 3.0]]))
+        >>> m_with_zero.data  # zeros eliminated on construction from dense
+        array([1., 3.])
+        >>> m_explicit = csr(([1.0, 0.0, 3.0], ([0, 0, 1], [0, 1, 2])), shape=(2, 3))
+        >>> m_explicit.data  # explicit zero at (0,1) is stored
+        array([1., 0., 3.])
+        >>> sparse_aggregate(m_explicit, "count").tolist()
+        [1, 1, 1]
+
+        >>> sparse_aggregate(m, "invalid")
+        Traceback (most recent call last):
+            ...
+        ValueError: Aggregation method 'invalid' not implemented.
     """
     if agg == "sum":
         merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
@@ -195,16 +227,25 @@ def aggregate_matrix(
                [6, 1, 1],
                [5, 0, 1]])
 
-        >>> windows = pl.DataFrame({"min_index": [0], "max_index": [0]})
-        >>> aggregate_matrix(windows, matrix, 'sum', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'min', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'max', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'sum_sqd', num_features).toarray()
-        array([[0., 0., 0.]])
-        >>> aggregate_matrix(windows, matrix, 'count', num_features).toarray()
+    Other aggregations (count returns ndarray, min/max return coo_array):
+
+        >>> aggregate_matrix(windows, matrix, "count", num_features).toarray()
+        array([[2, 1, 0],
+               [3, 1, 1],
+               [2, 0, 1]])
+        >>> aggregate_matrix(windows, matrix, "max", num_features).toarray()
+        array([[2, 1, 0],
+               [3, 1, 1],
+               [3, 0, 1]])
+        >>> aggregate_matrix(windows, matrix, "min", num_features).toarray()
+        array([[1, 0, 0],
+               [1, 0, 0],
+               [2, 0, 0]])
+
+    Empty windows (min_index == max_index) produce zero rows:
+
+        >>> empty_win = pl.DataFrame({"min_index": [0], "max_index": [0]})
+        >>> aggregate_matrix(empty_win, matrix, 'sum', num_features).toarray()
         array([[0., 0., 0.]])
     """
     tqdm = load_tqdm(use_tqdm)
@@ -226,7 +267,7 @@ def aggregate_matrix(
         elif isinstance(agg_matrix, coo_array):
             col.append(agg_matrix.col)
             data.append(agg_matrix.data)
-            row.append(agg_matrix.row)
+            row.append(np.full(len(agg_matrix.data), i, dtype=np.int32))
         else:
             raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
     if len(row) == 0:

@@ -59,8 +59,6 @@ def get_long_code_df(
         .to_series()
         .to_numpy()
     )
-    if not np.issubdtype(cols.dtype, np.number):
-        raise ValueError(f"numeric_value must be a numerical type. Instead it has type: {cols.dtype}")
     data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
     return data, (rows, cols)
 
@@ -88,8 +86,6 @@ def get_long_value_df(
         .to_series()
         .to_numpy()
     )
-    if not np.issubdtype(cols.dtype, np.number):
-        raise ValueError(f"numeric_value must be a numerical type. Instead it has type: {cols.dtype}")
 
     data = value_df.select(pl.col("numeric_value")).collect().to_series().to_numpy()
     return data, (rows, cols)
