@@ -290,13 +290,14 @@ def test_end_to_end_pipeline(benchmark, tmp_path):
     with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
         tab_cfg = compose(config_name="tabularization", overrides=[f"{k}={v}" for k, v in tab_config.items()])
 
-    def run_pipeline():
+    def cleanup():
         output_dir = tmp_path / "output"
         if output_dir.exists():
             shutil.rmtree(output_dir)
 
+    def run_pipeline():
         describe_codes.main(desc_cfg)
         tabularize_static.main(tab_cfg)
         tabularize_time_series.main(tab_cfg)
 
-    benchmark.pedantic(run_pipeline, rounds=3, warmup_rounds=1)
+    benchmark.pedantic(run_pipeline, setup=cleanup, rounds=3, warmup_rounds=1)
