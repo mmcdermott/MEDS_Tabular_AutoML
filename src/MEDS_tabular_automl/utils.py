@@ -383,9 +383,12 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
         A LazyFrame with unique times, sorted by subject_id and time.
 
     Examples:
+        >>> times = pl.Series(
+        ...     ["2021-01-01", "2021-01-01", "2021-01-02", "2021-01-01"]
+        ... ).str.strptime(pl.Date)
         >>> df = pl.DataFrame({
         ...     "subject_id": [1, 1, 1, 2],
-        ...     "time": pl.Series(["2021-01-01", "2021-01-01", "2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
+        ...     "time": times,
         ...     "code": ["A", "A", "B", "C"],
         ... }).lazy()
         >>> result = get_unique_time_events_df(df).collect()
@@ -404,9 +407,11 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
 
     Raises ValueError for unsorted data:
 
+        >>> unsorted_times = pl.Series(
+        ...     ["2021-01-02", "2021-01-01"]
+        ... ).str.strptime(pl.Date)
         >>> unsorted = pl.DataFrame({
-        ...     "subject_id": [2, 1],
-        ...     "time": pl.Series(["2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
+        ...     "subject_id": [2, 1], "time": unsorted_times,
         ... }).lazy()
         >>> get_unique_time_events_df(unsorted)
         Traceback (most recent call last):
