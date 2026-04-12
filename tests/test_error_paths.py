@@ -24,21 +24,19 @@ from MEDS_tabular_automl.generate_ts_features import summarize_dynamic_measureme
 # ============================================================================
 
 
-def test_get_sparse_static_rep_unsorted():
-    """Static data must be sorted by subject_id; unsorted raises ValueError."""
-
-    static_df = pl.DataFrame({"subject_id": [2, 1], "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
-    meds_df = pl.DataFrame({"subject_id": [1, 2], "code": ["A", "B"]}).lazy()
-    with pytest.raises(ValueError, match="not sorted by subject_id"):
-        get_sparse_static_rep(["A", "B"], static_df, meds_df, ["A/static/present", "B/static/present"])
-
-
-def test_get_sparse_static_rep_duplicate_subjects():
-    """Static data must have unique subject_ids; duplicates raise ValueError."""
-
-    static_df = pl.DataFrame({"subject_id": [1, 1], "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
-    meds_df = pl.DataFrame({"subject_id": [1, 1], "code": ["A", "B"]}).lazy()
-    with pytest.raises(ValueError, match="duplicate subject_id"):
+@pytest.mark.parametrize(
+    ("subject_ids", "error_match"),
+    [
+        ([2, 1], "not sorted by subject_id"),
+        ([1, 1], "duplicate subject_id"),
+    ],
+    ids=["unsorted", "duplicates"],
+)
+def test_get_sparse_static_rep_rejects_bad_subjects(subject_ids, error_match):
+    """get_sparse_static_rep validates subject_id ordering and uniqueness."""
+    static_df = pl.DataFrame({"subject_id": subject_ids, "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
+    meds_df = pl.DataFrame({"subject_id": subject_ids, "code": ["A", "B"]}).lazy()
+    with pytest.raises(ValueError, match=error_match):
         get_sparse_static_rep(["A", "B"], static_df, meds_df, ["A/static/present", "B/static/present"])
 
 
@@ -315,25 +313,13 @@ def _run_xgb_predict(model, split_name):
         return model.predict(split=split_name)
 
 
-def test_xgboost_predict_held_out():
-    """XGBoostModel.predict with held_out split (line 163)."""
-    model = _setup_xgb_predict("held_out")
-    result = _run_xgb_predict(model, "held_out")
+@pytest.mark.parametrize("split", ["held_out", "tuning", "train"])
+def test_xgboost_predict_by_split(split):
+    """XGBoostModel.predict dispatches correctly for each valid split."""
+    model = _setup_xgb_predict(split)
+    result = _run_xgb_predict(model, split)
     assert result.shape[0] == 2
-
-
-def test_xgboost_predict_tuning():
-    """XGBoostModel.predict with tuning split (line 161)."""
-    model = _setup_xgb_predict("tuning")
-    result = _run_xgb_predict(model, "tuning")
-    assert result.shape[0] == 2
-
-
-def test_xgboost_predict_train():
-    """XGBoostModel.predict with train split (line 165)."""
-    model = _setup_xgb_predict("train")
-    result = _run_xgb_predict(model, "train")
-    assert result.shape[0] == 2
+    assert "predicted_boolean_probability" in result.columns
 
 
 def test_xgboost_predict_invalid_split():

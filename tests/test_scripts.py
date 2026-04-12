@@ -111,17 +111,26 @@ def test_aggregate_matrix_unsupported_agg_type():
         aggregate_matrix(windows, matrix, "sum", 3)
 
 
-def test_tabularize_static_invalid_label_dir():
-    """tabularize_static raises when input_label_dir is set but not a directory (line 78)."""
-    from MEDS_tabular_automl.scripts.tabularize_static import main
+@pytest.mark.parametrize(
+    "script_module",
+    [
+        "MEDS_tabular_automl.scripts.tabularize_static",
+        "MEDS_tabular_automl.scripts.tabularize_time_series",
+    ],
+    ids=["tabularize_static", "tabularize_time_series"],
+)
+def test_tabularize_script_invalid_label_dir(script_module):
+    """Tabularize scripts raise when input_label_dir is not a directory."""
+    import importlib
 
+    module = importlib.import_module(script_module)
     cfg = MagicMock()
     cfg.tqdm = False
     cfg.do_overwrite = False
     cfg.input_label_dir = "/nonexistent/path"
 
     with pytest.raises(ValueError, match="not a directory"):
-        main.__wrapped__(cfg)
+        module.main.__wrapped__(cfg)
 
 
 def test_tabularize_static_with_overwrite(tmp_path):
@@ -267,19 +276,6 @@ def test_tabularize_time_series_empty_summary(tmp_path):
         pytest.raises(ValueError, match="No data found in the summarized dataframe"),
     ):
         tabularize_time_series.main(cfg)
-
-
-def test_tabularize_time_series_invalid_label_dir():
-    """tabularize_time_series raises when input_label_dir not a directory (line 64)."""
-    from MEDS_tabular_automl.scripts.tabularize_time_series import main
-
-    cfg = MagicMock()
-    cfg.tqdm = False
-    cfg.do_overwrite = False
-    cfg.input_label_dir = "/nonexistent/path"
-
-    with pytest.raises(ValueError, match="not a directory"):
-        main.__wrapped__(cfg)
 
 
 # ============================================================================
