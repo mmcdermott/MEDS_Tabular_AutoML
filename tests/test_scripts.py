@@ -1,7 +1,7 @@
 """Tests for Hydra-wrapped script entry points.
 
-These tests exercise validation paths and error handling in the scripts/ directory,
-including cache_task, tabularize_static, tabularize_time_series, and launch_autogluon.
+These tests exercise validation paths and error handling in the scripts/ directory, including cache_task,
+tabularize_static, tabularize_time_series, and launch_autogluon.
 """
 
 from unittest.mock import MagicMock, patch
@@ -10,7 +10,6 @@ import numpy as np
 import polars as pl
 import pytest
 import scipy.sparse as sp
-
 
 # ============================================================================
 # scripts/cache_task.py
