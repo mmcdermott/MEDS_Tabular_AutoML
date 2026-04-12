@@ -31,7 +31,6 @@ jobs:
           uv run pytest -v --doctest-modules --cov=src --ignore=docs
 
       - name: Upload coverage to Codecov
-        if: always()
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

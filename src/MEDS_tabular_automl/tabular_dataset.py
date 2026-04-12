@@ -232,10 +232,8 @@ class TabularDataset(TimeableMixin):
             >>> y = np.array([1, 0, 1, 0])
             >>> ds = TabularDataset.__new__(TabularDataset)
             >>> corrs = ds._get_approximate_correlation_per_feature(X, y)
-            >>> corrs.shape
-            (2,)
-            >>> bool(abs(corrs[0]) > 0.9)  # feature 0 strongly correlates with label
-            True
+            >>> [float(round(c, 4)) for c in corrs]
+            [1.0, -1.0]
             >>> ds._get_approximate_correlation_per_feature(X, np.array([1, 1, 1, 1]))
             Traceback (most recent call last):
                 ...
