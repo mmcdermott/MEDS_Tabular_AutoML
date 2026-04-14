@@ -162,7 +162,7 @@ def test_tabularize_static_with_overwrite(tmp_path):
     pl.read_csv(StringIO(data)).with_columns(
         pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")
     ).write_parquet(fp)
-    json.dump({"train/0": [1]}, (input_dir / ".shards.json").open("w"))
+    (input_dir / ".shards.json").write_text(json.dumps({"train/0": [1]}))
 
     shared = {
         "input_dir": str(input_dir.resolve()),
@@ -243,7 +243,7 @@ def test_tabularize_time_series_empty_summary(tmp_path):
     pl.read_csv(StringIO(data)).with_columns(
         pl.col("time").str.to_datetime("%Y-%m-%dT%H:%M:%S%.f")
     ).write_parquet(fp)
-    json.dump({"train/0": [1]}, (input_dir / ".shards.json").open("w"))
+    (input_dir / ".shards.json").write_text(json.dumps({"train/0": [1]}))
 
     shared = {
         "input_dir": str(input_dir.resolve()),

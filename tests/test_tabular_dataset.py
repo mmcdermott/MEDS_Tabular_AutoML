@@ -19,6 +19,9 @@ def _make_dataset(tmp_path=None, labels=None, num_shards=1):
     """Create a minimal TabularDataset bypassing __init__ for unit testing."""
     ds = TabularDataset.__new__(TabularDataset)
     ds.cfg = MagicMock()
+    # MagicMock attributes default to truthy MagicMock objects; set boolean
+    # config flags explicitly so tests get deterministic behavior.
+    ds.cfg.data_loading_params.binarize_task = False
     ds.split = "train"
     ds._data_shards = [f"shard_{i}" for i in range(num_shards)]
     ds.codes_set = {0, 1, 2}
@@ -95,9 +98,8 @@ def test_set_imputer_with_fit_receives_correct_data(tmp_path):
     test_matrix = sp.csc_matrix(np.array([[1.0, 2.0], [3.0, 4.0]]))
     ds._get_shard_by_index = MagicMock(return_value=(test_matrix, np.array([0, 1])))
 
-    mock_imputer = MagicMock()
-    mock_imputer.fit = MagicMock()
-    del mock_imputer.partial_fit
+    # Use spec to deterministically exclude partial_fit (forces the fit-only branch)
+    mock_imputer = MagicMock(spec=["fit"])
     ds.cfg.data_loading_params.imputer.imputer_target = mock_imputer
 
     ds._set_imputer()
@@ -349,11 +351,10 @@ def test_set_imputer_with_partial_fit():
 
 
 def test_set_scaler_with_fit():
-    """_set_scaler fit-only branch (lines 286-287)."""
+    """_set_scaler fit-only branch when scaler has no partial_fit method."""
     ds = _make_dataset()
-    mock_scaler = MagicMock()
-    mock_scaler.fit = MagicMock()
-    del mock_scaler.partial_fit
+    # spec=["fit"] forces hasattr(scaler, "partial_fit") to be False
+    mock_scaler = MagicMock(spec=["fit"])
     ds.cfg.data_loading_params.normalization.normalizer = mock_scaler
     ds._get_shard_by_index = MagicMock(return_value=(sp.csc_matrix(np.eye(3)), np.array([1, 0, 1])))
 
