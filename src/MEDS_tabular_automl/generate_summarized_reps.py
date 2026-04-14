@@ -227,7 +227,8 @@ def aggregate_matrix(
                [6, 1, 1],
                [5, 0, 1]])
 
-    Other aggregations (count returns ndarray, min/max return coo_array):
+    Other aggregations (all return csr_array; internally, sparse_aggregate returns
+    ndarray for sum/count/sum_sqd and coo_array for min/max before reassembly):
 
         >>> aggregate_matrix(windows, matrix, "count", num_features).toarray()
         array([[2, 1, 0],

@@ -51,28 +51,30 @@ def filter_to_codes(
         inclusion frequency.
 
     Examples:
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(fp)
+        ...     print(filter_to_codes(fp, ["A", "D"], 3, None, None))
+        ...     print(filter_to_codes(fp, None, None, 0.35, None))
+        ...     print(filter_to_codes(fp, None, None, None, 1))
         ['D']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, None, None, .35, None)
         ['E']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
+
+    Errors are raised when filtering leaves no codes or the frequency is out of range:
+
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(fp)
+        ...     filter_to_codes(fp, ["A", "D"], 10, None, None)
         Traceback (most recent call last):
         ...
         ValueError: Code filtering criteria ...
         ...
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["A"], "count": [1]}).write_parquet(f.name)
-        ...     filter_to_codes(f.name, None, None, -0.5, None)
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["A"], "count": [1]}).write_parquet(fp)
+        ...     filter_to_codes(fp, None, None, -0.5, None)
         Traceback (most recent call last):
         ...
         ValueError: min_code_inclusion_frequency must be between 0 and 1.
@@ -429,7 +431,7 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
     return events_df
 
 
-def get_feature_names(agg: str, feature_columns: list[str]) -> str:
+def get_feature_names(agg: str, feature_columns: list[str]) -> list[str]:
     """Extracts feature column names based on aggregation type from a list of column names.
 
     Args:
