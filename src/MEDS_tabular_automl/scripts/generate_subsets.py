@@ -36,7 +36,18 @@ def get_subsets(list_of_options: list[str]) -> None:
 
 
 def main():
-    """Generates and prints all possible non-empty subsets from given list of options."""
+    """Generates and prints all possible non-empty subsets from given list of options.
+
+    Examples:
+        >>> import sys
+        >>> _saved_argv = sys.argv
+        >>> sys.argv = ["generate_subsets", "[a,b]"]
+        >>> try:
+        ...     main()
+        ... finally:
+        ...     sys.argv = _saved_argv
+        [a],[a,b],[b]
+    """
     list_of_options = list(sys.argv[1].strip("[]").split(","))
     get_subsets(list_of_options)
 

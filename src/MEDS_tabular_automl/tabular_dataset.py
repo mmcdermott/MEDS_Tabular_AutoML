@@ -221,6 +221,23 @@ class TabularDataset(TimeableMixin):
 
         Returns:
             The approximate correlation of each feature with the target.
+
+        Raises:
+            ValueError: If labels have only one unique value.
+
+        Examples:
+            >>> import numpy as np
+            >>> import scipy.sparse as sp
+            >>> X = sp.csc_matrix([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+            >>> y = np.array([1, 0, 1, 0])
+            >>> ds = TabularDataset.__new__(TabularDataset)
+            >>> corrs = ds._get_approximate_correlation_per_feature(X, y)
+            >>> [float(round(c, 4)) for c in corrs]
+            [1.0, -1.0]
+            >>> ds._get_approximate_correlation_per_feature(X, np.array([1, 1, 1, 1]))
+            Traceback (most recent call last):
+                ...
+            ValueError: Labels have only one unique value. Cannot calculate correlation.
         """
         # calculate the pearson r correlation of each feature with the target
         # this is a very rough approximation and should be used for feature selection

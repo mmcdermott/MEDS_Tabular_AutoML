@@ -59,8 +59,6 @@ def get_long_code_df(
         .to_series()
         .to_numpy()
     )
-    if not np.issubdtype(cols.dtype, np.number):
-        raise ValueError(f"numeric_value must be a numerical type. Instead it has type: {cols.dtype}")
     data = np.ones(df.select(pl.len()).collect().item(), dtype=np.bool_)
     return data, (rows, cols)
 
@@ -88,8 +86,6 @@ def get_long_value_df(
         .to_series()
         .to_numpy()
     )
-    if not np.issubdtype(cols.dtype, np.number):
-        raise ValueError(f"numeric_value must be a numerical type. Instead it has type: {cols.dtype}")
 
     data = value_df.select(pl.col("numeric_value")).collect().to_series().to_numpy()
     return data, (rows, cols)
@@ -110,6 +106,22 @@ def summarize_dynamic_measurements(
     Returns:
         A tuple containing a DataFrame with dynamic feature identifiers and a sparse matrix
         of aggregated values.
+
+    Raises:
+        ValueError: If the input DataFrame is not sorted by subject_id and time.
+
+    Examples:
+        >>> import polars as pl
+        >>> bad = pl.DataFrame({
+        ...     "subject_id": [2, 1],
+        ...     "time": pl.Series(["2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
+        ...     "code": ["A", "B"],
+        ...     "numeric_value": [1.0, 2.0],
+        ... }).lazy()
+        >>> summarize_dynamic_measurements("code/count", ["A/code", "B/code"], bad)
+        Traceback (most recent call last):
+            ...
+        ValueError: data frame must be sorted by subject_id and time
     """
     logger.info("Generating Sparse matrix for Time Series Features")
     id_cols = ["subject_id", "time"]

@@ -102,6 +102,22 @@ def get_sparse_static_rep(
     >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
     ...                       meds_df=meds_df.lazy(), feature_columns=feature_columns).shape
     (6, 2)
+
+    Errors are raised if static_df is not sorted by subject_id or contains duplicates:
+
+    >>> bad_unsorted = pl.DataFrame({"subject_id": [2, 1], "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
+    >>> get_sparse_static_rep(["A", "B"], bad_unsorted, meds_df.lazy(),
+    ...                       ["A/static/present", "B/static/present"])
+    Traceback (most recent call last):
+        ...
+    ValueError: static_df is not sorted by subject_id.
+
+    >>> bad_dups = pl.DataFrame({"subject_id": [1, 1], "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
+    >>> get_sparse_static_rep(["A", "B"], bad_dups, meds_df.lazy(),
+    ...                       ["A/static/present", "B/static/present"])
+    Traceback (most recent call last):
+        ...
+    ValueError: static_df has duplicate subject_id values.
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
@@ -177,6 +193,13 @@ def summarize_static_measurements(
     │ 1          ┆ true             ┆ true             │
     │ 2          ┆ true             ┆ false            │
     └────────────┴──────────────────┴──────────────────┘
+
+    Invalid aggregation types raise ValueError:
+
+    >>> summarize_static_measurements('invalid_agg', ['A/static/first'], df.lazy())
+    Traceback (most recent call last):
+        ...
+    ValueError: Invalid aggregation type: invalid_agg
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)

@@ -51,25 +51,33 @@ def filter_to_codes(
         inclusion frequency.
 
     Examples:
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, ["A", "D"], 3, None, None)
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(fp)
+        ...     print(filter_to_codes(fp, ["A", "D"], 3, None, None))
+        ...     print(filter_to_codes(fp, None, None, 0.35, None))
+        ...     print(filter_to_codes(fp, None, None, None, 1))
         ['D']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, None, None, .35, None)
         ['E']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
-        >>> with tempfile.NamedTemporaryFile() as f:
-        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
-        ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
+
+    Errors are raised when filtering leaves no codes or the frequency is out of range:
+
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(fp)
+        ...     filter_to_codes(fp, ["A", "D"], 10, None, None)
         Traceback (most recent call last):
         ...
         ValueError: Code filtering criteria ...
         ...
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     fp = Path(d) / "codes.parquet"
+        ...     pl.DataFrame({"code": ["A"], "count": [1]}).write_parquet(fp)
+        ...     filter_to_codes(fp, None, None, -0.5, None)
+        Traceback (most recent call last):
+        ...
+        ValueError: min_code_inclusion_frequency must be between 0 and 1.
     """
     feature_freqs = pl.read_parquet(code_metadata_fp)
 
@@ -108,6 +116,14 @@ def load_tqdm(use_tqdm: bool):
 
     Returns:
         A function that either encapsulates tqdm or simply returns the input it is given.
+
+    Examples:
+        >>> from tqdm import tqdm
+        >>> load_tqdm(True) is tqdm
+        True
+        >>> noop = load_tqdm(False)
+        >>> noop([1, 2, 3])
+        [1, 2, 3]
     """
     if use_tqdm:
         from tqdm import tqdm
@@ -161,6 +177,17 @@ def array_to_sparse_matrix(array: np.ndarray, shape: tuple[int, int]) -> coo_arr
 
     Raises:
         AssertionError: If the input array's first dimension is not 3.
+
+    Examples:
+        >>> import numpy as np
+        >>> arr = np.array([[10.0, 20.0], [0, 1], [0, 1]])  # data, rows, cols
+        >>> result = array_to_sparse_matrix(arr, shape=(2, 2))
+        >>> result.toarray().tolist()
+        [[10.0, 0.0], [0.0, 20.0]]
+        >>> array_to_sparse_matrix(np.zeros((2, 5)), shape=(5, 5))
+        Traceback (most recent call last):
+            ...
+        AssertionError: Array must have 3 dimensions: [data, row, col], currently has 2
     """
     if not array.shape[0] == 3:
         raise AssertionError(
@@ -306,6 +333,14 @@ def write_df(
         Traceback (most recent call last):
             ...
         FileExistsError: /tmp/tmp.../test.parquet exists and do_overwrite is False!
+
+    Unsupported types raise TypeError:
+
+        >>> with tempfile.TemporaryDirectory() as tmpdir:
+        ...     write_df("not a dataframe", Path(tmpdir) / "x.parquet")
+        Traceback (most recent call last):
+            ...
+        TypeError: Unsupported type for df: <class 'str'>
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
@@ -348,6 +383,42 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
 
     Returns:
         A LazyFrame with unique times, sorted by subject_id and time.
+
+    Examples:
+        >>> times = pl.Series(
+        ...     ["2021-01-01", "2021-01-01", "2021-01-02", "2021-01-01"]
+        ... ).str.strptime(pl.Date)
+        >>> df = pl.DataFrame({
+        ...     "subject_id": [1, 1, 1, 2],
+        ...     "time": times,
+        ...     "code": ["A", "A", "B", "C"],
+        ... }).lazy()
+        >>> result = get_unique_time_events_df(df).collect()
+        >>> result.shape
+        (3, 2)
+        >>> result.columns
+        ['subject_id', 'time']
+
+    Raises ValueError for null times:
+
+        >>> bad = pl.DataFrame({"subject_id": [1], "time": [None], "code": ["A"]}).lazy()
+        >>> get_unique_time_events_df(bad)
+        Traceback (most recent call last):
+            ...
+        ValueError: Time column must not have null values for time series data.
+
+    Raises ValueError for unsorted data:
+
+        >>> unsorted_times = pl.Series(
+        ...     ["2021-01-02", "2021-01-01"]
+        ... ).str.strptime(pl.Date)
+        >>> unsorted = pl.DataFrame({
+        ...     "subject_id": [2, 1], "time": unsorted_times,
+        ... }).lazy()
+        >>> get_unique_time_events_df(unsorted)
+        Traceback (most recent call last):
+            ...
+        ValueError: Data frame must be sorted by subject_id and time
     """
     if not events_df.select(pl.col("time")).null_count().collect().item() == 0:
         raise ValueError("Time column must not have null values for time series data.")
@@ -360,7 +431,7 @@ def get_unique_time_events_df(events_df: pl.LazyFrame) -> pl.LazyFrame:
     return events_df
 
 
-def get_feature_names(agg: str, feature_columns: list[str]) -> str:
+def get_feature_names(agg: str, feature_columns: list[str]) -> list[str]:
     """Extracts feature column names based on aggregation type from a list of column names.
 
     Args:
@@ -372,6 +443,21 @@ def get_feature_names(agg: str, feature_columns: list[str]) -> str:
 
     Raises:
         ValueError: If the aggregation type is unknown or unsupported.
+
+    Examples:
+        >>> cols = ["A/static/present", "B/static/first", "C/code", "D/value"]
+        >>> get_feature_names("static/present", cols)
+        ['A/static/present']
+        >>> get_feature_names("static/first", cols)
+        ['B/static/first']
+        >>> get_feature_names("code/count", cols)
+        ['C/code']
+        >>> get_feature_names("value/sum", cols)
+        ['D/value']
+        >>> get_feature_names("invalid/agg", cols)
+        Traceback (most recent call last):
+            ...
+        ValueError: Unknown aggregation type invalid/agg
     """
     if agg in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]:
         return [c for c in feature_columns if c.endswith(agg)]
