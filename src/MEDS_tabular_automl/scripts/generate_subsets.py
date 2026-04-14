@@ -40,8 +40,12 @@ def main():
 
     Examples:
         >>> import sys
+        >>> _saved_argv = sys.argv
         >>> sys.argv = ["generate_subsets", "[a,b]"]
-        >>> main()
+        >>> try:
+        ...     main()
+        ... finally:
+        ...     sys.argv = _saved_argv
         [a],[a,b],[b]
     """
     list_of_options = list(sys.argv[1].strip("[]").split(","))
