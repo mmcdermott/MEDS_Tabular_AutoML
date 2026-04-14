@@ -10,88 +10,13 @@ import numpy as np
 import polars as pl
 import pytest
 import scipy.sparse as sp
-from scipy.sparse import csr_array
-
-from MEDS_tabular_automl.generate_static_features import (
-    get_sparse_static_rep,
-    summarize_static_measurements,
-)
-from MEDS_tabular_automl.generate_summarized_reps import generate_summary
-from MEDS_tabular_automl.generate_ts_features import summarize_dynamic_measurements
-
-# ============================================================================
-# generate_static_features.py
-# ============================================================================
-
-
-@pytest.mark.parametrize(
-    ("subject_ids", "error_match"),
-    [
-        ([2, 1], "not sorted by subject_id"),
-        ([1, 1], "duplicate subject_id"),
-    ],
-    ids=["unsorted", "duplicates"],
-)
-def test_get_sparse_static_rep_rejects_bad_subjects(subject_ids, error_match):
-    """get_sparse_static_rep validates subject_id ordering and uniqueness."""
-    static_df = pl.DataFrame({"subject_id": subject_ids, "A": [1.0, 2.0], "B": [3.0, 4.0]}).lazy()
-    meds_df = pl.DataFrame({"subject_id": subject_ids, "code": ["A", "B"]}).lazy()
-    with pytest.raises(ValueError, match=error_match):
-        get_sparse_static_rep(["A", "B"], static_df, meds_df, ["A/static/present", "B/static/present"])
-
-
-def test_summarize_static_invalid_aggregation():
-    """Aggregation type must be static/first or static/present."""
-
-    df = pl.DataFrame({"subject_id": [1], "code": ["A"], "numeric_value": [1.0]}).lazy()
-    with pytest.raises(ValueError, match="Invalid aggregation type"):
-        summarize_static_measurements("invalid_agg", ["A/static/first"], df)
-
-
-# ============================================================================
-# generate_summarized_reps.py
-# ============================================================================
-
-
-@pytest.mark.parametrize(
-    ("agg", "features", "error_match"),
-    [
-        ("invalid/agg", ["A/code"], "Invalid aggregation"),
-        ("code/count", [], "No feature columns provided"),
-        ("code/count", ["A/value"], "No columns found for aggregation"),
-    ],
-    ids=["invalid_agg", "empty_features", "mismatched_columns"],
-)
-def test_generate_summary_rejects_bad_input(agg, features, error_match):
-    """generate_summary validates aggregation type, feature list, and column matching."""
-    m = csr_array(np.eye(3))
-    df = pl.DataFrame({"subject_id": [1], "time": ["2021-01-01"]}).lazy()
-    with pytest.raises(ValueError, match=error_match):
-        generate_summary(agg=agg, feature_columns=features, index_df=df, matrix=m, window_size="full")
-
-
-# ============================================================================
-# generate_ts_features.py
-# ============================================================================
-
-
-def test_summarize_dynamic_unsorted():
-    """Time-series data must be sorted by subject_id and time."""
-
-    df = pl.DataFrame(
-        {
-            "subject_id": [2, 1],
-            "time": pl.Series(["2021-01-02", "2021-01-01"]).str.strptime(pl.Date),
-            "code": ["A", "B"],
-            "numeric_value": [1.0, 2.0],
-        }
-    ).lazy()
-    with pytest.raises(ValueError, match="must be sorted by subject_id and time"):
-        summarize_dynamic_measurements("code/count", ["A/code", "B/code"], df)
-
 
 # ============================================================================
 # sklearn_model.py
+#
+# Note: error path tests for module-level functions in generate_static_features,
+# generate_summarized_reps, and generate_ts_features have been moved to
+# doctests on the source functions for documentation value.
 # ============================================================================
 
 

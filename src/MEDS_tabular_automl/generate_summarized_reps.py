@@ -362,7 +362,26 @@ def generate_summary(
         The summary of data as a sparse matrix.
 
     Raises:
-        ValueError: If the aggregation type is not supported.
+        ValueError: If the aggregation type is not supported, feature_columns is empty,
+            or no columns match the aggregation type.
+
+    Examples:
+        >>> from scipy.sparse import csr_array
+        >>> import numpy as np
+        >>> m = csr_array(np.eye(3))
+        >>> df = pl.DataFrame({"subject_id": [1], "time": ["2021-01-01"]}).lazy()
+        >>> generate_summary(["A/code"], df, m, "full", "invalid/agg")
+        Traceback (most recent call last):
+            ...
+        ValueError: Invalid aggregation: invalid/agg. ...
+        >>> generate_summary([], df, m, "full", "code/count")
+        Traceback (most recent call last):
+            ...
+        ValueError: No feature columns provided -- feature_columns must be a non-empty list.
+        >>> generate_summary(["A/value"], df, m, "full", "code/count")
+        Traceback (most recent call last):
+            ...
+        ValueError: No columns found for aggregation code/count in feature_columns: [].
     """
     if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
         raise ValueError(
