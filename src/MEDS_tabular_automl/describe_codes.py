@@ -33,7 +33,9 @@ def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
         │ C    ┆ 3     │
         └──────┴───────┘
     """
-    return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
+    return pl.DataFrame(
+        [[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"], orient="row"
+    )
 
 
 def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
