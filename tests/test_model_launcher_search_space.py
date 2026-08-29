@@ -20,7 +20,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from hydra_plugins.hydra_optuna_sweeper._impl import create_params_from_overrides
 
 CONFIG_DIR = Path(__file__).parent.parent / "src" / "MEDS_tabular_automl" / "configs" / "model_launcher"
