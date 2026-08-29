@@ -2,8 +2,8 @@
 
 `sparse_aggregate` returns an ndarray for sum/count/sum_sqd and a `coo_array` for min/max, and
 `aggregate_matrix` handles the two branches differently. The ndarray branch tags each result with `i`,
-the index of the window being aggregated. The coo branch uses `agg_matrix.row` instead -- the row index
-*inside* the aggregate, which for a column-wise reduction over axis 0 is always 0.
+the index of the window being aggregated. The `coo_array` branch uses `agg_matrix.row` instead -- the
+row index *inside* the aggregate, which for a column-wise reduction over axis 0 is always 0.
 
 So every window's min and max is written into row 0 of the output, where the CSR constructor sums the
 duplicates. Row 0 receives the sum of every window's extremum; every other row receives nothing. It
@@ -13,9 +13,9 @@ Measured on two independent runs of the same configuration, on different machine
 same input: `value/sum` had 12,387,109 non-zero entries spread over 2,361 rows, while `value/max` had
 8,243 and `value/min` 35 -- every one of them in row 0.
 
-Introduced by `cb21821`, whose message records it as fixing a crash for min and max "due to a coo
-matrix being returned rather than a dense matrix as with sum and count operations". The crash was
-fixed; the row index was not carried across.
+Introduced by `cb21821`, whose message records it as fixing a crash for min and max caused by a sparse
+return type where sum and count return a dense one. The crash was fixed; the row index was not carried
+across.
 """
 
 import numpy as np
