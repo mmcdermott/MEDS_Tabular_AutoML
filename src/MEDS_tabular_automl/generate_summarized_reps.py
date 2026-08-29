@@ -280,7 +280,12 @@ def compute_agg(
         .collect()
     )
     index_df = group_df.lazy().select(pl.col("subject_id", "time"))
-    windows = group_df.select(pl.col("min_index", "max_index"))
+    # `aggregate_matrix` slices `matrix[min_index:max_index]`, so the upper bound is exclusive, and it
+    # skips any window whose bounds are equal. `max_index` here is the *inclusive* index of the last
+    # event in the (subject_id, time) group, so passing it through unchanged drops the last event of
+    # every group -- and drops a group holding a single event entirely. `get_rolling_window_indicies`
+    # already adds the 1 for exactly this reason; so does this.
+    windows = group_df.select(pl.col("min_index"), pl.col("max_index") + 1)
 
     logger.info("Step 1.5: Running sparse aggregation.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
