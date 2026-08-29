@@ -79,7 +79,11 @@ def get_long_value_df(
         the CSR sparse matrix.
     """
     column_to_int = {feature_name_to_code(col): i for i, col in enumerate(ts_columns)}
-    value_df = df.with_row_index("index").drop_nulls("numeric_value").filter(pl.col("code").is_in(ts_columns))
+    value_df = (
+        df.with_row_index("index")
+        .drop_nulls("numeric_value")
+        .filter(pl.col("code").is_in(list(column_to_int)))
+    )
     rows = value_df.select(pl.col("index")).collect().to_series().to_numpy()
     cols = (
         value_df.with_columns(pl.col("code").cast(str).replace(column_to_int).cast(int).alias("value_index"))
