@@ -83,10 +83,10 @@ def summarize(agg):
 def test_extremum_lands_in_its_own_row(agg):
     """Each subject's extremum must fall inside that subject's own value band.
 
-    Asserted as a band rather than an exact number on purpose. Exactly which observations reach the
-    window depends on the per-timestamp collapse, which is a separate concern; what this file is about
-    is *where the result is written*. Under the defect every window's extremum is summed into row 0, so
-    row 0 lands far above its band and the other rows are empty -- which no band can accommodate.
+    Asserted as a band rather than an exact number on purpose. Exactly which observations reach the window
+    depends on the per-timestamp collapse, which is a separate concern; what this file is about is *where the
+    result is written*. Under the defect every window's extremum is summed into row 0, so row 0 lands far
+    above its band and the other rows are empty -- which no band can accommodate.
     """
     column = summarize(agg)
     for (subject, base), value in zip(SUBJECTS.items(), column, strict=True):
