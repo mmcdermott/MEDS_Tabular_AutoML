@@ -78,6 +78,8 @@ def get_rolling_window_indicies(
     Args:
         index_df: The LazyFrame containing the indices.
         window_size: The size of the window as a string denoting time, e.g., '7d' for 7 days.
+        label_df: The LazyFrame with labels. If provided, there is one window per label, ending at its
+            prediction time, instead of one per row of index_df.
 
     Returns:
         A LazyFrame with columns 'min_index' and 'max_index' representing the range of each window.
@@ -126,7 +128,8 @@ def get_rolling_window_indicies(
     │ 0         ┆ 0         │
     └───────────┴───────────┘
 
-    Test label after all observations returns the window ending at the last event for the patient
+    Test label after all observations returns the window ending at the label, which here holds no events,
+    while the full window holds all of them
     >>> label_df = pl.DataFrame({"subject_id": [1],
     ...                          "prediction_time": pl.Series(["2022-01-01"]).str.strptime(pl.Date)})
     >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
@@ -136,19 +139,41 @@ def get_rolling_window_indicies(
     │ ---       ┆ ---       │
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
-    │ 4         ┆ 6         │
+    │ 6         ┆ 6         │
     └───────────┴───────────┘
-
-    Confirm a label with no observations within a window from it, will extract the previous event's window.
-    >>> label_df = pl.DataFrame({"subject_id": [1],
-    ...                          "prediction_time": pl.Series(["2021-01-08"]).str.strptime(pl.Date)})
-    >>> get_rolling_window_indicies(index_df.lazy(), "1d", label_df.lazy())
+    >>> get_rolling_window_indicies(index_df.lazy(), "full", label_df.lazy())
     shape: (1, 2)
     ┌───────────┬───────────┐
     │ min_index ┆ max_index │
     │ ---       ┆ ---       │
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
+    │ 0         ┆ 6         │
+    └───────────┴───────────┘
+
+    Confirm a label with no observations within a window from it gets an empty window, not the previous
+    event's window, and that a window ending between events holds the events within it
+    >>> label_df = pl.DataFrame({"subject_id": [1, 1],
+    ...                          "prediction_time": pl.Series(["2021-01-08",
+    ...                          "2021-01-10"]).str.strptime(pl.Date)})
+    >>> get_rolling_window_indicies(index_df.lazy(), "1d", label_df.lazy())
+    shape: (2, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 2         ┆ 2         │
+    │ 2         ┆ 2         │
+    └───────────┴───────────┘
+    >>> get_rolling_window_indicies(index_df.lazy(), "7d", label_df.lazy())
+    shape: (2, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 0         ┆ 2         │
     │ 1         ┆ 2         │
     └───────────┴───────────┘
 
@@ -181,6 +206,9 @@ def get_rolling_window_indicies(
     │ 2         ┆ 3         │
     └───────────┴───────────┘
     """
+    if label_df is not None:
+        return get_label_window_indices(index_df, window_size, label_df)
+
     if window_size == "full":
         # Every event of the subject up to the current one. A finite period, however long, would leave out
         # older events.
@@ -200,19 +228,89 @@ def get_rolling_window_indicies(
             .select(pl.col("min_index"), pl.col("max_index") + 1)
             .collect()
         )
-    if label_df is not None:
-        event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
-
-        if "time" not in label_df.collect_schema():
-            label_df = label_df.rename({"prediction_time": "time"})
-
-        windows = (
-            label_df.join_asof(event_df, by="subject_id", on="time")
-            .select(windows.columns)
-            .fill_null(0)
-            .collect()
-        )
     return windows
+
+
+def get_label_window_indices(
+    index_df: pl.LazyFrame, window_size: str, label_df: pl.LazyFrame
+) -> pl.DataFrame:
+    """Computes the range of index_df rows in the window that ends at each label's prediction time.
+
+    The window of a label at time t holds its subject's rows with a time in (t - window_size, t], or every
+    row up to t for the "full" window, wherever the subject's last event before t falls.
+
+    Args:
+        index_df: The LazyFrame of subject_id and time, sorted by subject_id and time.
+        window_size: The size of the window as a string denoting time, e.g., '7d' for 7 days, or "full".
+        label_df: The LazyFrame with subject_id and prediction_time (or time) columns, in any order.
+
+    Returns:
+        A DataFrame with columns 'min_index' and 'max_index', with one row per label in label order.
+
+    Example:
+    >>> index_df = pl.DataFrame({"subject_id": [1, 1, 2],
+    ...                          "time": pl.Series(["2021-01-02",
+    ...                          "2021-01-06", "2021-01-04"]).str.strptime(pl.Date)})
+    >>> label_df = pl.DataFrame({"subject_id": [2, 1, 1, 3],
+    ...                          "prediction_time": pl.Series(["2021-01-05",
+    ...                          "2021-01-07", "2021-01-01", "2021-01-05"]).str.strptime(pl.Date)})
+    >>> get_label_window_indices(index_df.lazy(), "3d", label_df.lazy())
+    shape: (4, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 2         ┆ 3         │
+    │ 1         ┆ 2         │
+    │ 0         ┆ 0         │
+    │ 3         ┆ 3         │
+    └───────────┴───────────┘
+    """
+    if "time" not in label_df.collect_schema():
+        label_df = label_df.rename({"prediction_time": "time"})
+    # Times as integer microseconds.
+    index = index_df.select("subject_id", pl.col("time").cast(pl.Datetime("us")).cast(pl.Int64)).collect()
+    labels = label_df.select("subject_id", pl.col("time").cast(pl.Datetime("us")).cast(pl.Int64)).collect()
+    subjects, times = index["subject_id"].to_numpy(), index["time"].to_numpy()
+    label_subjects, label_times = labels["subject_id"].to_numpy(), labels["time"].to_numpy()
+
+    max_index = _count_rows_up_to(subjects, times, label_subjects, label_times)
+    if window_size == "full":
+        min_index = np.searchsorted(subjects, label_subjects, side="left")
+    else:
+        width = pd.Timedelta(window_size) // pd.Timedelta(1, unit="us")
+        min_index = _count_rows_up_to(subjects, times, label_subjects, label_times - width)
+    return pl.DataFrame(
+        {"min_index": min_index, "max_index": max_index},
+        schema={"min_index": pl.UInt32, "max_index": pl.UInt32},
+    )
+
+
+def _count_rows_up_to(
+    subjects: np.ndarray, times: np.ndarray, query_subjects: np.ndarray, query_times: np.ndarray
+) -> np.ndarray:
+    """Counts, for each query, the rows sorted by (subject, time) that are at or before (subject, time).
+
+    This is the index one past the subject's last row with a time at or before the query's time, or the
+    index of the subject's first row if there is none.
+
+    Example:
+    >>> _count_rows_up_to(np.array([1, 1, 2]), np.array([10, 20, 5]), np.array([2, 1, 1, 3]),
+    ...                   np.array([5, 15, 9, 0]))
+    array([3, 1, 0, 3])
+    """
+    num_rows = len(subjects)
+    is_query = np.repeat([False, True], [num_rows, len(query_subjects)])
+    # Sort rows and queries together by subject and then time; a row sorts before a query at the same time.
+    order = np.lexsort(
+        (is_query, np.concatenate([times, query_times]), np.concatenate([subjects, query_subjects]))
+    )
+    rows_so_far = np.cumsum(~is_query[order])
+    counts = np.empty(len(query_subjects), dtype=np.int64)
+    sorted_queries = is_query[order]
+    counts[order[sorted_queries] - num_rows] = rows_so_far[sorted_queries]
+    return counts
 
 
 def aggregate_matrix(
