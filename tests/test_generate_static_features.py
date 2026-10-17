@@ -80,3 +80,17 @@ def test_timed_records_are_not_static():
     features = ["HEIGHT/code", "HEIGHT/static/first", "HEIGHT/static/present"]
     assert get_flat_static_rep("static/first", features, df, None).toarray().tolist() == [[170.0], [0.0]]
     assert get_flat_static_rep("static/present", features, df, None).toarray().tolist() == [[1.0], [0.0]]
+
+
+def test_static_first_is_the_first_value():
+    """`static/first` is the code's first non-null static value, in record order, not their mean."""
+    df = shard(
+        [
+            (1, None, "HEIGHT", None),
+            (1, None, "HEIGHT", 171.0),
+            (1, None, "HEIGHT", 170.5),
+            (1, "2020-01-01", "ADMIT", None),
+        ]
+    )
+    features = ["ADMIT/code", "HEIGHT/static/first"]
+    assert get_flat_static_rep("static/first", features, df, None).toarray().tolist() == [[171.0]]

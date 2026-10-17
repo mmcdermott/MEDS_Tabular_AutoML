@@ -178,7 +178,8 @@ def summarize_static_measurements(
     This function first filters for features that need to be recorded as the first occurrence
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
-    Only static (timeless) records are used; timed records of the same codes are not.
+    Only static (timeless) records are used; timed records of the same codes are not. The 'first' value of
+    a code is its first non-null value in the order of the records.
 
     Args:
         agg: The type of aggregation ('present' or 'first').
@@ -202,7 +203,7 @@ def summarize_static_measurements(
     │ ---        ┆ ---            ┆ ---            │
     │ i64        ┆ f64            ┆ f64            │
     ╞════════════╪════════════════╪════════════════╡
-    │ 1          ┆ 1.0            ┆ 2.5            │
+    │ 1          ┆ 1.0            ┆ 2.0            │
     │ 2          ┆ 3.0            ┆ null           │
     └────────────┴────────────────┴────────────────┘
     >>> result = summarize_static_measurements('static/present', feature_columns, df.lazy())
@@ -229,8 +230,17 @@ def summarize_static_measurements(
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
         # Handling 'first' static values
         static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
-        code_subset = df.filter(pl.col("code").is_in(static_first_codes) & pl.col("time").is_null())
-        first_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
+        code_subset = df.filter(
+            pl.col("code").is_in(static_first_codes)
+            & pl.col("time").is_null()
+            & pl.col("numeric_value").is_not_null()
+        )
+        first_code_subset = (
+            code_subset.select("subject_id", "code", "numeric_value")
+            .group_by(["subject_id", "code"], maintain_order=True)
+            .first()
+            .collect()
+        )
         static_value_pivot_df = first_code_subset.pivot(
             index=["subject_id"], on=["code"], values=["numeric_value"], aggregate_function=None
         )
