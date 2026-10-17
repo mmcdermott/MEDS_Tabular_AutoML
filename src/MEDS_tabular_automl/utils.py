@@ -44,7 +44,7 @@ def filter_to_codes(
             normalized by dividing its count by the total number of observations
             across all codes in the dataset, to be included.
         max_include_codes: Maximum number of codes to include (selecting the most
-            prevelent codes).
+            prevelent codes; codes with equal counts are taken in name order).
 
     Returns:
         Sorted list of the intersection of allowed codes (if they are specified) and filters based on
@@ -63,6 +63,10 @@ def filter_to_codes(
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "C", "A"], "count": [4, 3, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, None, 2)
+        ['C', 'E']
         >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
@@ -86,7 +90,9 @@ def filter_to_codes(
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
-        feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
+        # Break ties by code, so that the codes kept at the cutoff do not depend on the row order.
+        feature_freqs = feature_freqs.sort(["count", "code"], descending=[True, False])
+        feature_freqs = feature_freqs.head(max_include_codes)
 
     if len(feature_freqs["code"]) == 0:
         raise ValueError(
