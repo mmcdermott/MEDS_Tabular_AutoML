@@ -122,6 +122,17 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
          'C/code': 2,
          'C/static/first': 1,
          'C/static/present': 1}
+
+    NaN numeric values are missing, like nulls: they count towards the code but not towards its value.
+
+        >>> data = pl.DataFrame({
+        ...     'subject_id': [1, 1, 1],
+        ...     'code': ['A', 'A', 'B'],
+        ...     'time': [datetime(2021, 1, 1), datetime(2021, 1, 2), None],
+        ...     'numeric_value': [1.0, float('nan'), float('nan')],
+        ... }).lazy()
+        >>> dict(sorted(convert_to_freq_dict(compute_feature_frequencies(data).lazy()).items()))
+        {'A/code': 2, 'A/value': 1, 'B/static/present': 1}
     """
     static_df = shard_df.filter(
         pl.col("subject_id").is_not_null() & pl.col("code").is_not_null() & pl.col("time").is_null()
@@ -131,7 +142,9 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         row["code"] + "/static/present": row["count"] for row in static_code_freqs_df.iter_rows(named=True)
     }
 
-    static_value_df = static_df.filter(pl.col("numeric_value").is_not_null())
+    static_value_df = static_df.filter(
+        pl.col("numeric_value").is_not_null() & ~pl.col("numeric_value").is_nan()
+    )
     static_value_freqs_df = (
         static_value_df.group_by("code").agg(pl.count("numeric_value").alias("count")).collect()
     )
@@ -145,7 +158,7 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
     code_freqs_df = ts_df.group_by("code").agg(pl.count("code").alias("count")).collect()
     code_freqs = {row["code"] + "/code": row["count"] for row in code_freqs_df.iter_rows(named=True)}
 
-    value_df = ts_df.filter(pl.col("numeric_value").is_not_null())
+    value_df = ts_df.filter(pl.col("numeric_value").is_not_null() & ~pl.col("numeric_value").is_nan())
     value_freqs_df = value_df.group_by("code").agg(pl.count("numeric_value").alias("count")).collect()
     value_freqs = {row["code"] + "/value": row["count"] for row in value_freqs_df.iter_rows(named=True)}
 
@@ -255,8 +268,21 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         │ E    ┆ 2021-01-03 ┆ null          │
         │ E    ┆ 2021-01-04 ┆ 3             │
         └──────┴────────────┴───────────────┘
+
+    NaN numeric values are treated as missing, like nulls:
+
+        >>> with tempfile.NamedTemporaryFile() as fp:
+        ...     pl.DataFrame({
+        ...         "code": ["E", "E"],
+        ...         "time": ["2021-01-03", "2021-01-04"],
+        ...         "numeric_value": [float("nan"), 3.0],
+        ...     }).write_parquet(fp.name)
+        ...     filter_parquet(fp.name, ["E/code", "E/value"]).collect()["numeric_value"].to_list()
+        [None, 3.0]
     """
-    df = pl.scan_parquet(fp)
+    # NaN numeric values are missing: without this they would reach the value aggregations, where a single
+    # NaN turns the sum, min and max of every window containing it into NaN.
+    df = pl.scan_parquet(fp).with_columns(pl.col("numeric_value").fill_nan(None))
     # Drop values that are rare
     # Drop Rare Static Codes
     static_present_feature_columns = [
