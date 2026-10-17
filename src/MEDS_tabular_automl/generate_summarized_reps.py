@@ -16,32 +16,58 @@ from MEDS_tabular_automl.utils import (
 logger = logging.getLogger(__name__)
 
 
-def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array:
-    """Aggregates values in a sparse matrix according to the specified method.
+def sparse_aggregate(sparse_matrix: sparray, agg: str) -> coo_array:
+    """Aggregates the stored values of each column of a sparse matrix according to the specified method.
+
+    Only stored entries are aggregated: a row without an entry in a column has no value there, so it is not
+    a zero for that column's min or max. Every column with at least one stored entry gets a result, which is
+    stored even when it is zero (e.g., a sum that cancels out). Integer values are aggregated as int64 and
+    floating point values as float64.
 
     Args:
         sparse_matrix: The sparse matrix to aggregate.
         agg: The aggregation method to apply, such as 'sum', 'min', 'max', 'sum_sqd', or 'count'.
 
     Returns:
-        The aggregated sparse matrix.
+        A sparse matrix with a single row, holding the result of each column that has a stored entry.
 
     Raises:
         ValueError: If the aggregation method is not implemented.
+
+    Examples:
+        >>> matrix = csr_array(([5.0, 2.0, -1.0, 1.0], ([0, 2, 1, 2], [0, 0, 1, 1])), shape=(3, 3))
+        >>> matrix.toarray()
+        array([[ 5.,  0.,  0.],
+               [ 0., -1.,  0.],
+               [ 2.,  1.,  0.]])
+        >>> for agg in ["sum", "min", "max", "sum_sqd", "count"]:
+        ...     result = sparse_aggregate(matrix, agg)
+        ...     print(agg, result.shape, result.col.tolist(), result.data.tolist())
+        sum (1, 3) [0, 1] [7.0, 0.0]
+        min (1, 3) [0, 1] [2.0, -1.0]
+        max (1, 3) [0, 1] [5.0, 1.0]
+        sum_sqd (1, 3) [0, 1] [29.0, 2.0]
+        count (1, 3) [0, 1] [2, 2]
+        >>> sparse_aggregate(matrix, "mean")
+        Traceback (most recent call last):
+            ...
+        ValueError: Aggregation method 'mean' not implemented.
     """
-    if agg == "sum":
-        merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
-    elif agg == "min":
-        merged_matrix = sparse_matrix.min(axis=0)
-    elif agg == "max":
-        merged_matrix = sparse_matrix.max(axis=0)
-    elif agg == "sum_sqd":
-        merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=sparse_matrix.dtype)
-    elif agg == "count":
-        merged_matrix = np.diff(csc_array(sparse_matrix).indptr)
-    else:
+    reductions = {"sum": np.add, "sum_sqd": np.add, "min": np.minimum, "max": np.maximum}
+    if agg != "count" and agg not in reductions:
         raise ValueError(f"Aggregation method '{agg}' not implemented.")
-    return merged_matrix
+    matrix = csc_array(sparse_matrix)
+    counts = np.diff(matrix.indptr)
+    columns = np.flatnonzero(counts)
+    if agg == "count":
+        values = counts[columns]
+    else:
+        data = matrix.data.astype(np.int64 if matrix.dtype.kind in "biu" else np.float64)
+        if agg == "sum_sqd":
+            data = data * data
+        # The stored entries of each column are contiguous in CSC order and start at its indptr.
+        values = reductions[agg].reduceat(data, matrix.indptr[columns])
+    return coo_array((values, (np.zeros(len(columns), dtype=np.int64), columns)), shape=(1, matrix.shape[1]))
 
 
 def get_rolling_window_indicies(
@@ -177,9 +203,6 @@ def aggregate_matrix(
     Returns:
         Aggregated sparse matrix.
 
-    Raises:
-        TypeError: If the type of the aggregated matrix is not compatible for further operations.
-
     Example:
         >>> windows = pl.DataFrame({"min_index": [0, 0, 1], "max_index": [2, 3, 3]})
         >>> matrix = coo_array(([1, 2, 3, 1, 1], ([0, 1, 2, 0, 2], [0, 0, 0, 1, 2])), shape=(3, 3))
@@ -218,21 +241,12 @@ def aggregate_matrix(
             continue
         subset_matrix = matrix[min_index:max_index, :]
         agg_matrix = sparse_aggregate(subset_matrix, agg)
-        if isinstance(agg_matrix, np.ndarray):
-            nozero_ind = np.nonzero(agg_matrix)[0]
-            col.append(nozero_ind)
-            data.append(agg_matrix[nozero_ind])
-            row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
-        elif isinstance(agg_matrix, coo_array):
-            # `agg_matrix` is a column-wise aggregate over axis 0, so its own row index is always 0 --
-            # that is the row *within the aggregate*, not the window the aggregate belongs to. Using it
-            # writes every window's result into row 0 of the output, where the CSR constructor then
-            # sums the duplicates. The ndarray branch above uses `i` for exactly this reason.
-            col.append(agg_matrix.col)
-            data.append(agg_matrix.data)
-            row.append(np.repeat(np.array(i, dtype=np.int32), len(agg_matrix.data)))
-        else:
-            raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
+        # `agg_matrix` is a column-wise aggregate over axis 0, so its own row index is always 0 -- that is
+        # the row *within the aggregate*, not the window the aggregate belongs to. Using it writes every
+        # window's result into row 0 of the output, where the CSR constructor then sums the duplicates.
+        col.append(agg_matrix.col)
+        data.append(agg_matrix.data)
+        row.append(np.repeat(np.array(i, dtype=np.int32), len(agg_matrix.data)))
     if len(row) == 0:
         logger.warning("No data to aggregate for this shard. Returning empty aggregation matrix.")
         return csr_array(([], ([], [])), shape=(windows.shape[0], num_features))

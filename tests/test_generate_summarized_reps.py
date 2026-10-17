@@ -91,3 +91,21 @@ def test_events_sharing_a_timestamp_count_and_square_individually(agg, expected)
     squares of 5 and 16; the window must add these up rather than count or square them again.
     """
     np.testing.assert_allclose(summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], agg), [expected, 0, 0])
+
+
+@pytest.mark.parametrize(
+    "codes, values, agg, expected",
+    [
+        pytest.param(["A", "B", "A"], [5.0, -1.0, 7.0], "value/min", [5.0, -1.0, 0.0], id="min"),
+        pytest.param(["A", "B", "A"], [5.0, -1.0, 7.0], "value/max", [7.0, -1.0, 0.0], id="max"),
+        pytest.param(["A", "A", "A"], [0.0, 5.0, 7.0], "value/min", [0.0, 0.0, 0.0], id="observed-zero"),
+    ],
+)
+def test_min_and_max_see_observed_values_only(codes, values, agg, expected):
+    """A timestamp without a value for a code is not a zero for that code's min or max.
+
+    Each event has its own timestamp, so `A` (positive) and `B` (negative) are each absent from some rows of
+    the window. Reducing over those absent entries as zeros gave `A` a minimum and `B` a maximum of 0, which
+    were then not stored at all. An observed 0, on the other hand, is a value like any other.
+    """
+    np.testing.assert_array_equal(summarize([0, 1, 2], codes, values, agg), expected)
