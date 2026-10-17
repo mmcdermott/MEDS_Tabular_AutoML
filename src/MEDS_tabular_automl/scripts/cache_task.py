@@ -69,6 +69,13 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
                [0, 0, 0],
                [0, 6, 0]])
 
+    Stored zeros (observed values of 0) in the selected rows are kept:
+
+        >>> zeros = sp.coo_array(([0.0, 5.0, 7.0], ([0, 1, 1], [0, 0, 1])), shape=(2, 2))
+        >>> result = generate_row_cached_matrix(zeros, pl.DataFrame({"event_id": [0, -1, 1]}).lazy())
+        >>> result.row.tolist(), result.col.tolist(), result.data.tolist()
+        ([0, 2, 2], [0, 0, 1], [0.0, 5.0, 7.0])
+
     And with no labels
 
         >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
@@ -96,14 +103,17 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     csr: sp.csr_array = sp.csr_array(matrix)
 
     valid_ids = event_ids.to_numpy()
+    has_past_data = valid_ids != -1
 
-    csr = csr[valid_ids, :]
-
-    indices_with_no_past_data = valid_ids == -1
-
-    if indices_with_no_past_data.any().item():
-        csr[indices_with_no_past_data] = 0
-        csr.eliminate_zeros()
+    # Gather the rows of events with past data and give the others no entries. Clearing those rows and then
+    # calling `eliminate_zeros()` would also remove every stored zero of the gathered rows.
+    rows = csr[valid_ids[has_past_data], :]
+    row_lengths = np.zeros(len(valid_ids), dtype=rows.indptr.dtype)
+    row_lengths[has_past_data] = np.diff(rows.indptr)
+    csr = sp.csr_array(
+        (rows.data, rows.indices, np.concatenate([[0], np.cumsum(row_lengths)])),
+        shape=(len(valid_ids), csr.shape[1]),
+    )
 
     return sp.coo_array(csr)
 
