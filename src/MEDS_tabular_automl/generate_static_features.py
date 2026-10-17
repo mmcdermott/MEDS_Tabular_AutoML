@@ -84,9 +84,14 @@ def get_sparse_static_rep(
 ) -> coo_array:
     """Merges static and time-series dataframes into a sparse representation based on the subject_id column.
 
+    Each row of meds_df gets the static values of its subject, matched by subject_id, and each static value
+    goes to the column of its feature name in static_features. Rows of subjects without static records, and
+    columns of features that static_df lacks, are empty. Null, NaN and False values are not stored.
+
     Args:
         static_features: A list of static feature names.
-        static_df: A DataFrame containing static features.
+        static_df: A DataFrame containing static features, with one row per subject_id, sorted by subject_id,
+            and one column per static feature name.
         meds_df: A DataFrame containing time-series features.
         feature_columns (list[str]): A list of feature columns to include in the merged DataFrame.
 
@@ -102,6 +107,21 @@ def get_sparse_static_rep(
     >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
     ...                       meds_df=meds_df.lazy(), feature_columns=feature_columns).shape
     (6, 2)
+
+    Rows are matched to subjects by subject_id, so a subject without static records (here, 2) gets an empty
+    row, and values are matched to columns by name, so a feature missing from static_df (here, A) gets an
+    empty column. Observed zeros are stored:
+    >>> static_df = pl.DataFrame({"subject_id": [1, 3], "B": [4.0, 0.0]})
+    >>> meds_df = pl.DataFrame({"subject_id": [1, 2, 3, 3]})
+    >>> matrix = get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
+    ...                                meds_df=meds_df.lazy(), feature_columns=[])
+    >>> matrix.toarray()
+    array([[0., 4.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.]])
+    >>> matrix.row.tolist(), matrix.col.tolist(), matrix.data.tolist()
+    ([0, 2, 3], [1, 1, 1], [4.0, 0.0, 0.0])
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
@@ -114,22 +134,38 @@ def get_sparse_static_rep(
     ):
         raise ValueError("static_df has duplicate subject_id values.")
 
-    # load static data as sparse matrix
-    static_matrix = get_subject_specific_sparse_static_rep(
-        static_df=static_df, static_features=static_features
+    static_df = static_df.collect()
+    static_subjects = static_df["subject_id"].to_numpy()
+
+    # One row per subject of static_df, plus a last, empty row for subjects without static records.
+    data, rows, cols = [np.zeros(0)], [np.zeros(0, dtype=np.int64)], [np.zeros(0, dtype=np.int64)]
+    for col, feature in enumerate(static_features):
+        if feature not in static_df.columns:
+            continue
+        values = static_df[feature]
+        if values.dtype == pl.Boolean:
+            # Presence indicators: only True is an observation.
+            values = values.fill_null(False).to_numpy().astype(np.float64)
+            observed = values == 1
+        else:
+            # Values: nulls (and NaNs) are not observations.
+            values = values.cast(pl.Float64).to_numpy()
+            observed = ~np.isnan(values)
+        data.append(values[observed])
+        rows.append(np.flatnonzero(observed))
+        cols.append(np.full(observed.sum(), col))
+    static_matrix = csr_array(
+        (np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))),
+        shape=(len(static_subjects) + 1, len(static_features)),
     )
-    # Duplicate static matrix rows to match time-series data
-    events_per_patient = (
-        meds_df.select(pl.col("subject_id").value_counts())
-        .unnest("subject_id")
-        .sort(by="subject_id")
-        .select(pl.col("count"))
-        .collect()
-        .to_series()
-    )
-    reindex_slices = np.repeat(range(len(events_per_patient)), events_per_patient)
-    static_matrix = static_matrix[reindex_slices, :]
-    return coo_array(static_matrix)
+
+    # Repeat each subject's static row for each of its rows in meds_df.
+    row_subjects = meds_df.select(pl.col("subject_id")).collect().to_series().to_numpy()
+    static_rows = np.searchsorted(static_subjects, row_subjects)
+    has_static = static_rows < len(static_subjects)
+    has_static[has_static] = static_subjects[static_rows[has_static]] == row_subjects[has_static]
+    static_rows[~has_static] = len(static_subjects)
+    return coo_array(static_matrix[static_rows, :])
 
 
 def summarize_static_measurements(
