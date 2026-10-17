@@ -178,6 +178,7 @@ def summarize_static_measurements(
     This function first filters for features that need to be recorded as the first occurrence
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
+    Only static (timeless) records are used; timed records of the same codes are not.
 
     Args:
         agg: The type of aggregation ('present' or 'first').
@@ -189,8 +190,10 @@ def summarize_static_measurements(
 
     Example:
     >>> feature_columns = ['A/static/first', 'B/static/first', 'A/static/present', 'B/static/present']
-    >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2], 'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A'],
-    ...                    'numeric_value': [1, None, 2, 3, None, None, 3]})
+    >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2, 2],
+    ...                    'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A', 'B'],
+    ...                    'time': [None, None, None, None, None, None, None, datetime(2021, 1, 1)],
+    ...                    'numeric_value': [1, None, 2, 3, None, None, 3, 4]})
     >>> result = summarize_static_measurements('static/first', feature_columns, df.lazy())
     >>> result
     shape: (2, 3)
@@ -216,7 +219,8 @@ def summarize_static_measurements(
 
     Static values keep their full precision:
 
-    >>> df = pl.DataFrame({'subject_id': [1], 'code': ['A'], 'numeric_value': [160.3953106166676]})
+    >>> df = pl.DataFrame({'subject_id': [1], 'code': ['A'], 'time': [None],
+    ...                    'numeric_value': [160.3953106166676]})
     >>> result = summarize_static_measurements('static/first', ['A/static/first'], df.lazy())
     >>> result['A/static/first'].to_list()
     [160.3953106166676]
@@ -225,7 +229,7 @@ def summarize_static_measurements(
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
         # Handling 'first' static values
         static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
-        code_subset = df.filter(pl.col("code").is_in(static_first_codes))
+        code_subset = df.filter(pl.col("code").is_in(static_first_codes) & pl.col("time").is_null())
         first_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
         static_value_pivot_df = first_code_subset.pivot(
             index=["subject_id"], on=["code"], values=["numeric_value"], aggregate_function=None
@@ -245,7 +249,8 @@ def summarize_static_measurements(
         # Handling 'present' static indicators
         static_present_codes = [parse_static_feature_column(c)[0] for c in static_features]
         static_present_pivot_df = (
-            df.select(*["subject_id", "code"])
+            df.filter(pl.col("time").is_null())
+            .select(*["subject_id", "code"])
             .filter(pl.col("code").is_in(static_present_codes))
             .with_columns(pl.lit(True).alias("__indicator"))
             .collect()

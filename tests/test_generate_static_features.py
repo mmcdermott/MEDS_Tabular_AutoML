@@ -66,3 +66,17 @@ def test_static_values_follow_their_feature():
     features = ["A/static/present", "B/static/present", "E/code"]
     matrix = get_flat_static_rep("static/present", features, df, None)
     assert matrix.toarray().tolist() == [[0.0, 1.0]]
+
+
+def test_timed_records_are_not_static():
+    """A timed record of a static code is neither a static value nor a static presence."""
+    df = shard(
+        [
+            (1, None, "HEIGHT", 170.0),
+            (1, "2020-01-01", "HEIGHT", 180.0),
+            (2, "2020-01-01", "HEIGHT", 175.0),
+        ]
+    )
+    features = ["HEIGHT/code", "HEIGHT/static/first", "HEIGHT/static/present"]
+    assert get_flat_static_rep("static/first", features, df, None).toarray().tolist() == [[170.0], [0.0]]
+    assert get_flat_static_rep("static/present", features, df, None).toarray().tolist() == [[1.0], [0.0]]
