@@ -32,8 +32,26 @@ def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
         │ B    ┆ 2     │
         │ C    ┆ 3     │
         └──────┴───────┘
+
+    Exactly two codes are also read correctly:
+
+        >>> convert_to_df({"A": 1, "B": 2})
+        shape: (2, 2)
+        ┌──────┬───────┐
+        │ code ┆ count │
+        │ ---  ┆ ---   │
+        │ str  ┆ i64   │
+        ╞══════╪═══════╡
+        │ A    ┆ 1     │
+        │ B    ┆ 2     │
+        └──────┴───────┘
     """
-    return pl.DataFrame([[col, freq] for col, freq in freq_dict.items()], schema=["code", "count"])
+    # Build the frame by column: Polars reads a list of rows as columns when there are as many rows as
+    # columns, so a list of two [code, count] rows would become a "code" column of ["A", 1].
+    return pl.DataFrame(
+        {"code": list(freq_dict), "count": list(freq_dict.values())},
+        schema={"code": pl.String, "count": pl.Int64},
+    )
 
 
 def convert_to_freq_dict(df: pl.LazyFrame) -> dict[str, dict[int, int]]:
