@@ -259,14 +259,14 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         ┌──────┬────────────┬───────────────┐
         │ code ┆ time       ┆ numeric_value │
         │ ---  ┆ ---        ┆ ---           │
-        │ str  ┆ str        ┆ i64           │
+        │ str  ┆ str        ┆ f64           │
         ╞══════╪════════════╪═══════════════╡
         │ A    ┆ 2021-01-01 ┆ null          │
         │ A    ┆ 2021-01-01 ┆ null          │
         │ D    ┆ null       ┆ null          │
         │ D    ┆ null       ┆ null          │
         │ E    ┆ 2021-01-03 ┆ null          │
-        │ E    ┆ 2021-01-04 ┆ 3             │
+        │ E    ┆ 2021-01-04 ┆ 3.0           │
         └──────┴────────────┴───────────────┘
 
     NaN numeric values are treated as missing, like nulls:
@@ -281,8 +281,9 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
         [None, 3.0]
     """
     # NaN numeric values are missing: without this they would reach the value aggregations, where a single
-    # NaN turns the sum, min and max of every window containing it into NaN.
-    df = pl.scan_parquet(fp).with_columns(pl.col("numeric_value").fill_nan(None))
+    # NaN turns the sum, min and max of every window containing it into NaN. Values are read as float64 so
+    # that no input precision is lost, whatever the column's type.
+    df = pl.scan_parquet(fp).with_columns(pl.col("numeric_value").cast(pl.Float64).fill_nan(None))
     # Drop values that are rare
     # Drop Rare Static Codes
     static_present_feature_columns = [

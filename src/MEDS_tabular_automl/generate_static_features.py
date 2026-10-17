@@ -161,7 +161,7 @@ def summarize_static_measurements(
     ┌────────────┬────────────────┬────────────────┐
     │ subject_id ┆ A/static/first ┆ B/static/first │
     │ ---        ┆ ---            ┆ ---            │
-    │ i64        ┆ f32            ┆ f32            │
+    │ i64        ┆ f64            ┆ f64            │
     ╞════════════╪════════════════╪════════════════╡
     │ 1          ┆ 1.0            ┆ 2.5            │
     │ 2          ┆ 3.0            ┆ null           │
@@ -177,6 +177,13 @@ def summarize_static_measurements(
     │ 1          ┆ true             ┆ true             │
     │ 2          ┆ true             ┆ false            │
     └────────────┴──────────────────┴──────────────────┘
+
+    Static values keep their full precision:
+
+    >>> df = pl.DataFrame({'subject_id': [1], 'code': ['A'], 'numeric_value': [160.3953106166676]})
+    >>> result = summarize_static_measurements('static/first', ['A/static/first'], df.lazy())
+    >>> result['A/static/first'].to_list()
+    [160.3953106166676]
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
@@ -194,7 +201,7 @@ def summarize_static_measurements(
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(
-            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float32) for k, v in remap_cols.items()]
+            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float64) for k, v in remap_cols.items()]
         ).sort(by="subject_id")
         return static_value_pivot_df
     elif agg == STATIC_CODE_AGGREGATION:

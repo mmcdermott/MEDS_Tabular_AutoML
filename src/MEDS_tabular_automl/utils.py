@@ -194,17 +194,23 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
         dtype('...')
         >>> get_min_dtype(np.array([1, 2, 3, "a"]))
         dtype('...')
+
+    Floating point values are reduced to float32 only if that represents every value exactly:
+
+        >>> get_min_dtype(np.array([0.5, -2.0, 3.0, np.nan]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([0.1, 2.0]))
+        dtype('float64')
+        >>> get_min_dtype(np.array([1e300]))
+        dtype('float64')
     """
     if np.issubdtype(array.dtype, np.integer):
         return np.result_type(np.min_scalar_type(array.min()), array.max())
     elif np.issubdtype(array.dtype, np.floating):
-        return np.result_type(np.float32)
-        # For more precision, we could do this
-        # try:
-        #    array.astype(np.float32, copy=False)
-        #    return np.float32
-        # except OverflowError:
-        #    return np.float64
+        with np.errstate(over="ignore"):
+            narrowed = array.astype(np.float32)
+        if np.array_equal(narrowed, array, equal_nan=True):
+            return np.dtype(np.float32)
 
     return array.dtype
 

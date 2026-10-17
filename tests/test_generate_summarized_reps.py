@@ -109,3 +109,10 @@ def test_min_and_max_see_observed_values_only(codes, values, agg, expected):
     were then not stored at all. An observed 0, on the other hand, is a value like any other.
     """
     np.testing.assert_array_equal(summarize([0, 1, 2], codes, values, agg), expected)
+
+
+def test_sums_are_not_rounded_to_float32():
+    """A sum that float32 cannot represent exactly is kept as it is rather than rounded."""
+    big = float(np.float32(123456789.0))  # The input value, as stored in a float32 column.
+    sums = summarize([0, 1], ["A", "A"], [70.0, 123456789.0], "value/sum")
+    assert sums[0] == 70.0 + big
