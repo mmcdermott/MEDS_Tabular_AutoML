@@ -163,16 +163,43 @@ def get_rolling_window_indicies(
     │ u32       ┆ u32       │
     ╞═══════════╪═══════════╡
     └───────────┴───────────┘
-    """
-    timedelta = pd.Timedelta(150 * 52, unit="W") if window_size == "full" else pd.Timedelta(window_size)
 
-    windows = (
-        index_df.with_row_index("index")
-        .rolling(index_column="time", period=timedelta, group_by="subject_id")
-        .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
-        .select(pl.col("min_index"), pl.col("max_index") + 1)
-        .collect()
-    )
+    The full window holds all of the subject's events up to each one, however far back they go
+    >>> index_df = pl.DataFrame({
+    ...     "subject_id": [1, 1, 2],
+    ...     "time": pl.Series(["1850-01-01", "2010-01-01", "2010-01-01"]).str.strptime(pl.Date),
+    ... })
+    >>> get_rolling_window_indicies(index_df.lazy(), "full")
+    shape: (3, 2)
+    ┌───────────┬───────────┐
+    │ min_index ┆ max_index │
+    │ ---       ┆ ---       │
+    │ u32       ┆ u32       │
+    ╞═══════════╪═══════════╡
+    │ 0         ┆ 1         │
+    │ 0         ┆ 2         │
+    │ 2         ┆ 3         │
+    └───────────┴───────────┘
+    """
+    if window_size == "full":
+        # Every event of the subject up to the current one. A finite period, however long, would leave out
+        # older events.
+        windows = (
+            index_df.with_row_index("index")
+            .select(
+                pl.col("index").min().over("subject_id").alias("min_index"),
+                (pl.col("index") + 1).alias("max_index"),
+            )
+            .collect()
+        )
+    else:
+        windows = (
+            index_df.with_row_index("index")
+            .rolling(index_column="time", period=pd.Timedelta(window_size), group_by="subject_id")
+            .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
+            .select(pl.col("min_index"), pl.col("max_index") + 1)
+            .collect()
+        )
     if label_df is not None:
         event_df = pl.concat([index_df, windows.lazy()], how="horizontal")
 
