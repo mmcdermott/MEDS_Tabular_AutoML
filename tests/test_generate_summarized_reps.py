@@ -73,3 +73,21 @@ def test_a_lone_event_is_not_dropped():
     """The smallest case, and the one an inclusive upper bound loses completely."""
     np.testing.assert_array_equal(summarize([0], ["A"], [None], "code/count"), [1, 0, 0])
     np.testing.assert_allclose(summarize([0], ["A"], [3.25], "value/sum"), [3.25, 0.0, 0.0])
+
+
+@pytest.mark.parametrize(
+    "agg, expected",
+    [
+        ("code/count", 3),
+        ("value/count", 3),
+        ("value/sum", 1.0 + 2.0 + 4.0),
+        ("value/sum_sqd", 1.0**2 + 2.0**2 + 4.0**2),
+    ],
+)
+def test_events_sharing_a_timestamp_count_and_square_individually(agg, expected):
+    """Counts are of events, not timestamps, and every value is squared once.
+
+    The first two events share a timestamp, so the per-timestamp step yields counts of 2 and 1 and sums of
+    squares of 5 and 16; the window must add these up rather than count or square them again.
+    """
+    np.testing.assert_allclose(summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], agg), [expected, 0, 0])
