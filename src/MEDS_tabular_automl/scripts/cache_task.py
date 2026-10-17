@@ -13,6 +13,7 @@ from omegaconf import DictConfig
 from .. import CACHE_TASK_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
+from ..generate_static_features import get_flat_static_rep
 from ..utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
@@ -178,15 +179,20 @@ def main(cfg: DictConfig):
                 )
             return filter_parquet(meds_data_fp, cfg.tabularization._resolved_codes)
 
-        def extract_labels(meds_data_df):
+        def extract_labels(meds_data_df, shard_subjects):
             meds_data_df = (
                 get_unique_time_events_df(get_events_df(meds_data_df, feature_columns))
                 .with_row_index("event_id")
                 .select("subject_id", "time", "event_id")
             )
-            shard_label_df = label_df.join(
-                meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
-            ).join_asof(other=meds_data_df, by="subject_id", on="time")
+            # Keep the labels of every subject in the shard, including subjects without any timed event, and
+            # sort them: join_asof needs each subject's labels in time order, and the rows of the inner join
+            # otherwise come in no particular order.
+            shard_label_df = (
+                label_df.join(shard_subjects, on="subject_id", how="inner")
+                .sort("subject_id", "time")
+                .join_asof(other=meds_data_df, by="subject_id", on="time")
+            )
             null_event_ids = shard_label_df.select(pl.col("event_id").is_null().sum()).collect().item()
             if null_event_ids > 0:  # pragma: no cover
                 logger.warning(
@@ -205,7 +211,8 @@ def main(cfg: DictConfig):
                 logger.info(f"Extracting labels for {shard_label_fp}")  # noqa: B023
                 Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)  # noqa: B023
                 meds_data_df = read_meds_data_df(meds_data_fp)
-                extracted_events = extract_labels(meds_data_df)
+                shard_subjects = pl.scan_parquet(meds_data_fp).select("subject_id").unique()
+                extracted_events = extract_labels(meds_data_df, shard_subjects)
                 write_lazyframe(extracted_events, shard_label_fp)  # noqa: B023
             else:
                 logger.info(f"Labels already exist, reading from {shard_label_fp}")  # noqa: B023
@@ -215,6 +222,16 @@ def main(cfg: DictConfig):
 
         def compute_fn(input_tuple):
             shard_label_df, matrix = input_tuple
+            if code_type == "static":  # noqa: B023
+                # Static features do not depend on the label time, so every label gets its subject's static
+                # features, including labels without past data (event_id -1), whose rows would otherwise be
+                # empty, and labels of subjects without timed events, which have no row in `matrix`.
+                return get_flat_static_rep(
+                    agg=f"{code_type}/{agg_name}",  # noqa: B023
+                    feature_columns=feature_columns,
+                    shard_df=read_meds_data_df(meds_data_in_fp),  # noqa: B023
+                    label_df=shard_label_df.select("subject_id", pl.col("time").alias("prediction_time")),
+                )
             row_cached_matrix = generate_row_cached_matrix(matrix=matrix, label_df=shard_label_df)
             return row_cached_matrix
 
