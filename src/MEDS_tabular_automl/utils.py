@@ -217,13 +217,23 @@ def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int
 
     Returns:
         A tuple of a numpy array ([data, row, col]) and the shape of the original matrix.
+
+    Examples:
+        Stored zeros are kept and NaN entries are dropped:
+
+        >>> array, shape = sparse_matrix_to_array(
+        ...     coo_array(([0.0, 2.0, np.nan], ([0, 1, 1], [0, 0, 1])), shape=(2, 2))
+        ... )
+        >>> array.tolist(), shape
+        ([[0.0, 2.0], [0.0, 1.0], [0.0, 0.0]], (2, 2))
     """
     data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
-    # Remove invalid indices
-    valid_indices = (data == 0) | np.isnan(data)
-    data = data[~valid_indices]
-    row = row[~valid_indices]
-    col = col[~valid_indices]
+    # Remove NaN entries. Stored zeros are kept: they are observed values (e.g., a measurement of 0 or a sum
+    # that cancels out), whereas a feature without any observation has no entry at all.
+    valid_indices = ~np.isnan(data)
+    data = data[valid_indices]
+    row = row[valid_indices]
+    col = col[valid_indices]
     # reduce dtypes
     if len(data):
         data = data.astype(get_min_dtype(data), copy=False)
