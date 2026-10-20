@@ -11,7 +11,7 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import TABULARIZATION_CFG
+from .. import TABULARIZATION_CFG, native
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
@@ -62,6 +62,10 @@ def main(
 
     if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
         raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+
+    if native.use_native(cfg):
+        native.tabularize(cfg, "tabularize_time_series")
+        return
 
     iter_wrapper = load_tqdm(cfg.tqdm)
 

@@ -9,7 +9,7 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import TABULARIZATION_CFG
+from .. import TABULARIZATION_CFG, native
 from ..describe_codes import (
     convert_to_df,
     filter_parquet,
@@ -111,6 +111,11 @@ def main(
         compute_fn,
         do_overwrite=cfg.do_overwrite,
     )
+
+    if native.use_native(cfg):
+        # The native backend writes the static and the time-series blocks together.
+        native.tabularize(cfg, "tabularize_static")
+        return
 
     # Step 2: Produce static data representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")

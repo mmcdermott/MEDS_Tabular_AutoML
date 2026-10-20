@@ -5,6 +5,14 @@ seed: 1
 tqdm: False
 worker: 0
 
+# Implementation of meds-tab-tabularize-static, meds-tab-tabularize-time-series and
+# meds-tab-cache-task: "python" (the default) or "native" (the C++ engine; see
+# docs/native_backend.md). The MEDS_TAB_BACKEND environment variable sets the default.
+backend: ${oc.env:MEDS_TAB_BACKEND,python}
+native:
+  # Engine and writer threads; null uses every CPU available to the process.
+  threads: null
+
 log_dir: ${output_dir}/.logs/
 cache_dir: ${output_dir}/.cache
 

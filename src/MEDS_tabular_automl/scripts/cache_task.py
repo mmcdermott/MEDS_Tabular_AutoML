@@ -10,7 +10,7 @@ import scipy.sparse as sp
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import CACHE_TASK_CFG
+from .. import CACHE_TASK_CFG, native
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_static_features import get_flat_static_rep
@@ -129,6 +129,10 @@ def main(cfg: DictConfig):
     Args:
         cfg: The configuration for processing, loaded from a YAML file.
     """
+    if native.use_native(cfg):
+        native.cache_task(cfg)
+        return
+
     iter_wrapper = load_tqdm(cfg.tqdm)
     # Produce ts representation
 
