@@ -90,3 +90,10 @@ repos:
         args: ["--fix"]
       - id: nbqa-ruff-format
         args: ["--line-length=110"]
+
+  # C++ formatting of the native engine
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v20.1.8
+    hooks:
+      - id: clang-format
+        types_or: [c, c++]
