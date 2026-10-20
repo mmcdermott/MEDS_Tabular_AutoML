@@ -102,6 +102,14 @@ Our processing strategy differentiates between sequential and parallel operation
 
 Data flow through the pipeline is optimized through caching and sharding. Each stage's output is structured to minimize memory requirements while maintaining accessibility for subsequent stages. The system preserves sparsity wherever possible and uses efficient shard management to increase processing speed and reduce total memory consumption.
 
+## Native Backend
+
+Static and time-series tabularization and task-specific caching can also run on an optional C++ engine,
+which is compiled when MEDS-Tab is installed from source. Select it with `backend=native` (the default is
+`backend=python`). It writes the same files as the Python implementation, so `TabularDataset` and the model
+launchers are unchanged. On the MIMIC-IV demo, the tutorial's commands take 3.3 s instead of 27.6 s. See
+the [native backend guide](docs/native_backend.md).
+
 ## Feature Engineering Via Rolling Windows and Aggregation Functions
 
 MEDS-Tab implements a comprehensive feature engineering approach that handles both static and temporal data. For static features, we capture both presence and first-recorded values (as there should be only one occurrence of a static code). Time-series features are processed through various aggregation methods including counts, sums, minimums, and maximums. These aggregations can be computed over multiple time windows (1 day, 30 days, 365 days, or the full patient history), providing temporal context at different scales.

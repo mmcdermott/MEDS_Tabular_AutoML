@@ -10,6 +10,7 @@ nav:
   - "Terminology": terminology.md
   - "Benchmark Results": prediction.md
   - "Computational Profiling": profiling.md
+  - "Native Backend": native_backend.md
   - "API Reference": reference/api/
   - "Config Reference": reference/config/
   - "Issues": https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues
