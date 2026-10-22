@@ -12,6 +12,8 @@ timestamp it is total. Measured on the MIMIC-IV demo extract, 1,022,455 timestam
 96,849 `(subject_id, time)` groups, so 9.5% of events were dropped.
 """
 
+from datetime import datetime
+
 import numpy as np
 import polars as pl
 import pytest
@@ -20,91 +22,111 @@ from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 
 FEATURE_COLUMNS = ["A/code", "A/value", "B/code", "B/value", "C/code", "C/value"]
-TIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
-# Three distinct event times and a prediction time after all of them, as strings so that polars parses
-# them the way the rest of the suite does.
-EVENT_TIMES = ["2020-01-01T00:00:00", "2020-01-01T01:00:00", "2020-01-01T02:00:00"]
-PREDICTION_TIME = "2020-01-02T00:00:00"
 
-
-def summarize(time_indices, codes, values, agg):
-    """Aggregate `codes` observed at `EVENT_TIMES[i] for i in time_indices` over a full window."""
-    events = pl.LazyFrame(
-        {
-            "subject_id": [1] * len(codes),
-            "time": [EVENT_TIMES[index] for index in time_indices],
-            "code": codes,
-            "numeric_value": values,
-        },
-        schema={"subject_id": pl.Int64, "time": pl.String, "code": pl.String, "numeric_value": pl.Float32},
-    ).with_columns(pl.col("time").str.to_datetime(TIME_FORMAT))
-    labels = pl.LazyFrame(
-        {"subject_id": [1], "prediction_time": [PREDICTION_TIME]},
-        schema={"subject_id": pl.Int64, "prediction_time": pl.String},
-    ).with_columns(pl.col("prediction_time").str.to_datetime(TIME_FORMAT))
-
-    index_df, matrix = get_flat_ts_rep(agg, FEATURE_COLUMNS, events)
-    summary = generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", agg, labels)
-    return np.asarray(summary.todense())[0]
-
-
-@pytest.mark.parametrize(
-    "time_indices",
+# One subject per pattern. Every subject has a single label at 2020-01-02, after all of its events, and
+# is summarized over a full window, so each output row is that subject's whole history.
+EVENTS = pl.LazyFrame(
     [
-        pytest.param([0, 1, 2], id="one-event-per-timestamp"),
-        pytest.param([0, 0, 1], id="two-events-share-the-first-timestamp"),
-        pytest.param([0, 0, 0], id="all-three-share-one-timestamp"),
+        # 1: one event per timestamp
+        (1, datetime(2020, 1, 1, 0), "A", 1.0),
+        (1, datetime(2020, 1, 1, 1), "B", 2.0),
+        (1, datetime(2020, 1, 1, 2), "C", 3.0),
+        # 2: A and B share the first timestamp
+        (2, datetime(2020, 1, 1, 0), "A", 1.0),
+        (2, datetime(2020, 1, 1, 0), "B", 2.0),
+        (2, datetime(2020, 1, 1, 1), "C", 3.0),
+        # 3: all three share one timestamp
+        (3, datetime(2020, 1, 1, 0), "A", 1.0),
+        (3, datetime(2020, 1, 1, 0), "B", 2.0),
+        (3, datetime(2020, 1, 1, 0), "C", 3.0),
+        # 4: a lone event
+        (4, datetime(2020, 1, 1, 0), "A", 3.25),
+        # 5: the same code twice at one timestamp and once more later
+        (5, datetime(2020, 1, 1, 0), "A", 1.0),
+        (5, datetime(2020, 1, 1, 0), "A", 2.0),
+        (5, datetime(2020, 1, 1, 1), "A", 4.0),
+        # 6: positive A, then a timestamp where A is absent
+        (6, datetime(2020, 1, 1, 0), "A", 5.0),
+        (6, datetime(2020, 1, 1, 1), "B", 1.0),
+        # 7: negative A, then a timestamp where A is absent
+        (7, datetime(2020, 1, 1, 0), "A", -5.0),
+        (7, datetime(2020, 1, 1, 1), "B", -1.0),
+        # 8: a code with no numeric value
+        (8, datetime(2020, 1, 1, 0), "A", None),
     ],
+    schema={"subject_id": pl.Int64, "time": pl.Datetime, "code": pl.String, "numeric_value": pl.Float64},
+    orient="row",
 )
-def test_code_count_sees_every_event(time_indices):
-    """One count per event, whatever the timestamps look like."""
-    counts = summarize(time_indices, ["A", "B", "C"], [None, None, None], "code/count")
-    np.testing.assert_array_equal(counts, [1, 1, 1])
+
+LABELS = pl.LazyFrame({"subject_id": [1, 2, 3, 4, 5, 6, 7, 8], "prediction_time": [datetime(2020, 1, 2)] * 8})
+
+# Expected [A, B, C] for each subject; 0 means no stored entry.
+EXPECTED = {
+    "code/count": [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 0, 0],
+        [3, 0, 0],  # three events, though only two timestamps
+        [1, 1, 0],
+        [1, 1, 0],
+        [1, 0, 0],
+    ],
+    "value/count": [
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 1, 1],
+        [1, 0, 0],
+        [3, 0, 0],
+        [1, 1, 0],
+        [1, 1, 0],
+        [0, 0, 0],  # no numeric value, so no value/* entry
+    ],
+    "value/sum": [
+        [1, 2, 3],
+        [1, 2, 3],
+        [1, 2, 3],
+        [3.25, 0, 0],
+        [7, 0, 0],
+        [5, 1, 0],
+        [-5, -1, 0],
+        [0, 0, 0],
+    ],
+    "value/sum_sqd": [
+        [1, 4, 9],
+        [1, 4, 9],
+        [1, 4, 9],
+        [10.5625, 0, 0],
+        [21, 0, 0],  # 1² + 2² + 4², not (1² + 2²)² + (4²)² = 281
+        [25, 1, 0],
+        [25, 1, 0],
+        [0, 0, 0],
+    ],
+    "value/min": [
+        [1, 2, 3],
+        [1, 2, 3],
+        [1, 2, 3],
+        [3.25, 0, 0],
+        [1, 0, 0],
+        [5, 1, 0],  # not 0: A's absence at 01:00 is not a value of 0
+        [-5, -1, 0],
+        [0, 0, 0],
+    ],
+    "value/max": [
+        [1, 2, 3],
+        [1, 2, 3],
+        [1, 2, 3],
+        [3.25, 0, 0],
+        [4, 0, 0],
+        [5, 1, 0],
+        [-5, -1, 0],  # not 0: A's absence at 01:00 is not a value of 0
+        [0, 0, 0],
+    ],
+}
 
 
-@pytest.mark.parametrize("time_indices", [[0, 1, 2], [0, 0, 1], [0, 0, 0]])
-def test_value_sum_sees_every_value(time_indices):
-    """`value/sum` over a full window is the sum of the numeric values, with nothing dropped."""
-    sums = summarize(time_indices, ["A", "A", "B"], [1.5, 2.5, -4.0], "value/sum")
-    np.testing.assert_allclose(sums, [4.0, -4.0, 0.0], rtol=1e-6)
-
-
-def test_a_lone_event_is_not_dropped():
-    """The smallest case, and the one an inclusive upper bound loses completely."""
-    np.testing.assert_array_equal(summarize([0], ["A"], [None], "code/count"), [1, 0, 0])
-    np.testing.assert_allclose(summarize([0], ["A"], [3.25], "value/sum"), [3.25, 0.0, 0.0])
-
-
-# The tests above use a different code at each timestamp, and `value/sum` gives the same answer whether
-# it is applied once or twice. That hides the fact that `compute_agg` applies the *same* reduction twice:
-# once per `(subject_id, time)` group, then again over the window's group rows. Counts, sums of squares
-# and min/max are not stable under that, so the cases below check one code observed repeatedly.
-
-
-def test_code_count_counts_events_not_timestamps():
-    """A observed twice at the first timestamp and once at the second is three events, not two."""
-    counts = summarize([0, 0, 1], ["A", "A", "A"], [None, None, None], "code/count")
-    np.testing.assert_array_equal(counts, [3, 0, 0])
-
-
-def test_value_count_counts_events_not_timestamps():
-    counts = summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], "value/count")
-    np.testing.assert_array_equal(counts, [3, 0, 0])
-
-
-def test_value_sum_sqd_squares_each_value_once():
-    """1**2 + 2**2 + 4**2 = 21; squaring the per-timestamp sums again gives (1 + 4)**2 + 16**2 = 281."""
-    sums = summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], "value/sum_sqd")
-    np.testing.assert_allclose(sums, [21.0, 0.0, 0.0], rtol=1e-6)
-
-
-def test_value_min_ignores_timestamps_without_the_code():
-    """A is only observed as 5; the timestamp holding just B must not contribute an implicit 0 to A."""
-    mins = summarize([0, 1], ["A", "B"], [5.0, 1.0], "value/min")
-    np.testing.assert_allclose(mins, [5.0, 1.0, 0.0], rtol=1e-6)
-
-
-def test_value_max_ignores_timestamps_without_the_code():
-    """Symmetric to the min case, for a code whose values are all negative."""
-    maxes = summarize([0, 1], ["A", "B"], [-5.0, -1.0], "value/max")
-    np.testing.assert_allclose(maxes, [-5.0, -1.0, 0.0], rtol=1e-6)
+@pytest.mark.parametrize("agg", EXPECTED)
+def test_full_window_summary(agg):
+    index_df, matrix = get_flat_ts_rep(agg, FEATURE_COLUMNS, EVENTS)
+    summary = generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", agg, LABELS)
+    np.testing.assert_array_equal(summary.toarray(), EXPECTED[agg])
