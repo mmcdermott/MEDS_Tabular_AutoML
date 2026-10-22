@@ -16,6 +16,7 @@ This test is written over *every* log-tagged parameter in *every* shipped model_
 than over the one that was wrong, so the same mistake cannot reappear elsewhere unnoticed.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -60,4 +61,31 @@ def test_log_tagged_parameters_are_searched_log_uniformly(config_name, key, valu
         f"{config_name} declares `{key}: {value}` but the sweeper builds "
         f"{type(distribution).__name__}, so the search is not logarithmic. Hydra's optuna sweeper "
         "honours the log tag only for `interval(...)`, never for `range(...)`."
+    )
+
+
+# optuna 2 names integer distributions `Int*Distribution`; optuna 3 folds everything into
+# `IntDistribution`. Either way the class name starts with "Int".
+INTEGER_BOUNDS = re.compile(r"interval\(\s*-?\d+\s*,\s*-?\d+\s*\)")
+
+
+def is_integer(distribution) -> bool:
+    return type(distribution).__name__.startswith("Int")
+
+
+@pytest.mark.parametrize("config_name, key, value", log_tagged_parameters())
+def test_log_tagged_integer_parameters_stay_integer(config_name, key, value):
+    """A log-scale search over integer bounds must draw integers, not floats.
+
+    Hydra parses `interval(...)` bounds as floats, so `tag(log, interval(10, 1000000))` builds a float
+    `LogUniformDistribution` and trials receive values like `3124.77` for what is a count. Wrapping the
+    interval in `int(...)` builds `IntLogUniformDistribution` instead.
+    """
+    if not INTEGER_BOUNDS.search(value):
+        pytest.skip(f"{key} has non-integer bounds")
+    space, _ = create_params_from_overrides([f"{key}={value}"])
+    distribution = space[key]
+    assert is_integer(distribution), (
+        f"{config_name} declares `{key}: {value}` over integer bounds, but the sweeper builds "
+        f"{type(distribution).__name__}, so trials draw floats. Use `tag(log, int(interval(...)))`."
     )
