@@ -73,3 +73,38 @@ def test_a_lone_event_is_not_dropped():
     """The smallest case, and the one an inclusive upper bound loses completely."""
     np.testing.assert_array_equal(summarize([0], ["A"], [None], "code/count"), [1, 0, 0])
     np.testing.assert_allclose(summarize([0], ["A"], [3.25], "value/sum"), [3.25, 0.0, 0.0])
+
+
+# The tests above use a different code at each timestamp, and `value/sum` gives the same answer whether
+# it is applied once or twice. That hides the fact that `compute_agg` applies the *same* reduction twice:
+# once per `(subject_id, time)` group, then again over the window's group rows. Counts, sums of squares
+# and min/max are not stable under that, so the cases below check one code observed repeatedly.
+
+
+def test_code_count_counts_events_not_timestamps():
+    """A observed twice at the first timestamp and once at the second is three events, not two."""
+    counts = summarize([0, 0, 1], ["A", "A", "A"], [None, None, None], "code/count")
+    np.testing.assert_array_equal(counts, [3, 0, 0])
+
+
+def test_value_count_counts_events_not_timestamps():
+    counts = summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], "value/count")
+    np.testing.assert_array_equal(counts, [3, 0, 0])
+
+
+def test_value_sum_sqd_squares_each_value_once():
+    """1**2 + 2**2 + 4**2 = 21; squaring the per-timestamp sums again gives (1 + 4)**2 + 16**2 = 281."""
+    sums = summarize([0, 0, 1], ["A", "A", "A"], [1.0, 2.0, 4.0], "value/sum_sqd")
+    np.testing.assert_allclose(sums, [21.0, 0.0, 0.0], rtol=1e-6)
+
+
+def test_value_min_ignores_timestamps_without_the_code():
+    """A is only observed as 5; the timestamp holding just B must not contribute an implicit 0 to A."""
+    mins = summarize([0, 1], ["A", "B"], [5.0, 1.0], "value/min")
+    np.testing.assert_allclose(mins, [5.0, 1.0, 0.0], rtol=1e-6)
+
+
+def test_value_max_ignores_timestamps_without_the_code():
+    """Symmetric to the min case, for a code whose values are all negative."""
+    maxes = summarize([0, 1], ["A", "B"], [-5.0, -1.0], "value/max")
+    np.testing.assert_allclose(maxes, [-5.0, -1.0, 0.0], rtol=1e-6)
