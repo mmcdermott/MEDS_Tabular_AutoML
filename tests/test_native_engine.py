@@ -114,7 +114,7 @@ def test_native_extraction_rejects_mismatched_blocks(tmp_path):
     engine.write_block(tmp_path / "a.npz", matrix, integer=False)
     write_csr_block(tmp_path / "c.npz", matrix, integer=False, compress=True)
     target, rows, offsets = tmp_path / "out.npz", np.array([1, -1, 0]), matrix.indptr
-    written, _ = engine.extract_rows(tmp_path / "a.npz", offsets, rows, 2, target, integer=False)
+    engine.extract_rows(tmp_path / "a.npz", offsets, rows, 2, target, integer=False)
     np.testing.assert_array_equal(load_matrix(target).toarray(), [[2.0, 0.0], [0.0, 0.0], [0.0, 1.5]])
     for source, recorded, columns, selected, match in [
         (tmp_path / "c.npz", offsets, 2, rows, "not a stored block"),
@@ -154,7 +154,7 @@ def test_native_extraction_rejects_impossible_dimensions(tmp_path):
         source = tmp_path / "a.npz"
         engine.write_block(source, matrix, integer=False)
         with_npy_shape(source, shape)
-        with pytest.raises(ValueError, match="shape|truncated"):
+        with pytest.raises(ValueError, match=r"shape|truncated"):
             engine.extract_rows(source, np.array(offsets), np.array([0]), 2, target, integer=False)
 
 
