@@ -93,7 +93,7 @@ For the rest of the tutorial we will assume that the data has been reshared into
 
 ## 2. **`meds-tab-describe`**
 
-This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
+This command computes the frequencies of different code types over the **training subjects only**. Subjects are assigned to splits by the MEDS subject splits file, `metadata/subject_splits.parquet` under the MEDS root directory, and only subjects whose split is `train` are counted, regardless of how the data shards are organized into directories. This file is required: `meds-tab-describe` raises an error if it is missing. Because these frequencies drive feature selection in later stages (e.g., `min_code_inclusion_count`), fitting them on training subjects only keeps tuning and held-out data from influencing which features are kept. The codes are differentiated into the following categories:
 
 - dynamic codes (codes with timestamps)
 - dynamic numeric values (codes with timestamps and numerical values)
@@ -113,21 +113,30 @@ This stage is not parallelized as it runs very quickly.
 
     - `input_dir`: The directory containing the MEDS data.
     - `output_dir`: The directory to store the tabularized data.
+    - `meds_root_dir` (optional): The MEDS root directory containing `metadata/subject_splits.parquet`. Defaults to the parent of `input_dir`.
+
+!!! warning "Re-run after upgrading"
+
+    Earlier versions fit these frequencies on all splits. With `do_overwrite=False` (the default), an existing `metadata/codes.parquet` from such a run is reused as-is, so re-run `meds-tab-describe` with `do_overwrite=True` (and re-run the downstream stages) to get train-only frequencies.
 
 ### Input Data Structure
 
 ```text
 MEDS_RESHARD_DIR/
 │
-└─── <SPLIT A>
-│   │   <SHARD 0>.parquet
-│   │   <SHARD 1>.parquet
-│   │   ...
+└─── data
+│   └─── <SPLIT A>
+│   │   │   <SHARD 0>.parquet
+│   │   │   <SHARD 1>.parquet
+│   │   │   ...
+│   │
+│   └─── <SPLIT B>
+│       │   <SHARD 0>.parquet
+│       │   <SHARD 1>.parquet
+│       │   ...
 │
-└─── <SPLIT B>
-    │   <SHARD 0>.parquet
-    │   <SHARD 1>.parquet
-    │   ...
+└─── metadata
+    │   subject_splits.parquet
 ```
 
 ### Output Data Structure (New Files)

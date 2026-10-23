@@ -5,6 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import hydra
+import meds
 import numpy as np
 import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
@@ -22,49 +23,44 @@ from ..utils import get_shard_prefix, load_tqdm, write_df
 logger = logging.getLogger(__name__)
 
 
-def get_training_shards(input_dir: Path | str) -> tuple[list[Path], pl.LazyFrame | None]:
-    """Find data shards and an optional subject filter for train-only fitting.
+def get_training_shards(cfg: DictConfig) -> tuple[list[Path], pl.LazyFrame]:
+    """Find data shards and the training subjects to restrict them to.
 
-    Split-sharded MEDS datasets are handled without reading split metadata. For
-    unsharded datasets, ``metadata/subject_splits.parquet`` is used to restrict
-    every shard to training subjects.
+    The split assignment is always read from ``meds.subject_splits_filepath`` under the MEDS root directory
+    (``cfg.meds_root_dir``, defaulting to the parent of ``cfg.input_dir``). Shard directory names are not used
+    to decide which subjects are in the training split.
     """
-    input_dir = Path(input_dir)
-    train_dir = input_dir / "train"
-    if train_dir.is_dir():
-        train_shards = list_subdir_files(train_dir, "parquet")
-        if not train_shards:
-            raise ValueError(f"Training split directory contains no Parquet shards: {train_dir}")
-        return train_shards, None
-
-    subject_splits_candidates = (
-        input_dir / "metadata" / "subject_splits.parquet",
-        input_dir.parent / "metadata" / "subject_splits.parquet",
-    )
-    subject_splits_fp = next((fp for fp in subject_splits_candidates if fp.is_file()), None)
-    if subject_splits_fp is None:
-        raise ValueError(
-            "meds-tab-describe requires train-only data when fitting code metadata, but no "
-            f"train/ directory or metadata/subject_splits.parquet was found for {input_dir}."
+    input_dir = Path(cfg.input_dir)
+    meds_root_dir = Path(cfg.meds_root_dir) if cfg.get("meds_root_dir") else input_dir.parent
+    subject_splits_fp = meds_root_dir / meds.subject_splits_filepath
+    if not subject_splits_fp.is_file():
+        raise FileNotFoundError(
+            "meds-tab-describe fits code metadata on training subjects only and requires the subject "
+            f"splits file, but it was not found at {subject_splits_fp}."
         )
 
     data_shards = [
         fp
         for fp in list_subdir_files(input_dir, "parquet")
-        if fp != subject_splits_fp and "metadata" not in fp.relative_to(input_dir).parts
+        if "metadata" not in fp.relative_to(input_dir).parts
     ]
     if not data_shards:
         raise ValueError(f"No MEDS data Parquet shards found under {input_dir}")
 
+    subject_id_col = meds.SubjectSplitSchema.subject_id_name
+    split_col = meds.SubjectSplitSchema.split_name
+
     subject_splits = pl.scan_parquet(subject_splits_fp)
-    required_columns = {"subject_id", "split"}
+    required_columns = {subject_id_col, split_col}
     actual_columns = set(subject_splits.collect_schema().names())
     if not required_columns.issubset(actual_columns):
         raise ValueError(
             f"{subject_splits_fp} must contain columns {sorted(required_columns)}, "
             f"but has {sorted(actual_columns)}."
         )
-    train_subjects = subject_splits.filter(pl.col("split") == "train").select("subject_id").unique()
+    train_subjects = (
+        subject_splits.filter(pl.col(split_col) == meds.train_split).select(subject_id_col).unique()
+    )
     if train_subjects.select(pl.len()).collect().item() == 0:
         raise ValueError(f"No training subjects found in {subject_splits_fp}")
     return data_shards, train_subjects
@@ -86,13 +82,12 @@ def main(cfg: DictConfig):
     logger.info("Iterating through shards and caching feature frequencies.")
 
     # Map: Iterates through shards and caches feature frequencies
-    train_shards, train_subjects = get_training_shards(cfg.input_dir)
+    train_shards, train_subjects = get_training_shards(cfg)
     np.random.shuffle(train_shards)
     train_cache_files = []
 
     def compute_train_feature_frequencies(shard_df):
-        if train_subjects is not None:
-            shard_df = shard_df.join(train_subjects, on="subject_id", how="semi")
+        shard_df = shard_df.join(train_subjects, on=meds.SubjectSplitSchema.subject_id_name, how="semi")
         return compute_feature_frequencies(shard_df)
 
     for shard_fp in iter_wrapper(train_shards):
