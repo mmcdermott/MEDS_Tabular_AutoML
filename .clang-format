@@ -1,0 +1,6 @@
+# C++ formatting for csrc/: Google style at the repository's 100-column width.
+BasedOnStyle: Google
+ColumnLimit: 100
+DerivePointerAlignment: false
+PointerAlignment: Left
+IncludeBlocks: Preserve
