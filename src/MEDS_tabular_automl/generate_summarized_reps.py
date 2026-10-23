@@ -31,10 +31,13 @@ def sparse_aggregate(sparse_matrix: sparray, agg: str) -> np.ndarray | coo_array
     """
     if agg == "sum":
         merged_matrix = sparse_matrix.sum(axis=0, dtype=sparse_matrix.dtype)
-    elif agg == "min":
-        merged_matrix = sparse_matrix.min(axis=0)
-    elif agg == "max":
-        merged_matrix = sparse_matrix.max(axis=0)
+    elif agg in ("min", "max"):
+        # Reduce only each column's stored entries: a row without an entry has no value there, not a 0.
+        matrix = csc_array(sparse_matrix)
+        columns = np.flatnonzero(np.diff(matrix.indptr))
+        reduce = np.minimum if agg == "min" else np.maximum
+        values = reduce.reduceat(matrix.data, matrix.indptr[columns]) if len(columns) else matrix.data[:0]
+        merged_matrix = coo_array((values, (np.zeros_like(columns), columns)), shape=(1, matrix.shape[1]))
     elif agg == "sum_sqd":
         merged_matrix = sparse_matrix.power(2).sum(axis=0, dtype=sparse_matrix.dtype)
     elif agg == "count":
