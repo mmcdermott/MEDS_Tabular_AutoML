@@ -224,9 +224,13 @@ def aggregate_matrix(
             data.append(agg_matrix[nozero_ind])
             row.append(np.repeat(np.array(i, dtype=np.int32), len(nozero_ind)))
         elif isinstance(agg_matrix, coo_array):
+            # `agg_matrix` is a column-wise aggregate over axis 0, so its own row index is always 0 --
+            # that is the row *within the aggregate*, not the window the aggregate belongs to. Using it
+            # writes every window's result into row 0 of the output, where the CSR constructor then
+            # sums the duplicates. The ndarray branch above uses `i` for exactly this reason.
             col.append(agg_matrix.col)
             data.append(agg_matrix.data)
-            row.append(agg_matrix.row)
+            row.append(np.repeat(np.array(i, dtype=np.int32), len(agg_matrix.data)))
         else:
             raise TypeError(f"Invalid matrix type {type(agg_matrix)}")
     if len(row) == 0:
