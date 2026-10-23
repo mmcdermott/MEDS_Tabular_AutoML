@@ -44,7 +44,7 @@ def filter_to_codes(
             normalized by dividing its count by the total number of observations
             across all codes in the dataset, to be included.
         max_include_codes: Maximum number of codes to include (selecting the most
-            prevelent codes).
+            prevelent codes; codes with equal counts are taken in name order).
 
     Returns:
         Sorted list of the intersection of allowed codes (if they are specified) and filters based on
@@ -63,6 +63,10 @@ def filter_to_codes(
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, None, None, None, 1)
         ['E']
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["E", "D", "C", "A"], "count": [4, 3, 3, 2]}).write_parquet(f.name)
+        ...     filter_to_codes( f.name, None, None, None, 2)
+        ['C', 'E']
         >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [4, 3, 2]}).write_parquet(f.name)
         ...     filter_to_codes( f.name, ["A", "D"], 10, None, None)
@@ -86,7 +90,9 @@ def filter_to_codes(
         feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
 
     if max_include_codes is not None:
-        feature_freqs = feature_freqs.sort("count", descending=True).head(max_include_codes)
+        # Break ties by code, so that the codes kept at the cutoff do not depend on the row order.
+        feature_freqs = feature_freqs.sort(["count", "code"], descending=[True, False])
+        feature_freqs = feature_freqs.head(max_include_codes)
 
     if len(feature_freqs["code"]) == 0:
         raise ValueError(
@@ -194,17 +200,23 @@ def get_min_dtype(array: np.ndarray) -> np.dtype:
         dtype('...')
         >>> get_min_dtype(np.array([1, 2, 3, "a"]))
         dtype('...')
+
+    Floating point values are reduced to float32 only if that represents every value exactly:
+
+        >>> get_min_dtype(np.array([0.5, -2.0, 3.0, np.nan]))
+        dtype('float32')
+        >>> get_min_dtype(np.array([0.1, 2.0]))
+        dtype('float64')
+        >>> get_min_dtype(np.array([1e300]))
+        dtype('float64')
     """
     if np.issubdtype(array.dtype, np.integer):
         return np.result_type(np.min_scalar_type(array.min()), array.max())
     elif np.issubdtype(array.dtype, np.floating):
-        return np.result_type(np.float32)
-        # For more precision, we could do this
-        # try:
-        #    array.astype(np.float32, copy=False)
-        #    return np.float32
-        # except OverflowError:
-        #    return np.float64
+        with np.errstate(over="ignore"):
+            narrowed = array.astype(np.float32)
+        if np.array_equal(narrowed, array, equal_nan=True):
+            return np.dtype(np.float32)
 
     return array.dtype
 
@@ -217,13 +229,23 @@ def sparse_matrix_to_array(coo_matrix: coo_array) -> tuple[np.ndarray, tuple[int
 
     Returns:
         A tuple of a numpy array ([data, row, col]) and the shape of the original matrix.
+
+    Examples:
+        Stored zeros are kept and NaN entries are dropped:
+
+        >>> array, shape = sparse_matrix_to_array(
+        ...     coo_array(([0.0, 2.0, np.nan], ([0, 1, 1], [0, 0, 1])), shape=(2, 2))
+        ... )
+        >>> array.tolist(), shape
+        ([[0.0, 2.0], [0.0, 1.0], [0.0, 0.0]], (2, 2))
     """
     data, row, col = coo_matrix.data, coo_matrix.row, coo_matrix.col
-    # Remove invalid indices
-    valid_indices = (data == 0) | np.isnan(data)
-    data = data[~valid_indices]
-    row = row[~valid_indices]
-    col = col[~valid_indices]
+    # Remove NaN entries. Stored zeros are kept: they are observed values (e.g., a measurement of 0 or a sum
+    # that cancels out), whereas a feature without any observation has no entry at all.
+    valid_indices = ~np.isnan(data)
+    data = data[valid_indices]
+    row = row[valid_indices]
+    col = col[valid_indices]
     # reduce dtypes
     if len(data):
         data = data.astype(get_min_dtype(data), copy=False)
