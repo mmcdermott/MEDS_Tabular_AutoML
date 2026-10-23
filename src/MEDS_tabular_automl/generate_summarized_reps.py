@@ -293,6 +293,8 @@ def compute_agg(
 
     logger.info("Step 1.5: Running sparse aggregation.")
     matrix = aggregate_matrix(windows, matrix, agg, num_features, use_tqdm)
+    # Each row now holds one timestamp's counts or sums of squares, which the windows must add up.
+    agg = {"code/count": "sum", "value/count": "sum", "value/sum_sqd": "sum"}.get(agg, agg)
 
     if label_df is not None:
         logger.info("Step 2: computing rolling windows and aggregating.")
