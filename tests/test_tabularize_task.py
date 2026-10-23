@@ -2,6 +2,7 @@ import json
 from io import StringIO
 from pathlib import Path
 
+import meds
 import polars as pl
 from hydra import compose, initialize
 from hydra.utils import instantiate
@@ -171,6 +172,18 @@ def test_tabularize(tmp_path):
         df.write_parquet(file_path)
         all_data.append(df)
         assert file_path.exists()
+
+    # meds-tab-describe fits code metadata on the training subjects listed in the subject splits file
+    subject_splits_fp = input_dir.parent / meds.subject_splits_filepath
+    subject_splits_fp.parent.mkdir(parents=True, exist_ok=True)
+    pl.concat(
+        [
+            df.select(meds.SubjectSplitSchema.subject_id_name)
+            .unique()
+            .with_columns(pl.lit(split.split("/")[0]).alias(meds.SubjectSplitSchema.split_name))
+            for split, df in zip(MEDS_OUTPUTS, all_data, strict=True)
+        ]
+    ).write_parquet(subject_splits_fp)
 
     all_data = pl.concat(all_data, how="diagonal_relaxed").sort(by=["subject_id", "time"])
 
