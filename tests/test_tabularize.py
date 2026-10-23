@@ -436,7 +436,7 @@ def test_tabularize(tmp_path):
         overrides = ["model_launcher=knn_classifier"] + [f"{k}={v}" for k, v in sklearnmodel_config.items()]
         cfg = compose(config_name="launch_model", overrides=overrides)
     with pytest.raises(
-        ValueError, match="Data is loaded in shards, but KNeighborsClassifier does not support partial_fit."
+        ValueError, match=r"Data is loaded in shards, but KNeighborsClassifier does not support partial_fit\."
     ):
         launch_model.main(cfg)
 
