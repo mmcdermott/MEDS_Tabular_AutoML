@@ -232,8 +232,8 @@ def test_integration(tmp_path):
     out_fp.parent.mkdir(parents=True, exist_ok=True)
     df.write_parquet(out_fp)
 
-    stderr, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
-    stderr, stdout_agg = run_command(
+    run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
+    _, stdout_agg = run_command(
         "generate-subsets", ["[static/present,static/first]"], {}, "generate-subsets aggs"
     )
 

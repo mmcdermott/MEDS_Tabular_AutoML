@@ -62,8 +62,8 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
 
 def test_generate_subsets_configs():
     input_dir = "blah"
-    stderr, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
-    stderr, stdout_agg = run_command("generate-subsets", ["[static/present]"], {}, "generate-subsets aggs")
+    _, stdout_ws = run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
+    run_command("generate-subsets", ["[static/present]"], {}, "generate-subsets aggs")
     xgboost_config_kwargs = {
         "input_dir": input_dir,
         "output_dir": "blah",
