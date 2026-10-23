@@ -164,7 +164,7 @@ def main(cfg: DictConfig):
     # iterate through them
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
-        split, shard_num, window_size, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
+        split, shard_num = Path(data_fp).with_suffix("").parts[-5:-3]
         meds_data_in_fp = Path(cfg.input_dir) / split / f"{shard_num}.parquet"
         shard_label_fp = Path(cfg.output_label_cache_dir) / split / f"{shard_num}.parquet"
         out_fp = (
