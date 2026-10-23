@@ -14,7 +14,6 @@ timestamp it is total. Measured on the MIMIC-IV demo extract, 1,022,455 timestam
 
 from datetime import datetime
 
-import numpy as np
 import polars as pl
 import pytest
 
@@ -22,111 +21,157 @@ from MEDS_tabular_automl.generate_summarized_reps import generate_summary
 from MEDS_tabular_automl.generate_ts_features import get_flat_ts_rep
 
 FEATURE_COLUMNS = ["A/code", "A/value", "B/code", "B/value", "C/code", "C/value"]
+EVENT_SCHEMA = {"subject_id": pl.Int64, "time": pl.Datetime, "code": pl.String, "numeric_value": pl.Float64}
 
-# One subject per pattern. Every subject has a single label at 2020-01-02, after all of its events, and
-# is summarized over a full window, so each output row is that subject's whole history.
-EVENTS = pl.LazyFrame(
-    [
-        # 1: one event per timestamp
-        (1, datetime(2020, 1, 1, 0), "A", 1.0),
-        (1, datetime(2020, 1, 1, 1), "B", 2.0),
-        (1, datetime(2020, 1, 1, 2), "C", 3.0),
-        # 2: A and B share the first timestamp
-        (2, datetime(2020, 1, 1, 0), "A", 1.0),
-        (2, datetime(2020, 1, 1, 0), "B", 2.0),
-        (2, datetime(2020, 1, 1, 1), "C", 3.0),
-        # 3: all three share one timestamp
-        (3, datetime(2020, 1, 1, 0), "A", 1.0),
-        (3, datetime(2020, 1, 1, 0), "B", 2.0),
-        (3, datetime(2020, 1, 1, 0), "C", 3.0),
-        # 4: a lone event
-        (4, datetime(2020, 1, 1, 0), "A", 3.25),
-        # 5: the same code twice at one timestamp and once more later
-        (5, datetime(2020, 1, 1, 0), "A", 1.0),
-        (5, datetime(2020, 1, 1, 0), "A", 2.0),
-        (5, datetime(2020, 1, 1, 1), "A", 4.0),
-        # 6: positive A, then a timestamp where A is absent
-        (6, datetime(2020, 1, 1, 0), "A", 5.0),
-        (6, datetime(2020, 1, 1, 1), "B", 1.0),
-        # 7: negative A, then a timestamp where A is absent
-        (7, datetime(2020, 1, 1, 0), "A", -5.0),
-        (7, datetime(2020, 1, 1, 1), "B", -1.0),
-        # 8: a code with no numeric value
-        (8, datetime(2020, 1, 1, 0), "A", None),
-    ],
-    schema={"subject_id": pl.Int64, "time": pl.Datetime, "code": pl.String, "numeric_value": pl.Float64},
-    orient="row",
-)
+T0 = datetime(2020, 1, 1, 0)
+T1 = datetime(2020, 1, 1, 1)
+T2 = datetime(2020, 1, 1, 2)
+BEFORE = datetime(2019, 12, 31)
+AFTER = datetime(2020, 1, 2)
 
-LABELS = pl.LazyFrame({"subject_id": [1, 2, 3, 4, 5, 6, 7, 8], "prediction_time": [datetime(2020, 1, 2)] * 8})
-
-# Expected [A, B, C] for each subject; 0 means no stored entry.
-EXPECTED = {
-    "code/count": [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 0, 0],
-        [3, 0, 0],  # three events, though only two timestamps
-        [1, 1, 0],
-        [1, 1, 0],
-        [1, 0, 0],
-    ],
-    "value/count": [
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 1, 1],
-        [1, 0, 0],
-        [3, 0, 0],
-        [1, 1, 0],
-        [1, 1, 0],
-        [0, 0, 0],  # no numeric value, so no value/* entry
-    ],
-    "value/sum": [
-        [1, 2, 3],
-        [1, 2, 3],
-        [1, 2, 3],
-        [3.25, 0, 0],
-        [7, 0, 0],
-        [5, 1, 0],
-        [-5, -1, 0],
-        [0, 0, 0],
-    ],
-    "value/sum_sqd": [
-        [1, 4, 9],
-        [1, 4, 9],
-        [1, 4, 9],
-        [10.5625, 0, 0],
-        [21, 0, 0],  # 1² + 2² + 4², not (1² + 2²)² + (4²)² = 281
-        [25, 1, 0],
-        [25, 1, 0],
-        [0, 0, 0],
-    ],
-    "value/min": [
-        [1, 2, 3],
-        [1, 2, 3],
-        [1, 2, 3],
-        [3.25, 0, 0],
-        [1, 0, 0],
-        [5, 1, 0],  # not 0: A's absence at 01:00 is not a value of 0
-        [-5, -1, 0],
-        [0, 0, 0],
-    ],
-    "value/max": [
-        [1, 2, 3],
-        [1, 2, 3],
-        [1, 2, 3],
-        [3.25, 0, 0],
-        [4, 0, 0],
-        [5, 1, 0],
-        [-5, -1, 0],  # not 0: A's absence at 01:00 is not a value of 0
-        [0, 0, 0],
-    ],
+# Each case is one subject's events, the prediction time of its single label, and the expected output of
+# a full-window summary at that time for each aggregation. 0 means no stored entry.
+CASES = {
+    "one event per timestamp": (
+        {"time": [T0, T1, T2], "code": ["A", "B", "C"], "numeric_value": [1, 2, 3]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 1},
+            "value/count": {"A": 1, "B": 1, "C": 1},
+            "value/sum": {"A": 1, "B": 2, "C": 3},
+            "value/sum_sqd": {"A": 1, "B": 4, "C": 9},
+            "value/min": {"A": 1, "B": 2, "C": 3},
+            "value/max": {"A": 1, "B": 2, "C": 3},
+        },
+    ),
+    "two events share a timestamp": (
+        {"time": [T0, T0, T1], "code": ["A", "B", "C"], "numeric_value": [1, 2, 3]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 1},
+            "value/count": {"A": 1, "B": 1, "C": 1},
+            "value/sum": {"A": 1, "B": 2, "C": 3},
+            "value/sum_sqd": {"A": 1, "B": 4, "C": 9},
+            "value/min": {"A": 1, "B": 2, "C": 3},
+            "value/max": {"A": 1, "B": 2, "C": 3},
+        },
+    ),
+    "all events share a timestamp": (
+        {"time": [T0, T0, T0], "code": ["A", "B", "C"], "numeric_value": [1, 2, 3]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 1},
+            "value/count": {"A": 1, "B": 1, "C": 1},
+            "value/sum": {"A": 1, "B": 2, "C": 3},
+            "value/sum_sqd": {"A": 1, "B": 4, "C": 9},
+            "value/min": {"A": 1, "B": 2, "C": 3},
+            "value/max": {"A": 1, "B": 2, "C": 3},
+        },
+    ),
+    "a lone event": (
+        {"time": [T0], "code": ["A"], "numeric_value": [3.25]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 0, "C": 0},
+            "value/count": {"A": 1, "B": 0, "C": 0},
+            "value/sum": {"A": 3.25, "B": 0, "C": 0},
+            "value/sum_sqd": {"A": 10.5625, "B": 0, "C": 0},
+            "value/min": {"A": 3.25, "B": 0, "C": 0},
+            "value/max": {"A": 3.25, "B": 0, "C": 0},
+        },
+    ),
+    # Three events at two timestamps. Counts must count events, and sum_sqd must square each value once:
+    # 1² + 2² + 4² = 21, not (1² + 2²)² + (4²)² = 281.
+    "the same code repeated": (
+        {"time": [T0, T0, T1], "code": ["A", "A", "A"], "numeric_value": [1, 2, 4]},
+        AFTER,
+        {
+            "code/count": {"A": 3, "B": 0, "C": 0},
+            "value/count": {"A": 3, "B": 0, "C": 0},
+            "value/sum": {"A": 7, "B": 0, "C": 0},
+            "value/sum_sqd": {"A": 21, "B": 0, "C": 0},
+            "value/min": {"A": 1, "B": 0, "C": 0},
+            "value/max": {"A": 4, "B": 0, "C": 0},
+        },
+    ),
+    # A is only ever 5. Its absence at T1 is not a value of 0, so its min is 5.
+    "a positive code absent at a later timestamp": (
+        {"time": [T0, T1], "code": ["A", "B"], "numeric_value": [5, 1]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 0},
+            "value/count": {"A": 1, "B": 1, "C": 0},
+            "value/sum": {"A": 5, "B": 1, "C": 0},
+            "value/sum_sqd": {"A": 25, "B": 1, "C": 0},
+            "value/min": {"A": 5, "B": 1, "C": 0},
+            "value/max": {"A": 5, "B": 1, "C": 0},
+        },
+    ),
+    # A is only ever -5. Its absence at T1 is not a value of 0, so its max is -5.
+    "a negative code absent at a later timestamp": (
+        {"time": [T0, T1], "code": ["A", "B"], "numeric_value": [-5, -1]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 0},
+            "value/count": {"A": 1, "B": 1, "C": 0},
+            "value/sum": {"A": -5, "B": -1, "C": 0},
+            "value/sum_sqd": {"A": 25, "B": 1, "C": 0},
+            "value/min": {"A": -5, "B": -1, "C": 0},
+            "value/max": {"A": -5, "B": -1, "C": 0},
+        },
+    ),
+    # The code is counted, but with no numeric value it has no value/* entries.
+    "a code with no numeric value": (
+        {"time": [T0], "code": ["A"], "numeric_value": [None]},
+        AFTER,
+        {
+            "code/count": {"A": 1, "B": 0, "C": 0},
+            "value/count": {"A": 0, "B": 0, "C": 0},
+            "value/sum": {"A": 0, "B": 0, "C": 0},
+            "value/sum_sqd": {"A": 0, "B": 0, "C": 0},
+            "value/min": {"A": 0, "B": 0, "C": 0},
+            "value/max": {"A": 0, "B": 0, "C": 0},
+        },
+    ),
+    # Predicted at T1: B at T1 counts, as the window includes its end, and C at T2 is in the future.
+    "events after the prediction time": (
+        {"time": [T0, T1, T2], "code": ["A", "B", "C"], "numeric_value": [1, 2, 3]},
+        T1,
+        {
+            "code/count": {"A": 1, "B": 1, "C": 0},
+            "value/count": {"A": 1, "B": 1, "C": 0},
+            "value/sum": {"A": 1, "B": 2, "C": 0},
+            "value/sum_sqd": {"A": 1, "B": 4, "C": 0},
+            "value/min": {"A": 1, "B": 2, "C": 0},
+            "value/max": {"A": 1, "B": 2, "C": 0},
+        },
+    ),
+    # Every event is after the prediction time, so nothing is summarized.
+    "a prediction time before any event": (
+        {"time": [T0], "code": ["A"], "numeric_value": [1]},
+        BEFORE,
+        {
+            "code/count": {"A": 0, "B": 0, "C": 0},
+            "value/count": {"A": 0, "B": 0, "C": 0},
+            "value/sum": {"A": 0, "B": 0, "C": 0},
+            "value/sum_sqd": {"A": 0, "B": 0, "C": 0},
+            "value/min": {"A": 0, "B": 0, "C": 0},
+            "value/max": {"A": 0, "B": 0, "C": 0},
+        },
+    ),
 }
+AGGS = ["code/count", "value/count", "value/sum", "value/sum_sqd", "value/min", "value/max"]
 
 
-@pytest.mark.parametrize("agg", EXPECTED)
-def test_full_window_summary(agg):
-    index_df, matrix = get_flat_ts_rep(agg, FEATURE_COLUMNS, EVENTS)
-    summary = generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", agg, LABELS)
-    np.testing.assert_array_equal(summary.toarray(), EXPECTED[agg])
+@pytest.mark.parametrize("agg", AGGS)
+@pytest.mark.parametrize("case", CASES)
+def test_full_window_summary(case, agg):
+    events, prediction_time, expected = CASES[case]
+    events = pl.LazyFrame({"subject_id": 1, **events}, schema=EVENT_SCHEMA)
+    labels = pl.LazyFrame({"subject_id": [1], "prediction_time": [prediction_time]})
+
+    index_df, matrix = get_flat_ts_rep(agg, FEATURE_COLUMNS, events)
+    summary = generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", agg, labels)
+
+    got = dict(zip(["A", "B", "C"], summary.toarray()[0].tolist(), strict=True))
+    assert got == expected[agg]
