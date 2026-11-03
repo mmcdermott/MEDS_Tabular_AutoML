@@ -25,7 +25,7 @@ from tests.test_tabularize import (
     MEDS_OUTPUTS,
     NUM_SHARDS,
     SPLITS_JSON,
-    STATIC_FIRST_COLS,
+    STATIC_MEAN_COLS,
     STATIC_PRESENT_COLS,
     VALUE_COLS,
 )
@@ -102,7 +102,7 @@ def test_integration(tmp_path):
     feature_columns = get_feature_columns(cfg.output_filepath)
     assert get_feature_names("code/count", feature_columns) == sorted(CODE_COLS)
     assert get_feature_names("static/present", feature_columns) == sorted(STATIC_PRESENT_COLS)
-    assert get_feature_names("static/first", feature_columns) == sorted(STATIC_FIRST_COLS)
+    assert get_feature_names("static/mean", feature_columns) == sorted(STATIC_MEAN_COLS)
     for value_agg in VALUE_AGGREGATIONS:
         assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
 
@@ -234,7 +234,7 @@ def test_integration(tmp_path):
 
     run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
     _, stdout_agg = run_command(
-        "generate-subsets", ["[static/present,static/first]"], {}, "generate-subsets aggs"
+        "generate-subsets", ["[static/present,static/mean]"], {}, "generate-subsets aggs"
     )
 
     stderr, stdout = run_command(

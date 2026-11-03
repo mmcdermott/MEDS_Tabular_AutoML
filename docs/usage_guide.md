@@ -184,7 +184,7 @@ meds-tab-tabularize-static \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
     do_overwrite=False \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 This stage is not parallelized as it runs very quickly.
@@ -220,13 +220,13 @@ OUTPUT_DIR/
 └─── tabularize/
     └─── <SPLIT A>
     │   │   <SHARD 0>/none/static/present.npz
-    │   │   <SHARD 0>/none/static/first.npz
+    │   │   <SHARD 0>/none/static/mean.npz
     │   │   <SHARD 1>/none/static/present.npz
     │   │   ...
     │
     └─── <SPLIT B>
         │   <SHARD 0>/none/static/present.npz
-        │   <SHARD 0>/none/static/first.npz
+        │   <SHARD 0>/none/static/mean.npz
         │   <SHARD 1>/none/static/present.npz
         │   ...
 ```
@@ -274,14 +274,14 @@ OUTPUT_DIR/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
+                        - 📄 mean.npz
 
                 ??? folder "SHARD 1"
 
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
+                        - 📄 mean.npz
 
             ??? folder "SPLIT B"
 
@@ -300,7 +300,7 @@ meds-tab-tabularize-time-series \
     "output_dir=$OUTPUT_DIR" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 !!! warning "Memory Usage"
@@ -364,7 +364,7 @@ OUTPUT_DIR/tabularize/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
+                        - 📄 mean.npz
 
                     ??? folder "1d"
 
@@ -409,7 +409,7 @@ meds-tab-cache-task \
     "task_name=${TASK}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 !!! warning "Stage Duration"
@@ -490,7 +490,7 @@ OUTPUT_DIR/
                         ??? folder "none/static"
 
                             - 📄 present.npz
-                            - 📄 first.npz
+                            - 📄 mean.npz
 
                         ??? folder "1d"
 
@@ -535,7 +535,7 @@ meds-tab-model \
     "task_name=$TASK" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ### Hyperparameter Optimization
@@ -552,7 +552,7 @@ meds-tab-model \
     "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ??? note "Args Description for Model Stage"

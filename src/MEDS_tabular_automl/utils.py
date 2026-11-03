@@ -11,7 +11,7 @@ WRITE_USE_PYARROW = True
 ROW_IDX_NAME = "__row_idx"
 
 STATIC_CODE_AGGREGATION = "static/present"
-STATIC_VALUE_AGGREGATION = "static/first"
+STATIC_VALUE_AGGREGATION = "static/mean"
 
 CODE_AGGREGATIONS = [
     "code/count",
@@ -142,12 +142,12 @@ def parse_static_feature_column(c: str) -> tuple[str, str, str, str]:
     Examples:
         >>> parse_static_feature_column("A/static/present")
         ('A', 'static', 'present')
-        >>> parse_static_feature_column("A/B/static/first")
-        ('A/B', 'static', 'first')
-        >>> parse_static_feature_column("static/first")
+        >>> parse_static_feature_column("A/B/static/mean")
+        ('A/B', 'static', 'mean')
+        >>> parse_static_feature_column("static/mean")
         Traceback (most recent call last):
             ...
-        ValueError: Column static/first is not a valid flat feature column!
+        ValueError: Column static/mean is not a valid flat feature column!
     """
     parts = c.split("/")
     if len(parts) < 3:

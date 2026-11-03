@@ -31,7 +31,7 @@ window_sizes:
   - full
 aggs:
   - static/present
-  - static/first
+  - static/mean
   - code/count
   - value/count
   - value/sum

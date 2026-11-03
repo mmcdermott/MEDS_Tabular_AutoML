@@ -40,7 +40,7 @@ Note that "Static" and "Dynamic" refer to whether a timestamp is recorded in the
 | Aggregation      | Applies To             | Definition                                         |
 | ---------------- | ---------------------- | -------------------------------------------------- |
 | `static/present` | Static Codes           | Binary indicator of code presence                  |
-| `static/first`   | Static Numeric Values  | The numeric value                                  |
+| `static/mean`    | Static Numeric Values  | Mean of the subject's static values of the code    |
 | `code/count`     | Dynamic Codes          | Count of code occurrences within lookback window   |
 | `value/count`    | Dynamic Numeric Values | Count of measurements within lookback window       |
 | `value/sum`      | Dynamic Numeric Values | Sum of measurements within lookback window         |
@@ -55,7 +55,7 @@ We provide examples of these aggregations here. Notice that for dynamic aggregat
 | Aggregation      | Input Data                               | Result | Explanation                                                           |
 | ---------------- | ---------------------------------------- | ------ | --------------------------------------------------------------------- |
 | `static/present` | Gender//Female                           | 1      | Indicates the presence (1) of the code "Gender//Female"               |
-| `static/first`   | Birth Weight: 3.2 kg                     | 3.2    | Returns the numeric value of the static measurement                   |
+| `static/mean`    | Birth Weight: [3.2, 3.4] kg              | 3.3    | Mean of the subject's static values of the code                       |
 | `code/count`     | Heart Rate: [80, NULL, 78, 90]           | 4      | Counts the occurrences of codes within the lookback window            |
 | `value/count`    | Heart Rate: [80, 78, 90]                 | 3      | Counts the number of measurements recorded within the lookback window |
 | `value/sum`      | Glucose Levels: [100, 110, 105]          | 315    | Sums the measurement values within the lookback window                |

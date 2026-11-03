@@ -124,16 +124,16 @@ STATIC_PRESENT_COLS = [
     "EYE_COLOR//HAZEL/static/present",
     "HEIGHT/static/present",
 ]
-STATIC_FIRST_COLS = ["HEIGHT/static/first"]
+STATIC_MEAN_COLS = ["HEIGHT/static/mean"]
 
 EXPECTED_STATIC_FILES = [
-    "held_out/0/none/static/first.npz",
+    "held_out/0/none/static/mean.npz",
     "held_out/0/none/static/present.npz",
-    "train/0/none/static/first.npz",
+    "train/0/none/static/mean.npz",
     "train/0/none/static/present.npz",
-    "train/1/none/static/first.npz",
+    "train/1/none/static/mean.npz",
     "train/1/none/static/present.npz",
-    "tuning/0/none/static/first.npz",
+    "tuning/0/none/static/mean.npz",
     "tuning/0/none/static/present.npz",
 ]
 
@@ -192,7 +192,7 @@ def test_tabularize(tmp_path):
     feature_columns = get_feature_columns(cfg.output_filepath)
     assert get_feature_names("code/count", feature_columns) == sorted(CODE_COLS)
     assert get_feature_names("static/present", feature_columns) == sorted(STATIC_PRESENT_COLS)
-    assert get_feature_names("static/first", feature_columns) == sorted(STATIC_FIRST_COLS)
+    assert get_feature_names("static/mean", feature_columns) == sorted(STATIC_MEAN_COLS)
     for value_agg in VALUE_AGGREGATIONS:
         assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
 

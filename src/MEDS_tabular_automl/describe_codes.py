@@ -4,7 +4,7 @@ import polars as pl
 
 from MEDS_tabular_automl.utils import get_feature_names
 
-SUFFIXES = ["code", "value", "static/present", "static/first"]
+SUFFIXES = ["code", "value", "static/present", "static/mean"]
 
 
 def convert_to_df(freq_dict: dict[str, int]) -> pl.DataFrame:
@@ -115,12 +115,12 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         ... }).lazy()
         >>> dict(sorted(convert_to_freq_dict(compute_feature_frequencies(data).lazy()).items()))
         {'A/code': 1,
-         'A/static/first': 1,
+         'A/static/mean': 1,
          'A/static/present': 1,
-         'B/static/first': 2,
+         'B/static/mean': 2,
          'B/static/present': 2,
          'C/code': 2,
-         'C/static/first': 1,
+         'C/static/mean': 1,
          'C/static/present': 1}
 
     NaN numeric values are missing, like nulls: they count towards the code but not towards its value.
@@ -149,7 +149,7 @@ def compute_feature_frequencies(shard_df: pl.LazyFrame) -> pl.DataFrame:
         static_value_df.group_by("code").agg(pl.count("numeric_value").alias("count")).collect()
     )
     static_value_freqs = {
-        row["code"] + "/static/first": row["count"] for row in static_value_freqs_df.iter_rows(named=True)
+        row["code"] + "/static/mean": row["count"] for row in static_value_freqs_df.iter_rows(named=True)
     }
 
     ts_df = shard_df.filter(
@@ -221,7 +221,7 @@ def clear_code_aggregation_suffix(code: str) -> str:
         'A'
         >>> clear_code_aggregation_suffix("A/static/present")
         'A'
-        >>> clear_code_aggregation_suffix("A/static/first")
+        >>> clear_code_aggregation_suffix("A/static/mean")
         'A'
         >>> clear_code_aggregation_suffix("A")
         Traceback (most recent call last):
@@ -289,8 +289,8 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
     static_present_feature_columns = [
         clear_code_aggregation_suffix(each) for each in get_feature_names("static/present", allowed_codes)
     ]
-    static_first_feature_columns = [
-        clear_code_aggregation_suffix(each) for each in get_feature_names("static/first", allowed_codes)
+    static_mean_feature_columns = [
+        clear_code_aggregation_suffix(each) for each in get_feature_names("static/mean", allowed_codes)
     ]
     code_feature_columns = [
         clear_code_aggregation_suffix(each) for each in get_feature_names("code/count", allowed_codes)
@@ -304,7 +304,7 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
     rare_static_code = is_static_code & ~pl.col("code").is_in(static_present_feature_columns)
     rare_ts_code = ~is_static_code & ~pl.col("code").is_in(code_feature_columns)
     rare_ts_value = ~is_static_code & ~pl.col("code").is_in(value_feature_columns) & is_numeric_code
-    rare_static_value = is_static_code & ~pl.col("code").is_in(static_first_feature_columns) & is_numeric_code
+    rare_static_value = is_static_code & ~pl.col("code").is_in(static_mean_feature_columns) & is_numeric_code
 
     # Remove rare numeric values by converting them to null
     df = df.with_columns(
