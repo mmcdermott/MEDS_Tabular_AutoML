@@ -492,7 +492,7 @@ OUTPUT_DIR/tabularize/
 
 ## 5. **`meds-tab-cache-task`**
 
-Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
+Aligns task-specific labels with the nearest prior event in the tabularized data: each label takes the features of the subject's last event at or before its prediction time, so its finite windows end at that event's time rather than at the prediction time (see [Label-time vs cached features](#label-time-vs-cached-features)). It requires a labeled dataset directory with three columns (`subject_id`, `prediction_time`, and the label column set by `label_column`, `boolean_value` by default) structured similarly to the `input_dir`.
 
 ```console
 meds-tab-cache-task \
