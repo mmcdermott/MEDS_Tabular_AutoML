@@ -2,6 +2,13 @@
 
 We provide a set of core CLI scripts to facilitate the tabularization and modeling of MEDS data. These scripts are designed to be run in sequence to transform raw MEDS data into tabularized data and train a model on the tabularized data.
 
+There are two ways to get from MEDS data to a model. Both start with stages 1 and 2 below:
+
+- [**Task-specific (label-time) tabularization**](#task-specific-label-time-tabularization) (recommended): compute features only at the prediction times of a task's labels, with windows ending at each prediction time.
+- [**Tabularize once, cache per task**](#alternative-tabularize-once-cache-per-task): compute features at every event time of every subject (stages 3 and 4), then select the rows of each task's labels with `meds-tab-cache-task` (stage 5).
+
+The two give different feature values for finite windows when a prediction time falls between events; see [Label-time vs cached features](#label-time-vs-cached-features).
+
 ## 1. **`MEDS_transform-reshard_to_split`**
 
 This optional command reshards the data. A core challenge in tabularization is the high memory usage and slow compute time. We shard the data into small shards to reduce the memory usage as we can independently tabularize each shard, and we can reduce cpu time by parallelizing the processing of these shards across workers that are independently processing different shards.
@@ -172,6 +179,95 @@ OUTPUT_DIR/
         ??? folder "metadata"
 
             - 📄 codes.parquet
+
+## Task-specific (label-time) tabularization
+
+This is the recommended workflow. Static and time-series features are computed only at the prediction times of one task's labels, and each window ends at the prediction time itself. Use it when:
+
+- you train models for one or a few tasks;
+- the dataset is large, so computing features at every event time of every subject is too slow or too big to store;
+- features should be defined relative to the prediction time, whatever time the subject's last event before it was recorded.
+
+!!! note "Direction"
+
+    Full tabularization followed by `meds-tab-cache-task` computes features at every event time and does not scale well to very large datasets. Label-time tabularization is the recommended workflow; the full-tabularization path may be deprecated in a future release.
+
+After `meds-tab-describe` (stage 2), run static and time-series tabularization with `input_label_dir` pointing at the task's labels, and a separate `output_dir` for each task:
+
+```console
+TASK_OUTPUT_DIR="${OUTPUT_DIR}/${TASK}"
+mkdir -p "${TASK_OUTPUT_DIR}"
+# Reuse the code metadata computed by meds-tab-describe.
+rsync -r "${OUTPUT_DIR}/metadata/" "${TASK_OUTPUT_DIR}/metadata"
+
+meds-tab-tabularize-static \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=${TASK_OUTPUT_DIR}" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    do_overwrite=False \
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+
+meds-tab-tabularize-time-series \
+    --multirun \
+    worker="range(0,$N_PARALLEL_WORKERS)" \
+    hydra/launcher=joblib \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=${TASK_OUTPUT_DIR}" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    do_overwrite=False \
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+Skip `meds-tab-cache-task`. The tabularized outputs already have one row per label, in the order of the label files, so point the model launcher at them and at the labels directly:
+
+```console
+meds-tab-model \
+    --multirun \
+    model_launcher=xgboost \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=${TASK_OUTPUT_DIR}" \
+    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
+    "task_name=$TASK" \
+    "input_tabularized_cache_dir=${TASK_OUTPUT_DIR}/tabularize/" \
+    "input_label_cache_dir=${TASKS_DIR}/${TASK}/" \
+    "hydra.sweeper.n_trials=1000" \
+    "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+See [stage 6](#6-meds-tab-model) for the model options. [`MIMICIV_TUTORIAL/task_tabularize_meds.sh`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/MIMICIV_TUTORIAL/task_tabularize_meds.sh) runs this workflow for several tasks.
+
+!!! warning "Label file layout"
+
+    `input_label_dir` must mirror the sharding of the MEDS data: the labels of the subjects in `${MEDS_RESHARD_DIR}/data/<SPLIT>/<SHARD>.parquet` go in `${TASKS_DIR}/${TASK}/<SPLIT>/<SHARD>.parquet`, with columns `subject_id`, `prediction_time` and `boolean_value`. Use the same code inclusion parameters in every stage.
+
+### Label-time vs cached features
+
+The two workflows define a finite window differently when a prediction time falls between two events:
+
+- **Label-time tabularization**: the window of a label at prediction time `t` holds the subject's measurements with a time in `(t - window, t]`.
+- **`meds-tab-cache-task`**: the label takes the precomputed row of the subject's last event at or before `t`, whose window ends at that event's time `e`, so it holds the measurements in `(e - window, e]`.
+
+The reason is that `meds-tab-cache-task` reuses rows that were computed at event times; it cannot compute a window that ends between events.
+
+For example, take a subject with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10, and a `7d` window:
+
+| Workflow              | Window           | Events in the window |
+| --------------------- | ---------------- | -------------------- |
+| Label-time            | (Jan 3, Jan 10\] | Jan 6                |
+| `meds-tab-cache-task` | (Dec 30, Jan 6\] | Jan 2, Jan 6         |
+
+The two give identical features for `full` windows, for static features, and for labels exactly at an event time (for example, a label on Jan 11 gets Jan 6 and Jan 11 in both). Measurements at the prediction time itself are included in both. `tests/test_label_time_features.py` checks this behavior.
+
+## Alternative: tabularize once, cache per task
+
+Stages 3 to 5 compute features at every event time of every subject once, then select the rows of each task. Stage 6, training, is the same for both workflows. This lets several tasks share one tabularization, at the cost of computing and storing features at every event time; see [Label-time vs cached features](#label-time-vs-cached-features) for how its windows differ.
 
 ## 3. **`meds-tab-tabularize-static`**
 
