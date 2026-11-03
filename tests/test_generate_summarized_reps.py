@@ -215,6 +215,18 @@ def test_windowed_summary_several_subjects_and_labels(agg):
     assert got == WINDOWED_EXPECTED[agg]
 
 
+def test_has_values_count_is_rejected_up_front():
+    """`value/has_values_count` has no implementation, so `generate_summary` must reject it up front.
+
+    It used to pass validation and then fail inside `sparse_aggregate` with "not implemented". `value/count`
+    already counts only the measurements that have a value.
+    """
+    data = pl.LazyFrame(WINDOWED_DATA, schema=DATA_SCHEMA)
+    index_df, matrix = get_flat_ts_rep("value/count", FEATURE_COLUMNS, data)
+    with pytest.raises(ValueError, match="Invalid aggregation: value/has_values_count"):
+        generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", "value/has_values_count")
+
+
 @pytest.mark.xfail(strict=True, reason="fixed by #173 1c60b23")
 @pytest.mark.parametrize("agg", ["value/sum", "value/min", "value/max"])
 def test_nan_numeric_value_is_missing(tmp_path, agg):
