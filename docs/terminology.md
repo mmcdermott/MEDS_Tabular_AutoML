@@ -75,3 +75,17 @@ window_sizes:
   - 365d   # 1 year
   - full   # full subject history
 ```
+
+### Where a window ends
+
+A window of size `w` ending at time `t` holds the measurements with a time in `(t - w, t]`; a `full` window holds every measurement up to and including `t`. Which `t` is used depends on the workflow (see the [usage guide](usage_guide.md#label-time-vs-cached-features)):
+
+- **Label-time (task-specific) tabularization** ends each window at the label's prediction time.
+- **`meds-tab-cache-task`** gives each label the features of the subject's last event at or before the prediction time, so the window ends at that event's time. This is because it reuses rows precomputed at event times.
+
+For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window:
+
+- label-time: window (Jan 3, Jan 10\], holding Jan 6 only;
+- `meds-tab-cache-task`: the row of Jan 6, window (Dec 30, Jan 6\], holding Jan 2 and Jan 6.
+
+`full` windows, and labels exactly at an event time, give identical results in both.
