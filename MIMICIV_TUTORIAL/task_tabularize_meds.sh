@@ -84,7 +84,7 @@ do
         "input_dir=${MIMICIV_MEDS_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR/${TASK}" \
         "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" do_overwrite=False \
         "hydra.sweeper.n_trials=1000" "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
-        "input_tabularized_cache_dir=${OUTPUT_TABULARIZATION_DIR}/tabularize/" \
+        "input_tabularized_cache_dir=${OUTPUT_TABULARIZATION_DIR}/${TASK}/tabularize/" \
         "input_label_cache_dir=${TASKS_DIR}/${TASK}/" \
         "$@"
 done
