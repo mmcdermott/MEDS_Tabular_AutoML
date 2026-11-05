@@ -227,7 +227,9 @@ def test_has_values_count_is_rejected_up_front():
         generate_summary(FEATURE_COLUMNS, index_df, matrix, "full", "value/has_values_count")
 
 
-@pytest.mark.xfail(strict=True, reason="fixed by #173 1c60b23")
+# Not strict: once #173's fix is on main this test passes, and a strict marker would turn that pass into a
+# failure in #173's own CI when it is rebased. Remove the marker then (planned in #176).
+@pytest.mark.xfail(strict=False, reason="fixed by #173 1c60b23")
 @pytest.mark.parametrize("agg", ["value/sum", "value/min", "value/max"])
 def test_nan_numeric_value_is_missing(tmp_path, agg):
     """A NaN `numeric_value` is a missing value, so it must not turn the window's sum, min or max into NaN.
