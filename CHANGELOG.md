@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Removed (breaking)
+
+- Full tabularization and `meds-tab-cache-task` are removed. Task-specific tabularization is now the only
+    workflow: features are computed at the prediction times of a task's labels, with every window ending at
+    the prediction time.
+    - `meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` require `input_label_dir`.
+    - `meds-tab-cache-task` and its `task_specific_caching` config no longer exist. Instead of
+        tabularizing once and caching per task, tabularize each task with its own `input_label_dir` and
+        `output_dir`.
+    - `meds-tab-model` now reads the tabularized data from `${output_dir}/tabularize` and the labels from
+        the new required `input_label_dir`, by default. Passing `input_tabularized_cache_dir` and
+        `input_label_cache_dir` still overrides them.
+    - Why: computing features at every event time doesn't scale to large datasets, and `cache_task`'s
+        finite windows ended at the subject's last event before the prediction time rather than at the
+        prediction time, so the two workflows gave different features for the same label.
+    - The last release with the cached workflow is 0.2.0.
+
 ### Changed (breaking)
 
 - The static value feature `static/first` is renamed `static/mean`, since it computes the mean of a
