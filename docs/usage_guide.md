@@ -207,7 +207,7 @@ meds-tab-tabularize-static \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
     do_overwrite=False \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 
 meds-tab-tabularize-time-series \
     --multirun \
@@ -219,8 +219,12 @@ meds-tab-tabularize-time-series \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
     do_overwrite=False \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
+
+!!! note "Static numeric values (`static/mean`)"
+
+    The examples on this page leave out `static/mean`, the mean of a subject's static (timeless) numeric values of a code. Add it to `tabularization.aggs` only if your data has such values: if it has none, tabularization stops with `No static features found. Remove the aggregation function static/mean`. Many datasets record only categorical demographics as static and give every numeric measurement (height, weight, birth) a time, so the window features cover them instead. That is the case of the MEDS extractions of MIMIC-IV, eICU and NWICU.
 
 Skip `meds-tab-cache-task`. The tabularized outputs already have one row per label, in the order of the label files, so point the model launcher at them and at the labels directly:
 
@@ -238,7 +242,7 @@ meds-tab-model \
     "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 See [stage 6](#6-meds-tab-model) for the model options. [`MIMICIV_TUTORIAL/task_tabularize_meds.sh`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/MIMICIV_TUTORIAL/task_tabularize_meds.sh) runs this workflow for several tasks.
@@ -280,7 +284,7 @@ meds-tab-tabularize-static \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
     do_overwrite=False \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 This stage is not parallelized as it runs very quickly.
@@ -316,13 +320,11 @@ OUTPUT_DIR/
 └─── tabularize/
     └─── <SPLIT A>
     │   │   <SHARD 0>/none/static/present.npz
-    │   │   <SHARD 0>/none/static/mean.npz
     │   │   <SHARD 1>/none/static/present.npz
     │   │   ...
     │
     └─── <SPLIT B>
         │   <SHARD 0>/none/static/present.npz
-        │   <SHARD 0>/none/static/mean.npz
         │   <SHARD 1>/none/static/present.npz
         │   ...
 ```
@@ -370,14 +372,12 @@ OUTPUT_DIR/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 mean.npz
 
                 ??? folder "SHARD 1"
 
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 mean.npz
 
             ??? folder "SPLIT B"
 
@@ -396,7 +396,7 @@ meds-tab-tabularize-time-series \
     "output_dir=$OUTPUT_DIR" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 !!! warning "Memory Usage"
@@ -460,7 +460,6 @@ OUTPUT_DIR/tabularize/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 mean.npz
 
                     ??? folder "1d"
 
@@ -505,7 +504,7 @@ meds-tab-cache-task \
     "task_name=${TASK}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 !!! warning "Stage Duration"
@@ -586,7 +585,6 @@ OUTPUT_DIR/
                         ??? folder "none/static"
 
                             - 📄 present.npz
-                            - 📄 mean.npz
 
                         ??? folder "1d"
 
@@ -631,7 +629,7 @@ meds-tab-model \
     "task_name=$TASK" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ### Hyperparameter Optimization
@@ -648,7 +646,7 @@ meds-tab-model \
     "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ??? note "Args Description for Model Stage"
