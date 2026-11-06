@@ -3,6 +3,7 @@ label its subject's static features."""
 
 from pathlib import Path
 
+import meds
 import polars as pl
 from hydra import compose, initialize
 
@@ -33,6 +34,15 @@ def test_cache_task_keeps_every_label_with_its_static_features(tmp_path):
         },
         schema={"subject_id": pl.Int64, "time": pl.String, "code": pl.String, "numeric_value": pl.Float32},
     ).with_columns(pl.col("time").str.to_datetime(TIME_FORMAT)).write_parquet(input_dir / "train/0.parquet")
+    # meds-tab-describe fits code metadata on the training subjects of the MEDS root's subject splits.
+    splits_fp = tmp_path / meds.subject_splits_filepath
+    splits_fp.parent.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            meds.SubjectSplitSchema.subject_id_name: [1, 2, 3],
+            meds.SubjectSplitSchema.split_name: [meds.train_split] * 3,
+        }
+    ).write_parquet(splits_fp)
     # Unsorted labels, one of them before subject 1's first event.
     label_dir.mkdir()
     labels = pl.DataFrame(
