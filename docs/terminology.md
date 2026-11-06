@@ -78,14 +78,8 @@ window_sizes:
 
 ### Where a window ends
 
-A window of size `w` ending at time `t` holds the measurements with a time in `(t - w, t]`; a `full` window holds every measurement up to and including `t`. Which `t` is used depends on the workflow (see the [usage guide](usage_guide.md#task-specific-vs-cached-features)):
+Every window ends at the label's **prediction time** `t` (the reference time point above): a window of size `w` holds the subject's measurements with a time in `(t - w, t]`, and a `full` window holds every measurement up to and including `t`. Measurements exactly at `t` are included.
 
-- **Task-specific tabularization** ends each window at the label's prediction time.
-- **`meds-tab-cache-task`** gives each label the features of the subject's last event at or before the prediction time, so the window ends at that event's time. This is because it reuses rows precomputed at event times.
+For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window, the window is (Jan 3, Jan 10\] and holds Jan 6 only.
 
-For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window:
-
-- task-specific: window (Jan 3, Jan 10\], holding Jan 6 only;
-- `meds-tab-cache-task`: the row of Jan 6, window (Dec 30, Jan 6\], holding Jan 2 and Jan 6.
-
-`full` windows, and labels exactly at an event time, give identical results in both.
+Versions up to 0.2.0 also had `meds-tab-cache-task`, which gave each label the features of the subject's last event at or before `t`, so its windows ended at that event's time instead (in the example, (Dec 30, Jan 6\], holding Jan 2 and Jan 6). It has been removed; see the [usage guide](usage_guide.md).
