@@ -4,10 +4,10 @@ We provide a set of core CLI scripts to facilitate the tabularization and modeli
 
 There are two ways to get from MEDS data to a model. Both start with stages 1 and 2 below:
 
-- [**Task-specific (label-time) tabularization**](#task-specific-label-time-tabularization) (recommended): compute features only at the prediction times of a task's labels, with windows ending at each prediction time.
+- [**Task-specific tabularization**](#task-specific-tabularization) (recommended): compute features only at the prediction times of a task's labels, with windows ending at each prediction time.
 - [**Tabularize once, cache per task**](#alternative-tabularize-once-cache-per-task): compute features at every event time of every subject (stages 3 and 4), then select the rows of each task's labels with `meds-tab-cache-task` (stage 5).
 
-The two give different feature values for finite windows when a prediction time falls between events; see [Label-time vs cached features](#label-time-vs-cached-features).
+The two give different feature values for finite windows when a prediction time falls between events; see [Task-specific vs cached features](#task-specific-vs-cached-features).
 
 ## 1. **`MEDS_transform-reshard_to_split`**
 
@@ -180,7 +180,7 @@ OUTPUT_DIR/
 
             - 📄 codes.parquet
 
-## Task-specific (label-time) tabularization
+## Task-specific tabularization
 
 This is the recommended workflow. Static and time-series features are computed only at the prediction times of one task's labels, and each window ends at the prediction time itself. Use it when:
 
@@ -190,7 +190,7 @@ This is the recommended workflow. Static and time-series features are computed o
 
 !!! note "Direction"
 
-    Full tabularization followed by `meds-tab-cache-task` computes features at every event time and does not scale well to very large datasets. Label-time tabularization is the recommended workflow; the full-tabularization path may be deprecated in a future release.
+    Full tabularization followed by `meds-tab-cache-task` computes features at every event time and does not scale well to very large datasets. Task-specific tabularization is the recommended workflow; the full-tabularization path may be deprecated in a future release.
 
 After `meds-tab-describe` (stage 2), run static and time-series tabularization with `input_label_dir` pointing at the task's labels, and a separate `output_dir` for each task:
 
@@ -247,11 +247,11 @@ See [stage 6](#6-meds-tab-model) for the model options. [`MIMICIV_TUTORIAL/task_
 
     `input_label_dir` must mirror the sharding of the MEDS data: the labels of the subjects in `${MEDS_RESHARD_DIR}/data/<SPLIT>/<SHARD>.parquet` go in `${TASKS_DIR}/${TASK}/<SPLIT>/<SHARD>.parquet`, with columns `subject_id`, `prediction_time` and `boolean_value`. Use the same code inclusion parameters in every stage.
 
-### Label-time vs cached features
+### Task-specific vs cached features
 
 The two workflows define a finite window differently when a prediction time falls between two events:
 
-- **Label-time tabularization**: the window of a label at prediction time `t` holds the subject's measurements with a time in `(t - window, t]`.
+- **Task-specific tabularization**: the window of a label at prediction time `t` holds the subject's measurements with a time in `(t - window, t]`.
 - **`meds-tab-cache-task`**: the label takes the precomputed row of the subject's last event at or before `t`, whose window ends at that event's time `e`, so it holds the measurements in `(e - window, e]`.
 
 The reason is that `meds-tab-cache-task` reuses rows that were computed at event times; it cannot compute a window that ends between events.
@@ -260,14 +260,14 @@ For example, take a subject with events on Jan 2, 6, 11, 16, 21 and 26, a label 
 
 | Workflow              | Window           | Events in the window |
 | --------------------- | ---------------- | -------------------- |
-| Label-time            | (Jan 3, Jan 10\] | Jan 6                |
+| Task-specific         | (Jan 3, Jan 10\] | Jan 6                |
 | `meds-tab-cache-task` | (Dec 30, Jan 6\] | Jan 2, Jan 6         |
 
-The two give identical features for `full` windows, for static features, and for labels exactly at an event time (for example, a label on Jan 11 gets Jan 6 and Jan 11 in both). Measurements at the prediction time itself are included in both. `tests/test_label_time_features.py` checks this behavior.
+The two give identical features for `full` windows, for static features, and for labels exactly at an event time (for example, a label on Jan 11 gets Jan 6 and Jan 11 in both). Measurements at the prediction time itself are included in both. `tests/test_task_specific_features.py` checks this behavior.
 
 ## Alternative: tabularize once, cache per task
 
-Stages 3 to 5 compute features at every event time of every subject once, then select the rows of each task. Stage 6, training, is the same for both workflows. This lets several tasks share one tabularization, at the cost of computing and storing features at every event time; see [Label-time vs cached features](#label-time-vs-cached-features) for how its windows differ.
+Stages 3 to 5 compute features at every event time of every subject once, then select the rows of each task. Stage 6, training, is the same for both workflows. This lets several tasks share one tabularization, at the cost of computing and storing features at every event time; see [Task-specific vs cached features](#task-specific-vs-cached-features) for how its windows differ.
 
 ## 3. **`meds-tab-tabularize-static`**
 
@@ -492,7 +492,7 @@ OUTPUT_DIR/tabularize/
 
 ## 5. **`meds-tab-cache-task`**
 
-Aligns task-specific labels with the nearest prior event in the tabularized data: each label takes the features of the subject's last event at or before its prediction time, so its finite windows end at that event's time rather than at the prediction time (see [Label-time vs cached features](#label-time-vs-cached-features)). It requires a labeled dataset directory with three columns (`subject_id`, `prediction_time`, and the label column set by `label_column`, `boolean_value` by default) structured similarly to the `input_dir`.
+Aligns task-specific labels with the nearest prior event in the tabularized data: each label takes the features of the subject's last event at or before its prediction time, so its finite windows end at that event's time rather than at the prediction time (see [Task-specific vs cached features](#task-specific-vs-cached-features)). It requires a labeled dataset directory with three columns (`subject_id`, `prediction_time`, and the label column set by `label_column`, `boolean_value` by default) structured similarly to the `input_dir`.
 
 ```console
 meds-tab-cache-task \

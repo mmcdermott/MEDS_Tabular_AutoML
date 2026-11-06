@@ -3,8 +3,8 @@
 - Stored zeros (#173 fix #8): an observed value of 0, or a window whose values cancel to 0, is a stored entry.
   A code that was never observed has no entry. The two must stay distinct through aggregation, writing and
   task caching.
-- Label-time windows (#173 fix #12) end at the prediction time, not at the subject's last event before it.
-- The label-time workflow and `meds-tab-cache-task` define finite windows differently on purpose. They must
+- Task-specific windows (#173 fix #12) end at the prediction time, not at the subject's last event before it.
+- The task-specific workflow and `meds-tab-cache-task` define finite windows differently on purpose. They must
   agree for `full` windows and for labels exactly at an event time.
 - `static/mean` is the mean of the subject's static values of the code (#173 fix #15, renamed from
   `static/first`).
@@ -106,7 +106,7 @@ def test_stored_zero_survives_aggregation_writing_and_task_caching(tmp_path, cas
 
 
 # ---------------------------------------------------------------------------------------------------------
-# Label-time windows end at the prediction time (#12)
+# Task-specific windows end at the prediction time (#12)
 # ---------------------------------------------------------------------------------------------------------
 
 EVENT_DAYS = [2, 6, 11, 16, 21, 26]
@@ -142,14 +142,14 @@ def anchoring_summary(prediction_time: datetime, window: str):
         (jan(10), "full", [(0, 0, EVENT_VALUES[2] + EVENT_VALUES[6])]),
     ],
 )
-def test_label_time_window_ends_at_the_prediction_time(prediction_time, window, expected):
+def test_task_specific_window_ends_at_the_prediction_time(prediction_time, window, expected):
     summary = anchoring_summary(prediction_time, window)
     assert summary.shape == (1, 1)
     assert entries(summary) == expected
 
 
 # ---------------------------------------------------------------------------------------------------------
-# The two workflows (#12): label-time tabularization vs full tabularization + cache_task
+# The two workflows (#12): task-specific tabularization vs full tabularization + cache_task
 # ---------------------------------------------------------------------------------------------------------
 
 LABEL_BETWEEN_EVENTS = jan(10)
@@ -208,7 +208,7 @@ def write_workflow_inputs(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def label_time_features(data_dir: Path, label_dir: Path, output_dir: Path) -> dict[str, csr_array]:
-    """Label-time tabularization: tabularize static and time series with `input_label_dir`."""
+    """Task-specific tabularization: tabularize static and time series with `input_label_dir`."""
     shared = {"input_dir": str(data_dir), "output_dir": str(output_dir), "tqdm": False}
     config = {**shared, **TABULARIZATION}
     run_stage(describe_codes, "describe_codes", shared)
@@ -262,9 +262,9 @@ def test_the_two_workflows_produce_the_same_blocks(both_workflows):
 
 
 def test_the_two_workflows_differ_for_a_finite_window_between_events(both_workflows):
-    """Intentional; see docs/usage_guide.md, section on label-time vs cached features.
+    """Intentional; see docs/usage_guide.md, section on task-specific vs cached features.
 
-    For the label on Jan 10, the label-time 7d window is (Jan 3, Jan 10]: Jan 6 only. `cache_task` reuses
+    For the label on Jan 10, the task-specific 7d window is (Jan 3, Jan 10]: Jan 6 only. `cache_task` reuses
     the row of the last event before the label, Jan 6, whose 7d window is (Dec 30, Jan 6]: Jan 2 and Jan 6.
     """
     label_time, cached = both_workflows
@@ -279,7 +279,7 @@ def test_the_two_workflows_differ_for_a_finite_window_between_events(both_workfl
 def test_full_windows_agree_between_events(both_workflows, agg):
     """For the label on Jan 10, `full` windows hold the same history (Jan 2 and Jan 6) in both workflows.
 
-    Intentional; see docs/usage_guide.md, section on label-time vs cached features.
+    Intentional; see docs/usage_guide.md, section on task-specific vs cached features.
     """
     label_time, cached = both_workflows
     name = f"full/{agg}.npz"
@@ -290,7 +290,7 @@ def test_full_windows_agree_between_events(both_workflows, agg):
     "name", [f"{w}/{a}.npz" for w in WINDOWS for a in AGGS if not a.startswith("static")]
 )
 def test_the_two_workflows_agree_for_a_label_at_an_event_time(both_workflows, name):
-    """Intentional; see docs/usage_guide.md, section on label-time vs cached features.
+    """Intentional; see docs/usage_guide.md, section on task-specific vs cached features.
 
     For the label on Jan 11, exactly at an event time, both definitions give the window (t - 7d, t] or all
     history up to t, so any difference is a bug, not policy. Jan 11 holds several measurements, so this also
