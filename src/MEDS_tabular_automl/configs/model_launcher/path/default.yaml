@@ -1,5 +1,5 @@
-input_tabularized_cache_dir: ${input_tabularized_cache_dir}
-input_label_cache_dir: ${input_label_cache_dir}
+input_tabularized_dir: ${input_tabularized_dir}
+input_label_dir: ${input_label_dir}
 model_file_stem: model
 model_file_extension: .json
 cache_dir: ${cache_dir}

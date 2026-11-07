@@ -302,8 +302,8 @@ def test_tabularize(tmp_path):
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
         "task_name": "test_task",
-        "input_tabularized_cache_dir": str(output_dir.resolve()),
-        "input_label_cache_dir": str(input_label_dir.resolve()),
+        "input_tabularized_dir": str(output_dir.resolve()),
+        "input_label_dir": str(input_label_dir.resolve()),
         "output_model_dir": str(output_model_dir.resolve()),
     }
 

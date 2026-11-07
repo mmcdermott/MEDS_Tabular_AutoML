@@ -119,6 +119,19 @@ def test_integration(tmp_path):
     for value_agg in VALUE_AGGREGATIONS:
         assert get_feature_names(value_agg, feature_columns) == sorted(VALUE_COLS)
 
+    # Labels: one per unique event time, laid out like the data (<split>/<shard>.parquet). With a label at
+    # every event time, each tabularized block has one row per unique event time of its shard.
+    df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
+    pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
+    df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
+    df = df.select("subject_id", pl.col("time").alias("prediction_time"), "boolean_value")
+    for med_fp in meds_files:
+        label_fp = input_label_dir / Path(med_fp).relative_to(input_dir)
+        label_fp.parent.mkdir(parents=True, exist_ok=True)
+        shard_subjects = pl.read_parquet(med_fp, columns=["subject_id"])["subject_id"].unique()
+        df.filter(pl.col("subject_id").is_in(shard_subjects.implode())).write_parquet(label_fp)
+    shared_config["input_label_dir"] = str(input_label_dir.resolve())
+
     # Step 2: Run the static data tabularization script
     tabularize_static_config = {
         **shared_config,
@@ -223,67 +236,10 @@ def test_integration(tmp_path):
     expected_num_static_tabs = NUM_SHARDS * 2
     assert len(list_subdir_files(cfg.output_dir, "npz")) == expected_num_time_tabs + expected_num_static_tabs
 
-    # Step 4: Run the task_specific_caching script
-    cache_config = {
-        **shared_config,
-        "tabularization.min_code_inclusion_count": 1,
-        "tabularization.window_sizes": "[30d,365d,full]",
-        "task_name": "test_task",
-        "input_label_dir": str(input_label_dir.resolve()),
-    }
-    with initialize(version_base=None, config_path="../src/MEDS_tabular_automl/configs/"):
-        overrides = [f"{k}={v}" for k, v in cache_config.items()]
-        cfg = compose(config_name="task_specific_caching", overrides=overrides)
-
-    # Create fake labels
-    df = get_unique_time_events_df(get_events_df(all_data.lazy(), feature_columns)).collect()
-    pseudo_labels = pl.Series(([0, 1] * df.shape[0])[: df.shape[0]])
-    df = df.with_columns(pl.Series(name="boolean_value", values=pseudo_labels))
-    df = df.select("subject_id", pl.col("time").alias("prediction_time"), "boolean_value")
-
-    out_fp = Path(cfg.input_label_dir) / "0.parquet"
-    out_fp.parent.mkdir(parents=True, exist_ok=True)
-    df.write_parquet(out_fp)
-
+    # Step 4: Train models on the tabularized data, read from its default location with the labels.
     run_command("generate-subsets", ["[30d]"], {}, "generate-subsets window_sizes")
     _, stdout_agg = run_command(
         "generate-subsets", ["[static/present,static/mean]"], {}, "generate-subsets aggs"
-    )
-
-    stderr, stdout = run_command(
-        "meds-tab-cache-task",
-        [
-            "--multirun",
-            f"tabularization.aggs={stdout_agg.strip()}",
-        ],
-        cache_config,
-        "task_specific_caching",
-    )
-    for split in split_json:
-        for window in cfg.tabularization.window_sizes:
-            for agg in cfg.tabularization.aggs:
-                if agg.startswith("static"):
-                    if window != cfg.tabularization.window_sizes[0]:
-                        continue
-                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / "none" / f"{agg}.npz"
-                else:
-                    expected_fp = Path(cfg.output_tabularized_cache_dir) / split / window / f"{agg}.npz"
-                output_files = list_subdir_files(str(Path(cfg.output_tabularized_cache_dir).resolve()), "npz")
-                assert expected_fp in output_files, f"Missing {expected_fp}"
-    [each for each in output_files if "0/30d" in str(each) and "code/count" in str(each)]
-    assert (
-        len(list_subdir_files(cfg.output_tabularized_cache_dir, "npz"))
-        == expected_num_time_tabs + expected_num_static_tabs
-    )
-
-    stderr, stdout = run_command(
-        "meds-tab-cache-task",
-        [
-            "--multirun",
-            f"tabularization.aggs={stdout_agg.strip()}",
-        ],
-        cache_config,
-        "task_specific_caching",
     )
 
     for model in [

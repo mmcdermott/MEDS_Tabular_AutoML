@@ -29,6 +29,7 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
         "input_dir": input_dir,
         "output_dir": "/bar/",
         "output_model_dir": "/baz/",
+        "input_label_dir": "/labels/",
         "++tabularization.filtered_code_metadata_fp": code_metadata_fp,
         "++tabularization.min_code_inclusion_count": "0",
         "task_name": "foo_bar",
