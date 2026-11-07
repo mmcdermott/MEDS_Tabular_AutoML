@@ -5,4 +5,8 @@ defaults:
 # Where to store output code frequency data
 output_filepath: ${output_dir}/metadata/codes.parquet
 
+# MEDS root directory containing `metadata/subject_splits.parquet`. Code frequencies are fit on the
+# training subjects listed there. Defaults to the parent of `input_dir` (i.e., `input_dir=<MEDS_ROOT>/data`).
+meds_root_dir: null
+
 name: describe_codes
