@@ -103,30 +103,31 @@ The native engine implements the aggregations `static/present`, `static/mean`, `
 
 ## Performance
 
-These measurements were taken with an earlier version of this backend, which also tabularized every
-event time (full tabularization) and implemented `meds-tab-cache-task`; both have since been removed from
-MEDS-Tab, so they are kept for the tabularization stages only, which ran at every event time. They were
-taken on an Apple M4 Pro (14 CPUs, 48 GiB, macOS 15.6) on the public
-[MIMIC-IV demo](https://physionet.org/content/mimic-iv-demo/2.2/) written as MEDS. The demo has 100
-subjects and 776,589 events in four shards (two training, tuning, held-out), and there are two admission
-tasks with 220 and 245 labels. The runs used the default aggregations, windows `[1d,7d,30d,365d,full]` and
-`min_code_inclusion_count=10`. They are the tutorial's commands, each run as its own process into a fresh
-output directory, and each time is the median of three alternating runs. The Python backend runs the
-time-series stage as the tutorial does (`--multirun worker="range(0,8)" hydra/launcher=joblib`); the
-native backend uses its default threads.
+Measured on task-specific tabularization of a MIMIC-IV cohort (MEDS 0.2.0): a random 10% of the subjects
+labeled for ICU mortality at 24 h, i.e. 3,562 subjects, 57.7M measurements and 4,591 labels, in 366 shards
+(the extraction's sharding, so about 10 subjects per shard). Windows `[1d,7d,30d,365d,full]`, every
+aggregation but `static/mean` (this extraction has no static numeric values), `min_code_inclusion_count=10`.
+Machine: NVIDIA GB10 (20 Arm cores, 121 GiB). Each command runs as its own process into a fresh output
+directory; CPU is user + system time of all processes; memory is the peak resident size of the whole process
+tree. The Python backend runs the time-series stage as the docs recommend, as a joblib multirun over
+`worker`.
 
-| Command                                                   |  Python | Native |
-| --------------------------------------------------------- | ------: | -----: |
-| `meds-tab-describe` (same code)                           |  0.34 s | 0.34 s |
-| `meds-tab-tabularize-static` (native: writes every block) |  0.75 s | 0.95 s |
-| `meds-tab-tabularize-time-series`, 8-worker multirun      | 19.04 s | 1.30 s |
-| `meds-tab-tabularize-time-series`, single run             |       — | 0.44 s |
+| Backend (setting)   | `tabularize-static` | `tabularize-time-series` |    Total |      CPU | Peak memory |
+| ------------------- | ------------------: | -----------------------: | -------: | -------: | ----------: |
+| Python (8 workers)  |               175 s |                  2,253 s | 40.5 min | 19,316 s |     4.0 GiB |
+| Python (16 workers) |               175 s |                  1,412 s | 26.5 min | 22,829 s |     7.4 GiB |
+| Native (1 thread)   |              11.6 s |                    0.8 s |   12.4 s |     17 s |     0.5 GiB |
+| Native (20 threads) |              11.7 s |                    0.8 s |   12.5 s |     21 s |     0.5 GiB |
 
-Each command spends about 0.35 s starting Python, Hydra and Polars. On data this small, the native total
-is therefore mostly start-up: tabularizing all four shards takes about 0.6 s.
-Peak memory of the whole demo pipeline was 10.5 GiB with the Python backend (all worker processes) and
-2.9 GiB with the native backend. The native pipeline is bound by writing its output: the demo's event-time
-blocks are 3.2 GiB uncompressed, which takes at least 0.49 s on this SSD.
+The native backend writes every block in its `tabularize-static` run; `tabularize-time-series` then finds them
+complete. Against the best Python configuration it is about 130 times faster and uses about 1,000 times less
+CPU. Both produce the same 11,346 blocks: 39.1M stored entries, none different (sums compared within 1e-9
+relative).
+
+With about 10 subjects per shard, the run is bound by per-shard work (reading each file, writing its 31
+blocks), which threads do not shorten. With the same data merged into one shard per split (2,846, 358 and 358
+subjects), the native run takes 5.0 s on 1 thread and 3.4 s on 20, at about 4.5 GiB, most of it reading the
+57.7M rows: shards of a few thousand subjects suit it better than many small ones.
 
 ## Memory and data flow
 
