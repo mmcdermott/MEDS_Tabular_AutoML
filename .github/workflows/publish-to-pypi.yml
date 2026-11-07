@@ -15,8 +15,10 @@ jobs:
           python-version: "3.x"
       - name: Install uv
         uses: astral-sh/setup-uv@v6
-      - name: Build a binary wheel and a source tarball
-        run: uv build
+      - name: Build a source tarball (with the native engine) and a pure-Python wheel (without it)
+        run: |
+          uv build --sdist
+          MEDS_TAB_BUILD_ENGINE=0 uv build --wheel
       - name: Store the distribution packages
         uses: actions/upload-artifact@v4
         with:

@@ -68,7 +68,13 @@ docs = [
 ]
 
 [dependency-groups]
-dev = ["pre-commit<4", "ruff==0.17.2", "pytest", "pytest-cov[toml]"]
+dev = [
+    "pre-commit<4",
+    "ruff==0.17.2",
+    "pytest",
+    "pytest-cov[toml]",
+    "hypothesis>=6.170.15",
+]
 
 
 [project.urls]
