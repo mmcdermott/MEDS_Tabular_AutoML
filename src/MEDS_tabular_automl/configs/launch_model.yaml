@@ -9,12 +9,11 @@ defaults:
 
 task_name: ???
 
-# Labels of the task, as given to tabularization (<split>/<shard>.parquet)
+# Labels of the task, as given to tabularization (<split>/<shard>.parquet). The tabularized data has one
+# row per label, in the order of these files.
 input_label_dir: ???
-# Location of the task's tabularized data (the output of meds-tab-tabularize-static/-time-series)
-input_tabularized_cache_dir: ${output_dir}/tabularize
-# Location of the task's labels, one row per row of the tabularized data
-input_label_cache_dir: ${input_label_dir}
+# The task's tabularized data (the output of meds-tab-tabularize-static/-time-series)
+input_tabularized_dir: ${output_dir}/tabularize
 # Where to output the model and cached data
 output_model_dir: ???
 
