@@ -13,6 +13,7 @@ Assertions are on stored sparse entries, not `toarray()`, which shows a stored 0
 from datetime import datetime
 from pathlib import Path
 
+import meds
 import polars as pl
 import pytest
 from hydra import compose, initialize
@@ -185,6 +186,12 @@ def write_inputs(tmp_path: Path) -> tuple[Path, Path]:
     pl.DataFrame(records, schema=DATA_SCHEMA, orient="row").sort("subject_id", "time").write_parquet(
         data_dir / "train/0.parquet"
     )
+    # meds-tab-describe fits code metadata on the training subjects of the MEDS root's subject splits.
+    splits_fp = tmp_path / meds.subject_splits_filepath
+    splits_fp.parent.mkdir(parents=True)
+    pl.DataFrame(
+        {meds.SubjectSplitSchema.subject_id_name: [1], meds.SubjectSplitSchema.split_name: [meds.train_split]}
+    ).write_parquet(splits_fp)
     (label_dir / "train").mkdir(parents=True)
     pl.DataFrame(
         {

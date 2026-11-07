@@ -19,7 +19,6 @@ CODE_AGGREGATIONS = [
 
 VALUE_AGGREGATIONS = [
     "value/count",
-    "value/has_values_count",
     "value/sum",
     "value/sum_sqd",
     "value/min",
