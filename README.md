@@ -106,11 +106,10 @@ Data flow through the pipeline is optimized through caching and sharding. Each s
 
 ## Native Backend
 
-Static and time-series tabularization and task-specific caching can also run on an optional C++ engine,
-which is compiled when MEDS-Tab is installed from source. Select it with `backend=native` (the default is
-`backend=python`). It writes the same files as the Python implementation, so `TabularDataset` and the model
-launchers are unchanged. On the MIMIC-IV demo, the tutorial's commands take 3.3 s instead of 27.6 s. See
-the [native backend guide](docs/native_backend.md).
+Static and time-series tabularization can also run on an optional C++ engine, which is compiled when
+MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
+writes the same files as the Python implementation, so `TabularDataset` and the model launchers are
+unchanged. See the [native backend guide](docs/native_backend.md).
 
 ## Feature Engineering Via Rolling Windows and Aggregation Functions
 

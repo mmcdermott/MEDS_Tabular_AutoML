@@ -1,7 +1,7 @@
 # Native Backend
 
-`meds-tab-tabularize-static`, `meds-tab-tabularize-time-series` and `meds-tab-cache-task` can run on a
-C++ engine instead of the Python implementation. The commands, their configuration and the files they
+`meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` can run on a C++ engine instead of
+the Python implementation. The commands, their configuration and the files they
 write are unchanged: `TabularDataset` and the model launchers read the native backend's output exactly as
 they read the Python backend's. `meds-tab-describe` and model training are not affected.
 
@@ -12,9 +12,8 @@ available (see below). It is used only when selected:
 
 ```bash
 meds-tab-describe input_dir=... output_dir=...
-meds-tab-tabularize-static input_dir=... output_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
-meds-tab-tabularize-time-series input_dir=... output_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
-meds-tab-cache-task input_dir=... output_dir=... backend=native task_name=... input_label_dir=...
+meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
+meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
 ```
 
 | Setting          | Default            | Meaning                                                                            |
@@ -38,16 +37,17 @@ install, with a C++17 compiler and the zlib headers available:
 
 ## Same outputs
 
-`tests/test_native_backend.py` runs every stage with both backends on seeded MEDS data. The data includes:
+`tests/test_native_backend.py` runs both tabularization stages, at the label times of a task, with both
+backends on seeded MEDS data. The data includes:
 
 - duplicate timestamps and repeated codes;
 - null, NaN, zero and negative values;
 - rare codes;
-- subjects without static records, and subjects with only static records;
+- subjects without static records, subjects with only static records, and subjects with several
+    different static values of a code (`static/mean`);
 - labels before any history, unsorted and duplicated.
 
-The test compares every block of the event-time and label-time tabularizations and of the task cache,
-compressed and not, as well as the label caches and the `X`, `y` that `TabularDataset` loads. Shapes,
+The test compares every block, compressed and not, and the `X`, `y` that `TabularDataset` loads. Shapes,
 stored entries (including stored zeros), labels, counts, extrema and static values must be identical.
 `value/sum` and `value/sum_sqd` may differ only by summation order: the engine uses compensated summation,
 and each entry is checked against its window's floating-point error bound. CI runs the whole test suite
@@ -66,8 +66,7 @@ aggregation:
 - it fills disjoint (subject, window) spans in parallel.
 
 The numeric aggregations of one window share one set of stored entries. Blocks are written while the next
-shard is computed. Task caching reads only the selected rows of each block, at row offsets recorded when
-the block was written.
+shard is computed.
 
 How the work is scheduled also differs:
 
@@ -87,18 +86,19 @@ How the work is scheduled also differs:
     the filtered feature metadata that `meds-tab-tabularize-static` writes for both backends before the
     backend runs. As with the Python backend, don't run commands with different feature-selection settings
     on one output directory at the same time.
-- **Default output locations only.** `output_tabularized_dir`, `input_tabularized_dir`,
-    `output_tabularized_cache_dir` and `output_label_cache_dir` must keep their defaults; the native backend
+- **Default output location only.** `output_tabularized_dir` must keep its default; the native backend
     raises an error otherwise.
-- Manifests, staging directories and each shard's row-offset index live in `<output_dir>/.meds_tab_native/`.
+- Manifests and staging directories live in `<output_dir>/.meds_tab_native/`.
 
-The native engine implements the aggregations `static/present`, `static/first`, `code/count` and
-`value/{count,sum,sum_sqd,min,max}`, and window sizes `full` and `<n><us|ms|s|m|h|d|w>`. The Python
-backend lists `value/has_values_count` but does not implement it either.
+The native engine implements the aggregations `static/present`, `static/mean`, `code/count` and
+`value/{count,sum,sum_sqd,min,max}`, and window sizes `full` and `<n><us|ms|s|m|h|d|w>`.
 
 ## Performance
 
-These measurements were taken on an Apple M4 Pro (14 CPUs, 48 GiB, macOS 15.6) on the public
+These measurements were taken with an earlier version of this backend, which also tabularized every
+event time (full tabularization) and implemented `meds-tab-cache-task`; both have since been removed from
+MEDS-Tab, so they are kept for the tabularization stages only, which ran at every event time. They were
+taken on an Apple M4 Pro (14 CPUs, 48 GiB, macOS 15.6) on the public
 [MIMIC-IV demo](https://physionet.org/content/mimic-iv-demo/2.2/) written as MEDS. The demo has 100
 subjects and 776,589 events in four shards (two training, tuning, held-out), and there are two admission
 tasks with 220 and 245 labels. The runs used the default aggregations, windows `[1d,7d,30d,365d,full]` and
@@ -107,17 +107,15 @@ output directory, and each time is the median of three alternating runs. The Pyt
 time-series stage as the tutorial does (`--multirun worker="range(0,8)" hydra/launcher=joblib`); the
 native backend uses its default threads.
 
-| Command                                                   |        Python |        Native |
-| --------------------------------------------------------- | ------------: | ------------: |
-| `meds-tab-describe` (same code)                           |        0.34 s |        0.34 s |
-| `meds-tab-tabularize-static` (native: writes every block) |        0.75 s |        0.95 s |
-| `meds-tab-tabularize-time-series`, 8-worker multirun      |       19.04 s |        1.30 s |
-| `meds-tab-tabularize-time-series`, single run             |             — |        0.44 s |
-| `meds-tab-cache-task`, two tasks                          | 3.94 + 3.48 s | 0.36 + 0.37 s |
-| Total (native with a single time-series run)              |        27.6 s | 3.3 s (2.5 s) |
+| Command                                                   |  Python | Native |
+| --------------------------------------------------------- | ------: | -----: |
+| `meds-tab-describe` (same code)                           |  0.34 s | 0.34 s |
+| `meds-tab-tabularize-static` (native: writes every block) |  0.75 s | 0.95 s |
+| `meds-tab-tabularize-time-series`, 8-worker multirun      | 19.04 s | 1.30 s |
+| `meds-tab-tabularize-time-series`, single run             |       — | 0.44 s |
 
 Each command spends about 0.35 s starting Python, Hydra and Polars. On data this small, the native total
-is therefore mostly start-up: tabularizing all four shards takes about 0.6 s and each task about 0.03 s.
+is therefore mostly start-up: tabularizing all four shards takes about 0.6 s.
 Peak memory of the whole demo pipeline was 10.5 GiB with the Python backend (all worker processes) and
 2.9 GiB with the native backend. The native pipeline is bound by writing its output: the demo's event-time
 blocks are 3.2 GiB uncompressed, which takes at least 0.49 s on this SSD.
@@ -132,7 +130,7 @@ configuration, scheduling and files; C++ owns aggregation buffers. Byte counts a
 | Read shard | `pipeline.read_shard`                         | Parquet decode of four columns; codes become IDs inside the scan (each distinct string of a dictionary-encoded column is mapped once); timeless rows are read again with their codes | Polars frame of subjects, times, code IDs and values (Polars)                                                                              |
 | Validate   | `pipeline.read_shard`                         | Null counts; one infinite-value scan                                                                                                                                                 | —                                                                                                                                          |
 | Encode     | `pipeline.read_shard`                         | One filter (timed rows with selected codes); stable sort by (subject, time) only when a native check finds the rows out of order                                                     | Timed: 28 B/event; static: 24 B/record (`EncodedShard`, Python)                                                                            |
-| Rows       | `EncodedShard.event_rows`                     | One scan for (subject, time) changes                                                                                                                                                 | 16 B/row (Python)                                                                                                                          |
+| Rows       | `Pipeline._label_shard`                       | Label file read; one sort by (subject, time), whose order is restored when blocks are written                                                                                        | 16 B/label row (Python)                                                                                                                    |
 | Index      | `Shard` constructor (`csrc/shard.cc`)         | Validation scan; subjects indexed in parallel                                                                                                                                        | 4 B/event, 8 B/distinct subject code, 24 B/subject (native; borrows the Python arrays, which `engine.Shard` keeps alive)                   |
 | Size       | `Shard::Aggregate`                            | The same scan, recording per-row sizes                                                                                                                                               | 16 B per row and window (kept through the fill)                                                                                            |
 | Allocate   | `Shard::Aggregate`                            | —                                                                                                                                                                                    | Final CSR per window: code/count 16 B/entry; numeric 16 B/entry + 8 B/entry per further statistic; 8 B/row per structure (native `Result`) |
@@ -140,7 +138,7 @@ configuration, scheduling and files; C++ owns aggregation buffers. Byte counts a
 | Views      | `engine.Shard.aggregate`                      | None (SciPy CSR views of the native buffers)                                                                                                                                         | One owner per result frees it when the last view is released                                                                               |
 | Static     | `AggregateStatic` (`csrc/static_features.cc`) | Stable sort of record indices by subject                                                                                                                                             | 8 B/record index; output CSR 16 B/entry (native `Result`)                                                                                  |
 | Write      | `engine.write_block` (`csrc/npz.cc`)          | Per block: one scan to choose the stored type; per 1 MiB chunk: value conversion, row-ID expansion, column conversion (bounds-checked); CRC-32 of every byte                         | At most `threads` blocks in flight, a 1 MiB buffer each                                                                                    |
-| Publish    | `Publisher`, manifests                        | Rename of the staged directory; row-offset index moved into place; manifest written last                                                                                             | Row-offset index: rows, shard subjects, per-subject static CSR, 8 B per row per block                                                      |
+| Publish    | `Publisher`, manifests                        | Rename of the staged directory; manifest written last                                                                                                                                | —                                                                                                                                          |
 
 A shard is computed while the previous shard's blocks are written (smallest shards first), so up to two
 shards' outputs are resident. To bound memory, use smaller shards, as with the Python backend.
@@ -153,11 +151,11 @@ writes the blocks in label-file order. Compressed blocks (`do_compress`) are wri
 | -------------------------------------------- | ----------------------------------------------------------------------------- |
 | `csrc/meds_tab.h`                            | The engine's C ABI: types, ownership, errors                                  |
 | `csrc/shard.{h,cc}`                          | Shard index and aggregation                                                   |
-| `csrc/static_features.{h,cc}`                | `static/present` and `static/first`                                           |
+| `csrc/static_features.{h,cc}`                | `static/present` and `static/mean`                                            |
 | `csrc/types.h`, `csrc/parallel.h`            | Events, rows, the CSR and result types; the thread loop                       |
-| `csrc/npz.{h,cc}`                            | Block writing and row extraction                                              |
+| `csrc/npz.{h,cc}`                            | Block writing                                                                 |
 | `csrc/c_api.cc`, `csrc/python_module.cc`     | The C ABI's implementation; the stub that lets setuptools build the library   |
-| `src/MEDS_tabular_automl/native/stages.py`   | Backend selection and the three commands' entry points                        |
+| `src/MEDS_tabular_automl/native/stages.py`   | Backend selection and the two commands' entry points                          |
 | `src/MEDS_tabular_automl/native/pipeline.py` | Shard reading and encoding, scheduling, writing, reuse                        |
 | `src/MEDS_tabular_automl/native/engine.py`   | ctypes bindings                                                               |
 | `src/MEDS_tabular_automl/native/storage.py`  | Block files (Python side), atomic publication, manifests                      |

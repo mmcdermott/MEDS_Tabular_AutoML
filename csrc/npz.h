@@ -29,14 +29,5 @@ struct Block {
 // throw std::system_error.
 std::int64_t WriteBlock(const std::string& path, const Block& block, bool integer);
 
-// Writes the selected rows of a block written by WriteBlock to target, as
-// WriteBlock does; a negative row selects an empty row. outer holds the source's
-// source_rows + 1 row offsets as written. Reads only the selected entries. Throws
-// std::runtime_error when the source does not match outer or is malformed.
-std::int64_t ExtractRows(const std::string& source, const std::int64_t* outer,
-                         std::int64_t source_rows, std::int64_t columns, const std::int64_t* rows,
-                         std::int64_t row_count, bool integer, const std::string& target,
-                         std::int64_t* written_outer);
-
 }  // namespace meds_tab::npz
 #endif

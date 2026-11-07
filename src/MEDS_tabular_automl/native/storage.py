@@ -25,7 +25,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import polars as pl
 
 if TYPE_CHECKING:
     from scipy.sparse import csr_array
@@ -107,18 +106,6 @@ def _member(name: str, method: int) -> zipfile.ZipInfo:
     return info
 
 
-def label_cache_frame(subjects, times, labels, event_ids, label_dtype) -> pl.DataFrame:
-    """A task's label cache, (subject_id, time, label, event_id), as the Python backend writes it."""
-    return pl.DataFrame(
-        {
-            "subject_id": pl.Series(subjects, dtype=pl.Int64),
-            "time": pl.Series(np.asarray(times, dtype=np.int64), dtype=pl.Int64).cast(pl.Datetime("us")),
-            "label": pl.Series(labels, dtype=label_dtype),
-            "event_id": pl.Series(event_ids, dtype=pl.Int64),
-        }
-    )
-
-
 def file_fingerprint(path: Path) -> dict:
     """An input file's identity: its path, size, modification time and a hash of its last 64 KiB (for Parquet,
     the footer)."""
@@ -145,15 +132,6 @@ def atomic_write_json(path: Path, value):
             handle.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def atomic_write_parquet(frame: pl.DataFrame, path: Path):
-    temporary = _temporary(path)
-    try:
-        frame.write_parquet(temporary)
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)

@@ -12,9 +12,8 @@ from scipy.sparse import csr_array
 
 from MEDS_tabular_automl.native import engine
 from MEDS_tabular_automl.native.contract import TabularConfig
-from MEDS_tabular_automl.native.pipeline import Pipeline, _gather
+from MEDS_tabular_automl.native.pipeline import Pipeline
 from MEDS_tabular_automl.native.storage import output_lock, write_csr_block
-from MEDS_tabular_automl.utils import load_matrix
 from tests.test_native_backend import engine_built, run, write_labels, write_meds
 
 pytestmark = pytest.mark.skipif(not engine_built(), reason="The native engine is not built.")
@@ -88,74 +87,6 @@ def test_native_writer_rejects_invalid_blocks(tmp_path):
     (tmp_path / "file").write_text("")
     with pytest.raises(OSError):
         engine.write_block(tmp_path / "file/a.npz", csr_array((1, 1)), integer=False)
-
-
-@pytest.mark.parametrize("integer", [False, True])
-def test_native_extraction_matches_gathered_rows(tmp_path, integer):
-    rng = np.random.default_rng(1)
-    matrix = random_csr(rng, 4000, 600, 200000)
-    matrix = with_data(matrix, VALUES["int32_counts" if integer else "zeros"](rng, matrix.nnz))
-    source = tmp_path / "cache.npz"
-    engine.write_block(source, matrix, integer=integer)
-    # Unsorted, repeated, empty (-1) and adjacent rows.
-    rows = np.concatenate([[-1, 3999, 0, 0], rng.integers(0, 4000, 300), np.arange(10, 40), [-1]])
-    expected = _gather(matrix, rows)
-    write_csr_block(tmp_path / "python.npz", expected, integer=integer, compress=False)
-    written, size = engine.extract_rows(
-        source, matrix.indptr, rows, 600, tmp_path / "native.npz", integer=integer
-    )
-    assert (tmp_path / "native.npz").read_bytes() == (tmp_path / "python.npz").read_bytes()
-    assert size == (tmp_path / "native.npz").stat().st_size
-    np.testing.assert_array_equal(written, expected.indptr)
-
-
-def test_native_extraction_rejects_mismatched_blocks(tmp_path):
-    matrix = csr_array(np.array([[0.0, 1.5], [2.0, 0.0], [0.0, 0.0]]))
-    engine.write_block(tmp_path / "a.npz", matrix, integer=False)
-    write_csr_block(tmp_path / "c.npz", matrix, integer=False, compress=True)
-    target, rows, offsets = tmp_path / "out.npz", np.array([1, -1, 0]), matrix.indptr
-    engine.extract_rows(tmp_path / "a.npz", offsets, rows, 2, target, integer=False)
-    np.testing.assert_array_equal(load_matrix(target).toarray(), [[2.0, 0.0], [0.0, 0.0], [0.0, 1.5]])
-    for source, recorded, columns, selected, match in [
-        (tmp_path / "c.npz", offsets, 2, rows, "not a stored block"),
-        (tmp_path / "a.npz", np.array([0, 1, 2, 3]), 2, rows, "row offsets"),
-        (tmp_path / "a.npz", offsets, 2, np.array([3]), "outside"),
-        (tmp_path / "a.npz", offsets, 1, rows, "outside"),
-    ]:
-        with pytest.raises(ValueError, match=match):
-            engine.extract_rows(source, recorded, selected, columns, target, integer=False)
-    with pytest.raises(OSError):
-        engine.extract_rows(tmp_path / "missing.npz", offsets, rows, 2, target, integer=False)
-    (tmp_path / "a.npz").write_bytes((tmp_path / "a.npz").read_bytes()[:150])
-    with pytest.raises(ValueError, match="truncated"):
-        engine.extract_rows(tmp_path / "a.npz", offsets, rows, 2, target, integer=False)
-
-
-def with_npy_shape(path, shape: str):
-    """The block at path with its array's .npy shape replaced in place (the header keeps its length)."""
-    data = bytearray(path.read_bytes())
-    start = data.index(b"'shape': (")
-    end = data.index(b"\n", start)
-    text = (b"'shape': " + shape.encode() + b", }").ljust(end - start)
-    assert len(text) == end - start
-    data[start:end] = text
-    path.write_bytes(bytes(data))
-
-
-def test_native_extraction_rejects_impossible_dimensions(tmp_path):
-    """Huge dimensions are rejected, not overflowed: a 19-digit one in the header, and an 18-digit one that
-    does not fit in the file."""
-    matrix = csr_array(np.array([[1.0, 2.0]]))
-    target = tmp_path / "out.npz"
-    for shape, offsets in [
-        ("(3, 9999999999999999999)", [0, 2]),
-        ("(3, 999999999999999999)", [0, 999999999999999999]),
-    ]:
-        source = tmp_path / "a.npz"
-        engine.write_block(source, matrix, integer=False)
-        with_npy_shape(source, shape)
-        with pytest.raises(ValueError, match=r"shape|truncated"):
-            engine.extract_rows(source, np.array(offsets), np.array([0]), 2, target, integer=False)
 
 
 def _owner(array: np.ndarray):
@@ -276,13 +207,13 @@ def test_window_sums_are_accurate_for_every_window(width):
 
 
 def test_output_lock_makes_concurrent_runs_take_turns(tmp_path):
-    meds = tmp_path / "data"
+    meds, output, labels = tmp_path / "data", tmp_path / "out", tmp_path / "labels"
     write_meds(meds)
-    output = tmp_path / "out"
+    write_labels(meds, labels)
     run("describe_codes", "describe_codes", {"input_dir": str(meds), "output_dir": str(output)})
     pipeline = Pipeline(meds, output, TabularConfig(min_code_inclusion_count=2))
     with output_lock(output):
-        other = threading.Thread(target=pipeline.tabularize)
+        other = threading.Thread(target=pipeline.tabularize_at_labels, args=(labels,))
         other.start()
         other.join(timeout=1.0)
         assert other.is_alive(), "A second run must wait for the lock."
@@ -291,45 +222,24 @@ def test_output_lock_makes_concurrent_runs_take_turns(tmp_path):
     assert pipeline.report["tabularize"]["train/0"]["reused"] is False
 
 
-def test_cache_task_reads_the_tabularized_config_under_the_lock(tmp_path):
-    """A waiting cache_task must use the blocks as the run before it left them, not as they were when it
-    started waiting."""
+def test_corrupt_manifest_forces_recomputation(tmp_path):
     meds, output, labels = tmp_path / "data", tmp_path / "out", tmp_path / "labels"
     write_meds(meds)
     write_labels(meds, labels)
     run("describe_codes", "describe_codes", {"input_dir": str(meds), "output_dir": str(output)})
-    full = TabularConfig(min_code_inclusion_count=2, window_sizes=("full",))
-    week = TabularConfig(min_code_inclusion_count=2, window_sizes=("7d",))
-    Pipeline(meds, output, full).tabularize()
-    with output_lock(output):
-        caching = threading.Thread(target=Pipeline(meds, output, full).cache_task, args=("task", labels))
-        caching.start()
-        caching.join(timeout=1.0)
-        assert caching.is_alive(), "cache_task must wait for the lock."
-        Pipeline(meds, output, week)._tabularize(reuse=True)  # Another run, which holds the lock.
-    caching.join()
-    assert sorted(p.name for p in (output / "tabularize/train/0").iterdir()) == ["7d", "none"]
-    assert sorted(p.name for p in (output / "task/task_cache/train/0").iterdir()) == ["7d", "none"]
-
-
-def test_corrupt_manifest_forces_recomputation(tmp_path):
-    meds = tmp_path / "data"
-    write_meds(meds)
-    output = tmp_path / "out"
-    run("describe_codes", "describe_codes", {"input_dir": str(meds), "output_dir": str(output)})
     config = TabularConfig(min_code_inclusion_count=2)
-    Pipeline(meds, output, config).tabularize()
+    Pipeline(meds, output, config).tabularize_at_labels(labels)
     manifest = output / ".meds_tab_native/manifests/tabularize/train/0.json"
     manifest.write_text("{not json")
     rerun = Pipeline(meds, output, config)
-    rerun.tabularize()
+    rerun.tabularize_at_labels(labels)
     assert rerun.report["tabularize"]["train/0"]["reused"] is False
     record = json.loads(manifest.read_text())
     record["identity"] = "0" * 64
     manifest.write_text(json.dumps(record))
     again = Pipeline(meds, output, config)
-    again.tabularize()
+    again.tabularize_at_labels(labels)
     assert again.report["tabularize"]["train/0"]["reused"] is False
     unchanged = Pipeline(meds, output, config)
-    unchanged.tabularize()
+    unchanged.tabularize_at_labels(labels)
     assert unchanged.report["tabularize"]["train/0"]["reused"] is True

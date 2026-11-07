@@ -1,7 +1,7 @@
 """The native backend writes the same tabularized files as the Python backend.
 
 Every stage script runs on the same MEDS data with ``backend=python`` and with ``backend=native``, and
-every block and label file is compared: shapes, stored entries (including stored zeros), labels, counts,
+every block is compared: shapes, stored entries (including stored zeros), labels, counts,
 extrema and static values exactly; ``value/sum`` and ``value/sum_sqd`` within a floating-point bound for
 summation order (the engine uses compensated summation).
 """
@@ -14,6 +14,7 @@ import numpy as np
 import polars as pl
 import pytest
 from hydra import compose, initialize
+from meds import SubjectSplitSchema, subject_splits_filepath
 from omegaconf import OmegaConf
 from scipy.sparse import csr_array
 
@@ -95,6 +96,12 @@ def write_meds(root: Path, seed: int = 0):
         path = root / f"{name}.parquet"
         path.parent.mkdir(parents=True, exist_ok=True)
         shard.sort("subject_id", "time", nulls_last=False, maintain_order=True).write_parquet(path)
+    # meds-tab-describe fits the code metadata on the training subjects of the MEDS root's subject splits.
+    splits = [(s, name.split("/")[0]) for name, subjects in SPLITS.items() for s in subjects]
+    splits_fp = root.parent / subject_splits_filepath
+    splits_fp.parent.mkdir(parents=True, exist_ok=True)
+    schema = {SubjectSplitSchema.subject_id_name: pl.Int64, SubjectSplitSchema.split_name: pl.String}
+    frame(splits, schema).write_parquet(splits_fp)
 
 
 def write_labels(meds: Path, root: Path, seed: int = 1, duplicates: bool = False):
@@ -138,16 +145,12 @@ def shared(meds: Path, output: Path, backend: str, **extra) -> dict:
     }
 
 
-def tabularize(meds: Path, output: Path, backend: str, **extra):
+def tabularize(meds: Path, output: Path, labels: Path, backend: str, **extra):
+    """Task-specific tabularization of meds at the label times in labels, with the given backend."""
     run("describe_codes", "describe_codes", {"input_dir": str(meds), "output_dir": str(output)})
-    values = shared(meds, output, backend, **extra)
+    values = shared(meds, output, backend, input_label_dir=str(labels), **extra)
     run("tabularize_static", "tabularization", values)
     run("tabularize_time_series", "tabularization", values)
-
-
-def cache_task(meds: Path, output: Path, labels: Path, backend: str, task: str = "task", **extra):
-    values = {**shared(meds, output, backend, **extra), "task_name": task, "input_label_dir": str(labels)}
-    run("cache_task", "task_specific_caching", values)
 
 
 def blocks(root: Path) -> dict[str, csr_array]:
@@ -184,16 +187,7 @@ def assert_same_blocks(python: Path, native: Path):
             assert np.array_equal(got.data.astype(np.float64), want.data.astype(np.float64)), name
 
 
-def assert_same_labels(python: Path, native: Path):
-    expected = sorted(p.relative_to(python) for p in python.rglob("*.parquet"))
-    assert sorted(p.relative_to(native) for p in native.rglob("*.parquet")) == expected
-    for name in expected:
-        want, got = pl.read_parquet(python / name), pl.read_parquet(native / name)
-        assert got.columns == want.columns, name
-        assert got.equals(want.cast(got.schema)), name
-
-
-def loaded(output: Path, task: str, split: str):
+def loaded(output: Path, labels: Path, split: str):
     """X and y of one split as the model launchers load them."""
     with initialize(version_base=None, config_path=CONFIGS):
         tabularization = compose(
@@ -201,6 +195,7 @@ def loaded(output: Path, task: str, split: str):
             overrides=[
                 "input_dir=unused",
                 f"output_dir={output}",
+                f"input_label_dir={labels}",
                 "tabularization.min_code_inclusion_count=2",
                 f"tabularization.window_sizes={WINDOWS}",
             ],
@@ -209,8 +204,8 @@ def loaded(output: Path, task: str, split: str):
         {
             "tabularization": OmegaConf.to_container(tabularization, resolve=True),
             "path": {
-                "input_label_cache_dir": str(output / task / "labels"),
-                "input_tabularized_cache_dir": str(output / task / "task_cache"),
+                "input_label_dir": str(labels),
+                "input_tabularized_dir": str(output / "tabularize"),
             },
             "data_loading_params": {"keep_data_in_memory": True, "binarize_task": True},
         }
@@ -227,95 +222,64 @@ def meds(tmp_path_factory) -> Path:
     return root
 
 
-def test_event_time_blocks_and_task_cache_match(meds, tmp_path):
+def test_blocks_and_loaded_data_match(meds, tmp_path):
+    """Every block, with one row per label (duplicates included, in label-file order), and the X and y the
+    model launchers load."""
     labels = tmp_path / "labels"
     write_labels(meds, labels, duplicates=True)
     for backend in ("python", "native"):
-        tabularize(meds, tmp_path / backend, backend)
-        cache_task(meds, tmp_path / backend, labels, backend)
+        tabularize(meds, tmp_path / backend, labels, backend)
     assert_same_blocks(tmp_path / "python/tabularize", tmp_path / "native/tabularize")
-    assert_same_blocks(tmp_path / "python/task/task_cache", tmp_path / "native/task/task_cache")
-    assert_same_labels(tmp_path / "python/task/labels", tmp_path / "native/task/labels")
+    for name, matrix in blocks(tmp_path / "native/tabularize").items():
+        shard = "/".join(name.split("/")[:2])
+        assert matrix.shape[0] == len(pl.read_parquet(labels / f"{shard}.parquet")), name
     for split in ("train", "tuning", "held_out"):
-        (Xp, yp), (Xn, yn) = (loaded(tmp_path / backend, "task", split) for backend in ("python", "native"))
+        (Xp, yp), (Xn, yn) = (loaded(tmp_path / backend, labels, split) for backend in ("python", "native"))
         assert np.array_equal(yp, yn), split
         assert Xp.shape == Xn.shape, split
         assert abs(Xp - Xn).max() <= 1e-9 * max(abs(Xp).max(), 1), split
+
+
+def test_static_mean_is_the_mean_of_static_values(meds, tmp_path):
+    """Some subjects have two different static AGE values: static/mean is their mean, in both backends."""
+    labels = tmp_path / "labels"
+    write_labels(meds, labels)
+    for backend in ("python", "native"):
+        tabularize(meds, tmp_path / backend, labels, backend)
+    assert_same_blocks(tmp_path / "python/tabularize", tmp_path / "native/tabularize")
+    data = pl.concat([pl.read_parquet(p) for p in sorted(meds.glob("*/*.parquet"))])
+    ages = data.filter(pl.col("time").is_null() & (pl.col("code") == "AGE"))
+    repeated = ages.group_by("subject_id").agg(pl.len().alias("n"), pl.col("numeric_value").n_unique())
+    assert repeated.filter((pl.col("n") > 1) & (pl.col("numeric_value") > 1)).height > 0, "No case tested."
 
 
 def test_compressed_blocks_match(meds, tmp_path):
     labels = tmp_path / "labels"
     write_labels(meds, labels)
     for backend in ("python", "native"):
-        tabularize(meds, tmp_path / backend, backend, **{"tabularization.do_compress": True})
-        cache_task(meds, tmp_path / backend, labels, backend, **{"tabularization.do_compress": True})
+        tabularize(meds, tmp_path / backend, labels, backend, **{"tabularization.do_compress": True})
     assert_same_blocks(tmp_path / "python/tabularize", tmp_path / "native/tabularize")
-    assert_same_blocks(tmp_path / "python/task/task_cache", tmp_path / "native/task/task_cache")
-
-
-def test_compressed_cache_of_uncompressed_blocks_matches(meds, tmp_path):
-    """cache_task compresses as it is told, whatever the tabularized blocks it reads."""
-    labels = tmp_path / "labels"
-    write_labels(meds, labels)
-    for backend in ("python", "native"):
-        tabularize(meds, tmp_path / backend, backend)
-        cache_task(meds, tmp_path / backend, labels, backend, **{"tabularization.do_compress": True})
-    assert_same_blocks(tmp_path / "python/task/task_cache", tmp_path / "native/task/task_cache")
-    for path in (tmp_path / "native/task/task_cache").rglob("*.npz"):
+    for path in (tmp_path / "native/tabularize").rglob("*.npz"):
         with zipfile.ZipFile(path) as archive:
             assert all(m.compress_type == zipfile.ZIP_DEFLATED for m in archive.infolist()), path
 
 
-def test_label_time_blocks_match(meds, tmp_path):
-    labels = tmp_path / "labels"
-    write_labels(meds, labels, duplicates=True)
-    for backend in ("python", "native"):
-        tabularize(meds, tmp_path / backend, backend, input_label_dir=str(labels))
-    assert_same_blocks(tmp_path / "python/tabularize", tmp_path / "native/tabularize")
-    shapes = {name: m.shape[0] for name, m in blocks(tmp_path / "native/tabularize").items()}
-    for name, rows in shapes.items():
-        shard = "/".join(name.split("/")[:2])
-        assert rows == len(pl.read_parquet(labels / f"{shard}.parquet")), name
-
-
 def test_reuse_and_overwrite(meds, tmp_path):
-    output = tmp_path / "native"
-    tabularize(meds, output, "native")
-    block = output / "tabularize/train/0/full/code/count.npz"
-    written = block.stat().st_mtime_ns
-    run("tabularize_time_series", "tabularization", shared(meds, output, "native"))
-    assert block.stat().st_mtime_ns == written, "Matching outputs are reused."
-    run("tabularize_time_series", "tabularization", shared(meds, output, "native", do_overwrite=True))
-    assert block.stat().st_mtime_ns != written, "do_overwrite recomputes."
-
-
-def test_cache_task_extracts_the_tabularized_blocks(meds, tmp_path):
-    """As in the Python backend, cache_task extracts every tabularized block, whatever its own aggs and window
-    sizes say, and neither they, the label column nor do_overwrite re-tabularize."""
     labels = tmp_path / "labels"
     write_labels(meds, labels)
     output = tmp_path / "native"
-    tabularize(meds, output, "native")
+    tabularize(meds, output, labels, "native")
     block = output / "tabularize/train/0/full/code/count.npz"
     written = block.stat().st_mtime_ns
-    values = {
-        **shared(meds, output, "native"),
-        "task_name": "task",
-        "input_label_dir": str(labels),
-        "tabularization.aggs": "[static/present]",
-        "tabularization.window_sizes": "[1d]",
-    }
-    run("cache_task", "task_specific_caching", values)
-    run("cache_task", "task_specific_caching", {**values, "do_overwrite": True})
-    assert block.stat().st_mtime_ns == written
-    cached = {name.split("/", 2)[2] for name in blocks(output / "task/task_cache")}
-    assert cached == {name.split("/", 2)[2] for name in blocks(output / "tabularize")}
+    values = shared(meds, output, "native", input_label_dir=str(labels))
+    run("tabularize_time_series", "tabularization", values)
+    assert block.stat().st_mtime_ns == written, "Matching outputs are reused."
+    run("tabularize_time_series", "tabularization", {**values, "do_overwrite": True})
+    assert block.stat().st_mtime_ns != written, "do_overwrite recomputes."
 
 
 def test_label_times_finer_than_a_microsecond_are_rejected(meds, tmp_path):
     """The engine works in microseconds; truncating would merge distinct labels."""
-    output = tmp_path / "native"
-    tabularize(meds, output, "native")
     labels = tmp_path / "labels"
     for path in sorted(meds.glob("*/*.parquet")):
         target = labels / path.relative_to(meds)
@@ -330,12 +294,15 @@ def test_label_times_finer_than_a_microsecond_are_rejected(meds, tmp_path):
             }
         ).write_parquet(target)
     with pytest.raises(ValueError, match="finer than a microsecond"):
-        cache_task(meds, output, labels, "native")
+        tabularize(meds, tmp_path / "native", labels, "native")
 
 
 def test_other_workers_do_nothing(meds, tmp_path):
+    labels = tmp_path / "labels"
+    write_labels(meds, labels)
     run("describe_codes", "describe_codes", {"input_dir": str(meds), "output_dir": str(tmp_path)})
-    run("tabularize_time_series", "tabularization", shared(meds, tmp_path, "native", worker=1))
+    values = shared(meds, tmp_path, "native", worker=1, input_label_dir=str(labels))
+    run("tabularize_time_series", "tabularization", values)
     assert not (tmp_path / "tabularize").exists()
 
 

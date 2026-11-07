@@ -43,7 +43,7 @@ class StaticRecords(ct.Structure):
     _fields_ = (
         ("subjects", I64P),
         ("present", I32P),
-        ("first", I32P),
+        ("mean", I32P),
         ("values", F64P),
         ("size", ct.c_int64),
     )
@@ -78,10 +78,6 @@ SIGNATURES = {
     "meds_tab_result_matrix": (ct.c_int, [ct.c_void_p, ct.c_int64, ct.POINTER(CSR)]),
     "meds_tab_result_free": (None, [ct.c_void_p]),
     "meds_tab_write_block": (ct.c_int, [ct.c_char_p, ct.POINTER(CSR), ct.c_int32, I64P]),
-    "meds_tab_extract_rows": (
-        ct.c_int,
-        [ct.c_char_p, I64P, ct.c_int64, ct.c_int64, I64P, ct.c_int64, ct.c_int32, ct.c_char_p, I64P, I64P],
-    ),
 }
 
 
@@ -238,13 +234,13 @@ class Shard:
 
 
 def static_features(
-    subjects, present, first, values, row_subjects, row_times, present_columns: int, first_columns: int
+    subjects, present, mean, values, row_subjects, row_times, present_columns: int, mean_columns: int
 ) -> list[csr_array]:
-    """[static/present, static/first] for the given sorted rows."""
+    """[static/present, static/mean] for the given sorted rows."""
     arrays = (
         _array(subjects, np.int64, "static subjects"),
         _array(present, np.int32, "static present columns"),
-        _array(first, np.int32, "static first columns"),
+        _array(mean, np.int32, "static mean columns"),
         _array(values, np.float64, "static values"),
     )
     if any(len(a) != len(subjects) for a in arrays):
@@ -252,12 +248,12 @@ def static_features(
     records = StaticRecords(
         _pointer(subjects, I64P),
         _pointer(present, I32P),
-        _pointer(first, I32P),
+        _pointer(mean, I32P),
         _pointer(values, F64P),
         len(subjects),
     )
     rows = _rows(row_subjects, row_times)
-    handle = library().meds_tab_static(ct.byref(records), ct.byref(rows), present_columns, first_columns)
+    handle = library().meds_tab_static(ct.byref(records), ct.byref(rows), present_columns, mean_columns)
     return _matrices(handle)
 
 
@@ -289,31 +285,3 @@ def write_block(path: Path, matrix: csr_array, *, integer: bool) -> int:
     size = ct.c_int64()
     _check(library().meds_tab_write_block(os.fsencode(path), ct.byref(block), integer, ct.byref(size)))
     return size.value
-
-
-def extract_rows(
-    source: Path, indptr: np.ndarray, rows: np.ndarray, columns: int, target: Path, *, integer: bool
-) -> tuple[np.ndarray, int]:
-    """Writes the given rows of a block written by write_block (-1 selects an empty row) to target, reading
-    only their entries; indptr is the source's row offsets.
-
-    Returns the target's row offsets and size.
-    """
-    indptr = np.ascontiguousarray(indptr, dtype=np.int64)
-    rows = np.ascontiguousarray(rows, dtype=np.int64)
-    written = np.empty(len(rows) + 1, dtype=np.int64)
-    size = ct.c_int64()
-    status = library().meds_tab_extract_rows(
-        os.fsencode(source),
-        _pointer(indptr, I64P),
-        len(indptr) - 1,
-        columns,
-        _pointer(rows, I64P),
-        len(rows),
-        integer,
-        os.fsencode(target),
-        _pointer(written, I64P),
-        ct.byref(size),
-    )
-    _check(status)
-    return written, size.value

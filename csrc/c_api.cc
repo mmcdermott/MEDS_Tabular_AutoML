@@ -117,13 +117,13 @@ meds_tab_result* meds_tab_shard_aggregate(const meds_tab_shard* shard, const med
 }
 
 meds_tab_result* meds_tab_static(const meds_tab_static_records* records, const meds_tab_rows* rows,
-                                 int64_t present_columns, int64_t first_columns) {
+                                 int64_t present_columns, int64_t mean_columns) {
   return Guard(
       [&] {
         Require(records, "Static records are required.");
         return new meds_tab_result{meds_tab::AggregateStatic(
-            {records->subjects, records->present, records->first, records->values, records->size},
-            ToRows(rows), present_columns, first_columns)};
+            {records->subjects, records->present, records->mean, records->values, records->size},
+            ToRows(rows), present_columns, mean_columns)};
       },
       static_cast<meds_tab_result*>(nullptr));
 }
@@ -163,20 +163,6 @@ int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t in
         view.inner = block->inner;
         view.values = block->values;
         *file_bytes = meds_tab::npz::WriteBlock(path, view, integer != 0);
-        return 1;
-      },
-      0, -1);
-}
-
-int meds_tab_extract_rows(const char* source, const int64_t* source_outer, int64_t source_rows,
-                          int64_t columns, const int64_t* rows, int64_t row_count, int32_t integer,
-                          const char* target, int64_t* written_outer, int64_t* file_bytes) {
-  return Guard(
-      [&] {
-        Require(source && source_outer && target && written_outer && file_bytes,
-                "Invalid extraction arguments.");
-        *file_bytes = meds_tab::npz::ExtractRows(source, source_outer, source_rows, columns, rows,
-                                                 row_count, integer != 0, target, written_outer);
         return 1;
       },
       0, -1);

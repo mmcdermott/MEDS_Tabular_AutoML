@@ -48,12 +48,12 @@ typedef struct {
 } meds_tab_rows;
 
 /* Selected timeless records in file order. present is the record's static/present
- * column; first is its static/first column, or -1 when the code is not a selected
- * static/first feature. values (NaN is missing) may be NULL when every first is -1. */
+ * column; mean is its static/mean column, or -1 when the code is not a selected
+ * static/mean feature. values (NaN is missing) may be NULL when every mean is -1. */
 typedef struct {
   const int64_t* subjects;
   const int32_t* present;
-  const int32_t* first;
+  const int32_t* mean;
   const double* values;
   int64_t size;
 } meds_tab_static_records;
@@ -100,11 +100,11 @@ meds_tab_result* meds_tab_shard_aggregate(const meds_tab_shard* shard, const med
                                           uint32_t statistics, const int32_t* value_columns,
                                           int64_t value_column_count, int32_t threads);
 
-/* Two matrices, static/present then static/first, with each row holding its
- * subject's features: 1 for every present code, and the first non-missing value
- * in file order of every first code. */
+/* Two matrices, static/present then static/mean, with each row holding its
+ * subject's features: 1 for every present code, and the mean of the non-missing
+ * values (summed in file order) of every mean code. */
 meds_tab_result* meds_tab_static(const meds_tab_static_records* records, const meds_tab_rows* rows,
-                                 int64_t present_columns, int64_t first_columns);
+                                 int64_t present_columns, int64_t mean_columns);
 
 int64_t meds_tab_result_size(const meds_tab_result* result);
 int meds_tab_result_matrix(const meds_tab_result* result, int64_t index, meds_tab_csr* out);
@@ -115,14 +115,6 @@ void meds_tab_result_free(meds_tab_result* result);
  * as integers (count statistics). *file_bytes receives the file size. */
 int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t integer,
                          int64_t* file_bytes);
-
-/* Writes the selected rows of a block written by meds_tab_write_block to target,
- * as meds_tab_write_block would, reading only their entries. source_outer holds
- * the source's source_rows + 1 row offsets; a negative row selects an empty row.
- * written_outer (row_count + 1) receives the target's row offsets. */
-int meds_tab_extract_rows(const char* source, const int64_t* source_outer, int64_t source_rows,
-                          int64_t columns, const int64_t* rows, int64_t row_count, int32_t integer,
-                          const char* target, int64_t* written_outer, int64_t* file_bytes);
 
 #ifdef __cplusplus
 }

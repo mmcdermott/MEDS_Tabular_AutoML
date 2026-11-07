@@ -11,9 +11,10 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 
-SEMANTICS_VERSION = 1
+# 2: the static value feature is the mean of the subject's static values (static/mean), not the first one.
+SEMANTICS_VERSION = 2
 
-STATIC_AGGS = ("static/present", "static/first")
+STATIC_AGGS = ("static/present", "static/mean")
 CODE_AGGS = ("code/count",)
 VALUE_AGGS = ("value/count", "value/sum", "value/sum_sqd", "value/min", "value/max")
 DYNAMIC_AGGS = CODE_AGGS + VALUE_AGGS
@@ -22,7 +23,7 @@ SUPPORTED_AGGS = STATIC_AGGS + DYNAMIC_AGGS
 # Feature-name suffix in metadata/codes.parquet of each aggregation.
 SUFFIXES = {
     "static/present": "/static/present",
-    "static/first": "/static/first",
+    "static/mean": "/static/mean",
     "code/count": "/code",
     **dict.fromkeys(VALUE_AGGS, "/value"),
 }
@@ -108,12 +109,3 @@ class TabularConfig:
         del identity["label_column"]
         identity["semantics"] = SEMANTICS_VERSION
         return identity
-
-    @classmethod
-    def from_block_identity(cls, identity: dict, label_column: str) -> TabularConfig:
-        values = {k: v for k, v in identity.items() if k != "semantics"}
-        if identity.get("semantics") != SEMANTICS_VERSION or set(values) != set(cls.__dataclass_fields__) - {
-            "label_column"
-        }:
-            raise ValueError("The recorded configuration is from another semantics version.")
-        return cls(**values, label_column=label_column)

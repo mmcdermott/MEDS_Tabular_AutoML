@@ -11,7 +11,6 @@ exactly the outputs whose inputs, configuration and engine are unchanged.
 
 from __future__ import annotations
 
-import json
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -22,18 +21,14 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_array
 
-from ..utils import load_matrix
 from . import engine
 from .contract import DYNAMIC_AGGS, SUFFIXES, TabularConfig, window_microseconds
 from .storage import (
-    INTERNAL_DIR,
     Publisher,
     atomic_write_json,
-    atomic_write_parquet,
     block_path,
     digest,
     file_fingerprint,
-    label_cache_frame,
     manifest_matches,
     manifest_path,
     output_lock,
@@ -90,8 +85,8 @@ class Vocabulary:
     value_count: int  # Columns of value/* blocks.
     present_names: tuple[str, ...]
     present_keep: np.ndarray
-    first_names: tuple[str, ...]
-    first_keep: np.ndarray
+    mean_names: tuple[str, ...]
+    mean_keep: np.ndarray
 
     @classmethod
     def build(cls, counts: dict[str, int], selected: frozenset[str]) -> Vocabulary:
@@ -112,7 +107,7 @@ class Vocabulary:
         value_index = {name: i for i, name in enumerate(value_names) if value_keep[i]}
         value_columns = np.array([value_index.get(name, -1) for name in code_names], dtype=np.int32)
         present_names, present_keep = family("static/present")
-        first_names, first_keep = family("static/first")
+        mean_names, mean_keep = family("static/mean")
         return cls(
             code_names,
             code_keep,
@@ -120,8 +115,8 @@ class Vocabulary:
             len(value_names),
             present_names,
             present_keep,
-            first_names,
-            first_keep,
+            mean_names,
+            mean_keep,
         )
 
     def block_width(self, agg: str) -> int:
@@ -129,7 +124,7 @@ class Vocabulary:
             return len(self.code_names)
         if agg in DYNAMIC_AGGS:
             return self.value_count
-        return len(self.present_names if agg == "static/present" else self.first_names)
+        return len(self.present_names if agg == "static/present" else self.mean_names)
 
 
 @dataclass
@@ -146,15 +141,9 @@ class EncodedShard:
     values: np.ndarray  # NaN when missing, or when the code's values are not a selected feature.
     static_subjects: np.ndarray
     static_present: np.ndarray  # static/present column.
-    static_first: np.ndarray  # static/first column, or -1 when not a selected feature.
+    static_mean: np.ndarray  # static/mean column, or -1 when not a selected feature.
     static_values: np.ndarray
     shard_subjects: np.ndarray  # Every subject with any record, sorted.
-
-    def event_rows(self) -> tuple[np.ndarray, np.ndarray]:
-        """The distinct (subject, time) rows of the timed events."""
-        change = np.ones(len(self.subjects), dtype=bool)
-        change[1:] = (self.subjects[1:] != self.subjects[:-1]) | (self.times[1:] != self.times[:-1])
-        return self.subjects[change], self.times[change]
 
 
 def _numpy(series: pl.Series, dtype) -> np.ndarray:
@@ -233,7 +222,7 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
         .select(
             pl.col("subject_id").cast(pl.Int64),
             _code_ids(vocab.present_names).fill_null(-1).cast(pl.Int32).alias("present"),
-            _code_ids(vocab.first_names).fill_null(-1).cast(pl.Int32).alias("first"),
+            _code_ids(vocab.mean_names).fill_null(-1).cast(pl.Int32).alias("mean"),
             value.alias("numeric_value"),
         )
         .collect()
@@ -241,9 +230,9 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
     present = static["present"].to_numpy()
     kept = present >= 0
     kept[kept] = vocab.present_keep[present[kept]]
-    first = static["first"].to_numpy()[kept]
-    selected_first = first >= 0
-    selected_first[selected_first] = vocab.first_keep[first[selected_first]]
+    mean = static["mean"].to_numpy()[kept]
+    selected_mean = mean >= 0
+    selected_mean[selected_mean] = vocab.mean_keep[mean[selected_mean]]
     return EncodedShard(
         subjects=subjects,
         times=times,
@@ -251,8 +240,8 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
         values=values,
         static_subjects=static["subject_id"].to_numpy()[kept],
         static_present=present[kept].astype(np.int32),
-        static_first=np.where(selected_first, first, -1).astype(np.int32),
-        static_values=np.where(selected_first, static["numeric_value"].to_numpy()[kept], np.nan),
+        static_mean=np.where(selected_mean, mean, -1).astype(np.int32),
+        static_values=np.where(selected_mean, static["numeric_value"].to_numpy()[kept], np.nan),
         shard_subjects=shard_subjects,
     )
 
@@ -285,7 +274,6 @@ class ShardOutput:
         self.pool = pool
         self.pending = []
         self.files: dict[str, int] = {}  # Block name -> file size.
-        self.row_offsets: dict[str, np.ndarray] = {}  # Block name -> row offsets as written.
         self.entries = 0
 
     def _write(self, window: str, agg: str, matrix: csr_array):
@@ -296,43 +284,22 @@ class ShardOutput:
             size = path.stat().st_size
         else:
             size = engine.write_block(path, matrix, integer=integer)
-        # A copy, so the offsets do not keep the engine's result alive.
-        return f"{window}/{agg}.npz", np.array(matrix.indptr, dtype=np.int64), size
-
-    def _extract(self, window, agg, source: Path, indptr: np.ndarray, rows, columns: int, source_compressed):
-        integer = agg in INTEGER_AGGS
-        if source_compressed or self.compress:
-            # The engine extracts only from uncompressed blocks to uncompressed blocks.
-            matrix = csr_array(load_matrix(source))
-            matrix.data = matrix.data.astype(np.int64 if integer else np.float64)
-            return self._write(window, agg, _gather(matrix, rows))
-        path = block_path(self.directory, window, agg)
-        written, size = engine.extract_rows(source, indptr, rows, columns, path, integer=integer)
-        return f"{window}/{agg}.npz", written, size
+        return f"{window}/{agg}.npz", int(matrix.indptr[-1]), size
 
     def write(self, window: str, agg: str, matrix: csr_array):
         self.pending.append(self.pool.submit(self._write, window, agg, matrix))
-
-    def extract(
-        self, window, agg, source: Path, indptr: np.ndarray, rows, columns: int, *, source_compressed
-    ):
-        """Writes the given rows of a tabularized block; from an uncompressed block to an uncompressed one,
-        only their entries are read."""
-        arguments = (window, agg, source, indptr, rows, columns, source_compressed)
-        self.pending.append(self.pool.submit(self._extract, *arguments))
 
     def wait(self):
         """Waits for every submitted block; raises the first failure after all have finished."""
         error = None
         for future in self.pending:
             try:
-                name, indptr, size = future.result()
+                name, entries, size = future.result()
             except BaseException as exception:
                 error = error or exception
                 continue
             self.files[name] = size
-            self.row_offsets[name] = indptr
-            self.entries += int(indptr[-1])
+            self.entries += entries
         self.pending.clear()
         if error is not None:
             raise error
@@ -353,12 +320,11 @@ class ShardJob:
     finish() waits for them and publishes the shard; after a failure, everything staged is discarded.
     """
 
-    def __init__(self, output: ShardOutput, staged: Path, publisher: Publisher, publish, extra=()):
+    def __init__(self, output: ShardOutput, staged: Path, publisher: Publisher, publish):
         self.output = output
         self.staged = staged
         self.publisher = publisher
         self.publish = publish
-        self.extra = extra  # Staged files besides the directory.
 
     def finish(self):
         try:
@@ -371,12 +337,10 @@ class ShardJob:
     def abandon(self):
         self.output.abandon()
         self.publisher.discard(self.staged)
-        for path in self.extra:
-            path.unlink(missing_ok=True)
 
 
 class Pipeline:
-    """MEDS shards to MEDS-Tab's tabularized blocks and task caches.
+    """MEDS shards to MEDS-Tab's tabularized blocks, at the label times of a task.
 
     code_metadata is meds-tab-describe's codes.parquet (default <output_dir>/metadata/codes.parquet). Outputs
     whose recorded identity (inputs, configuration, feature metadata, engine build) still matches are reused
@@ -407,7 +371,6 @@ class Pipeline:
         self.report: dict[str, dict] = defaultdict(dict)
         self._vocabulary: Vocabulary | None = None
         self._metadata_digest: str | None = None
-        self._indexes: dict[str, tuple[tuple, dict]] = {}
 
     # -- Feature metadata ------------------------------------------------------------------------------
 
@@ -448,26 +411,16 @@ class Pipeline:
             }
         )
 
-    def _publish(self, job: ShardJob, target: Path, manifest: Path, record: dict, *, labels=None, moves=()):
-        """Publishes a staged shard directory and its side files, then records its manifest.
+    def _publish(self, job: ShardJob, target: Path, manifest: Path, record: dict):
+        """Publishes a staged shard directory, then records its manifest.
 
         The manifest is removed first and written last, so a crash at any step leaves no manifest and the
-        shard is recomputed. Readers see the complete old directory, the complete new one, or none. labels, if
-        given, is a task's (label frame, path); the old task directory is withdrawn before the new label file
-        is written.
+        shard is recomputed. Readers see the complete old directory, the complete new one, or none.
         """
         manifest.unlink(missing_ok=True)
-        if labels is not None:
-            self.publisher.withdraw(target)
-            atomic_write_parquet(*labels)
         self.publisher.publish_dir(job.staged, target)
-        for source, destination in moves:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            source.replace(destination)
         prefix = target.relative_to(self.output_dir).as_posix()
         files = {f"{prefix}/{name}": size for name, size in job.output.files.items()}
-        for path in [*([labels[1]] if labels is not None else []), *(d for _, d in moves)]:
-            files[path.relative_to(self.output_dir).as_posix()] = path.stat().st_size
         atomic_write_json(manifest, {**record, "files": files})
 
     def _reusable(self, manifest: Path, identity: str, reuse: bool) -> bool:
@@ -531,8 +484,8 @@ class Pipeline:
             for (window, agg), matrix in zip(blocks, matrices, strict=True):
                 output.write(window, agg, matrix)
         if config.static_aggs:
-            present, first = self._static(encoded, row_subjects, row_times)
-            for agg, matrix in (("static/present", present), ("static/first", first)):
+            present, mean = self._static(encoded, row_subjects, row_times)
+            for agg, matrix in (("static/present", present), ("static/mean", mean)):
                 if agg in config.static_aggs:
                     output.write("none", agg, matrix)
 
@@ -541,260 +494,13 @@ class Pipeline:
         return engine.static_features(
             encoded.static_subjects,
             encoded.static_present,
-            encoded.static_first,
+            encoded.static_mean,
             encoded.static_values,
             row_subjects,
             row_times,
             len(vocab.present_names),
-            len(vocab.first_names),
+            len(vocab.mean_names),
         )
-
-    # -- Tabularization at event times -----------------------------------------------------------------
-
-    def tabularize(self) -> dict:
-        """Static and time-series blocks at every event time, in tabularize/<split>/<shard>."""
-        with output_lock(self.output_dir):
-            return self._tabularize(self.reuse)
-
-    def _tabularize(self, reuse: bool) -> dict:
-        with self._writers() as pool:
-            names = self._by_size(shard_names(self.input_dir))
-            self._run_shards(names, lambda name: self._tabularize_shard(name, pool, reuse))
-        return self.report["tabularize"]
-
-    def _tabularize_shard(self, name: str, pool: ThreadPoolExecutor, reuse: bool) -> ShardJob | None:
-        identity = self._blocks_identity("tabularize", name)
-        manifest = manifest_path(self.output_dir, "tabularize", name)
-        if self._reusable(manifest, identity, reuse):
-            self.report["tabularize"].setdefault(name, {"reused": True})
-            return None
-        started = time.perf_counter()
-        encoded = read_shard(self.input_dir / f"{name}.parquet", self.vocabulary)
-        row_subjects, row_times = encoded.event_rows()
-        staged = self.publisher.stage()
-        staged_index = staged.with_name(staged.name + ".index")
-        output = ShardOutput(staged, self.config.do_compress, pool)
-        shard_subjects = encoded.shard_subjects
-        # Each subject's static features, for task rows without any timed history.
-        subject_present, subject_first = self._static(encoded, shard_subjects, np.zeros_like(shard_subjects))
-
-        def publish():
-            _save_index(
-                staged_index,
-                row_subjects,
-                row_times,
-                shard_subjects,
-                subject_present,
-                subject_first,
-                output.row_offsets,
-            )
-            record = {"identity": identity, "config": self.config.block_identity()}
-            moves = [(staged_index, self._index_path(name))]
-            self._publish(job, self.output_dir / "tabularize" / name, manifest, record, moves=moves)
-            self.report["tabularize"][name] = {
-                "reused": False,
-                "seconds": time.perf_counter() - started,
-                "entries": output.entries,
-            }
-
-        job = ShardJob(output, staged, self.publisher, publish, extra=(staged_index,))
-        try:
-            self._write_blocks(encoded, row_subjects, row_times, output)
-        except BaseException:
-            job.abandon()
-            raise
-        del encoded  # Freed while the blocks are written.
-        return job
-
-    def tabularized_config(self) -> TabularConfig | None:
-        """The configuration of the event-time blocks, if the native backend wrote every shard's blocks with
-        one configuration; task caching extracts rows from those blocks."""
-        recorded = set()
-        for name in shard_names(self.input_dir):
-            manifest = read_manifest(manifest_path(self.output_dir, "tabularize", name))
-            if not manifest or "config" not in manifest:
-                return None
-            recorded.add(json.dumps(manifest["config"], sort_keys=True))
-        if len(recorded) != 1:
-            return None
-        try:
-            return TabularConfig.from_block_identity(json.loads(recorded.pop()), self.config.label_column)
-        except (TypeError, ValueError):
-            return None
-
-    def _index_path(self, name: str) -> Path:
-        # Not *.npz: MEDS-Tab lists every .npz file under the output directory.
-        return self.output_dir / INTERNAL_DIR / "index" / f"{name}.index"
-
-    def _index(self, name: str) -> dict:
-        """A shard's index (see _save_index), loaded once per file version."""
-        path = self._index_path(name)
-        status = path.stat()
-        key = (status.st_size, status.st_mtime_ns, status.st_ino)
-        cached = self._indexes.get(name)
-        if cached is None or cached[0] != key:
-            cached = (key, _load_index(path))
-            self._indexes[name] = cached
-        return cached[1]
-
-    # -- Task caching ----------------------------------------------------------------------------------
-
-    def cache_task(self, task_name: str, label_dir) -> dict:
-        """A task's rows of every event-time block, in <task>/task_cache, and its label cache, in
-        <task>/labels.
-
-        As in the Python backend, rows come from the blocks that were tabularized, whatever this pipeline's
-        window sizes and aggregations say, and the cache is compressed as this pipeline's do_compress says.
-        Tabularizes first any shard whose blocks are missing or out of date.
-        """
-        _check_task_name(task_name)
-        with output_lock(self.output_dir):
-            source = self.tabularized_config()  # Read under the lock, so no other run is changing it.
-            run = self if source is None or source == self.config else self._with_config(source)
-            return run._cache_task(task_name, label_dir, compress=self.config.do_compress)
-
-    def _with_config(self, config: TabularConfig) -> Pipeline:
-        """This pipeline with another configuration, sharing its report."""
-        run = Pipeline(
-            self.input_dir,
-            self.output_dir,
-            config,
-            code_metadata=self.code_metadata,
-            threads=self.threads,
-            reuse=self.reuse,
-        )
-        run.report = self.report
-        return run
-
-    def _cache_task(self, task_name: str, label_dir, compress: bool) -> dict:
-        self._tabularize(reuse=True)  # reuse=False recomputes this task's outputs, not the blocks it reads.
-        labels, label_identity = self._labels(label_dir)
-        names = shard_names(self.input_dir)
-        indexes = {name: self._index(name) for name in names}
-        per_shard, unknown = self._assign(
-            labels, {name: index["shard_subjects"] for name, index in indexes.items()}
-        )
-        report = self.report[f"cache_task/{task_name}"]
-        report["unknown_subject_labels"] = unknown
-        with self._writers() as pool:
-            self._run_shards(
-                names,
-                lambda name: self._cache_task_shard(
-                    task_name,
-                    name,
-                    indexes[name],
-                    per_shard[name],
-                    labels["label"].dtype,
-                    label_identity,
-                    compress,
-                    pool,
-                ),
-            )
-        return report
-
-    def _labels(self, label_dir) -> tuple[pl.DataFrame, list[dict]]:
-        """Every label as (subject_id, time, label), first of duplicates kept; and the files' identity."""
-        files = sorted(Path(label_dir).rglob("*.parquet"))
-        if not files:
-            raise FileNotFoundError(f"No label parquet files under {label_dir}.")
-        column = self.config.label_column
-        frames = []
-        for path in files:
-            frame = pl.read_parquet(path, columns=["subject_id", "prediction_time", column])
-            frames.append(
-                frame.select(
-                    pl.col("subject_id").cast(pl.Int64),
-                    _microseconds(frame.lazy(), "prediction_time", path).alias("time"),
-                    pl.col(column).alias("label"),
-                )
-            )
-        labels = pl.concat(frames, how="vertical_relaxed")
-        if labels.null_count().sum_horizontal().item():
-            raise ValueError("Labels need subject_id, prediction_time and a label value.")
-        labels = labels.unique(subset=["subject_id", "time"], keep="first", maintain_order=True)
-        return labels, [file_fingerprint(p) for p in files]
-
-    def _assign(self, labels: pl.DataFrame, subjects_by_shard: dict[str, np.ndarray]):
-        """Each shard's labels, sorted by (subject, time); and the count of labels in no shard."""
-        shards = list(subjects_by_shard)
-        all_subjects = np.concatenate([subjects_by_shard[s] for s in shards])
-        if len(np.unique(all_subjects)) != len(all_subjects):
-            raise ValueError("A subject appears in more than one shard.")
-        owner = pl.DataFrame(
-            {
-                "subject_id": all_subjects.astype(np.int64),
-                "_shard": np.repeat(np.arange(len(shards)), [len(subjects_by_shard[s]) for s in shards]),
-            }
-        )
-        joined = labels.join(owner, on="subject_id", how="left", maintain_order="left")
-        unknown = int(joined["_shard"].null_count())
-        joined = joined.drop_nulls("_shard").sort(["subject_id", "time"])
-        per_shard = {
-            shards[key[0]]: frame.drop("_shard")
-            for key, frame in joined.partition_by("_shard", as_dict=True).items()
-        }
-        return {s: per_shard.get(s, labels.clear()) for s in shards}, unknown
-
-    def _cache_task_shard(
-        self, task_name, name, index, shard_labels, label_dtype, label_identity, compress, pool
-    ) -> ShardJob | None:
-        report = self.report[f"cache_task/{task_name}"]
-        identity = digest(
-            {
-                "stage": "cache_task",
-                "tabularize": self._blocks_identity("tabularize", name),
-                "labels": label_identity,
-                "label_column": self.config.label_column,
-                "compress": compress,
-            }
-        )
-        manifest = manifest_path(self.output_dir, task_name, name)
-        if self._reusable(manifest, identity, self.reuse):
-            report[name] = {"reused": True}
-            return None
-        started = time.perf_counter()
-        event_ids = _event_ids(shard_labels, index["row_subjects"], index["row_times"])
-        subject_rows = np.searchsorted(index["shard_subjects"], shard_labels["subject_id"].to_numpy())
-        staged = self.publisher.stage()
-        output = ShardOutput(staged, compress, pool)
-
-        def publish():
-            frame = label_cache_frame(
-                shard_labels["subject_id"],
-                shard_labels["time"],
-                shard_labels["label"],
-                event_ids,
-                label_dtype,
-            )
-            label_path = self.output_dir / task_name / "labels" / f"{name}.parquet"
-            target = self.output_dir / task_name / "task_cache" / name
-            self._publish(job, target, manifest, {"identity": identity}, labels=(frame, label_path))
-            report[name] = {
-                "reused": False,
-                "seconds": time.perf_counter() - started,
-                "entries": output.entries,
-            }
-
-        job = ShardJob(output, staged, self.publisher, publish)
-        try:
-            source = self.output_dir / "tabularize" / name
-            for agg in self.config.static_aggs:
-                output.write("none", agg, _gather(index[agg], subject_rows))
-            for window in self.config.window_sizes:
-                for agg in self.config.dynamic_aggs:
-                    output.extract(
-                        window,
-                        agg,
-                        block_path(source, window, agg),
-                        index[f"rows:{window}/{agg}.npz"],
-                        event_ids,
-                        self.vocabulary.block_width(agg),
-                        source_compressed=self.config.do_compress,
-                    )
-        except BaseException:
-            job.abandon()
-            raise
-        return job
 
     # -- Tabularization at label times -----------------------------------------------------------------
 
@@ -864,55 +570,3 @@ class _Reordered:
 
     def write(self, window: str, agg: str, matrix: csr_array):
         self.output.write(window, agg, _gather(matrix, self.order))
-
-
-def _check_task_name(task_name: str):
-    if not task_name or task_name.startswith(".") or "/" in task_name:
-        raise ValueError("Task names must be nonempty, without '/', and not start with '.'.")
-    if task_name in ("metadata", "tabularize"):
-        raise ValueError(f"Task name {task_name!r} collides with the output layout.")
-
-
-def _event_ids(labels: pl.DataFrame, row_subjects, row_times) -> np.ndarray:
-    """Each label's latest event-time row of its subject at or before its time, or -1."""
-    rows = pl.DataFrame(
-        {
-            "subject_id": row_subjects,
-            "time": row_times,
-            "event_id": np.arange(len(row_subjects), dtype=np.int64),
-        }
-    )
-    joined = labels.select("subject_id", "time").join_asof(
-        rows, on="time", by="subject_id", strategy="backward", check_sortedness=False
-    )
-    return joined["event_id"].fill_null(-1).to_numpy().astype(np.int64)
-
-
-def _save_index(path, row_subjects, row_times, shard_subjects, present, first, row_offsets):
-    """A shard's index for task caching: its event-time rows, its subjects, each subject's static features,
-    and the row offsets of every written block, so tasks read only their rows."""
-    with open(path, "wb") as handle:  # A file handle keeps np.savez from appending ".npz".
-        np.savez(
-            handle,
-            **{f"rows:{name}": offsets for name, offsets in row_offsets.items()},
-            row_subjects=row_subjects,
-            row_times=row_times,
-            shard_subjects=shard_subjects,
-            present_indptr=present.indptr,
-            present_indices=present.indices,
-            present_data=present.data,
-            present_shape=np.asarray(present.shape),
-            first_indptr=first.indptr,
-            first_indices=first.indices,
-            first_data=first.data,
-            first_shape=np.asarray(first.shape),
-        )
-
-
-def _load_index(path: Path) -> dict:
-    with np.load(path) as data:
-        index = {key: data[key] for key in data.files}
-    for name in ("present", "first"):
-        parts = (index[f"{name}_data"], index[f"{name}_indices"], index[f"{name}_indptr"])
-        index[f"static/{name}"] = csr_array(parts, shape=tuple(index[f"{name}_shape"]))
-    return index

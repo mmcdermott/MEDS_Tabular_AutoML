@@ -1,4 +1,4 @@
-"""The native backend of meds-tab-tabularize-static, -time-series and -cache-task.
+"""The native backend of meds-tab-tabularize-static and meds-tab-tabularize-time-series.
 
 Each of those scripts first calls ``use_native(cfg)``; when it returns True, the script hands its Hydra
 configuration to the matching function here and returns. These functions write the same files as the
@@ -104,35 +104,13 @@ def _is_primary_worker(cfg: DictConfig, stage: str) -> bool:
 
 
 def tabularize(cfg: DictConfig, stage: str):
-    """Every configured static and time-series block of every shard, at event times or label times."""
+    """Every configured static and time-series block of every shard, at the label times of the task."""
     if not _is_primary_worker(cfg, stage):
         return
     _require_default(cfg, "output_tabularized_dir", Path(cfg.output_dir) / "tabularize")
     run = _pipeline(cfg, tabular_config(cfg))
-    report = run.tabularize_at_labels(cfg.input_label_dir) if cfg.input_label_dir else run.tabularize()
+    report = run.tabularize_at_labels(cfg.input_label_dir)
     _log(f"Native {stage}", report, run.threads)
-
-
-def cache_task(cfg: DictConfig):
-    """The task's rows of every event-time block, and its label cache."""
-    if not _is_primary_worker(cfg, "cache_task"):
-        return
-    output = Path(cfg.output_dir)
-    _require_default(cfg, "input_tabularized_dir", output / "tabularize")
-    _require_default(cfg, "output_tabularized_cache_dir", output / cfg.task_name / "task_cache")
-    _require_default(cfg, "output_label_cache_dir", output / cfg.task_name / "labels")
-    run = _pipeline(cfg, tabular_config(cfg))
-    report = run.cache_task(cfg.task_name, cfg.input_label_dir)
-    computed = [name for name, shard in run.report["tabularize"].items() if not shard["reused"]]
-    if computed:
-        logger.warning(
-            f"Native cache_task tabularized {len(computed)} shards first: their blocks were missing or "
-            "were not written by the native backend with this configuration."
-        )
-    unknown = report.pop("unknown_subject_labels")
-    if unknown:
-        logger.warning(f"{unknown} labels belong to subjects that are in no shard; they are skipped.")
-    _log("Native cache_task", report, run.threads)
 
 
 def _log(stage: str, report: dict, threads: int):
