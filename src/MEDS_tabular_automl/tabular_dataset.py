@@ -51,15 +51,11 @@ class TabularDataset(TimeableMixin):
         self.split = split
         # Load shards for this split
         self._data_shards = sorted(
-            [
-                shard.stem
-                for shard in list_subdir_files(Path(cfg.path.input_label_cache_dir) / split, "parquet")
-            ]
+            [shard.stem for shard in list_subdir_files(Path(cfg.path.input_label_dir) / split, "parquet")]
         )
         if len(self._data_shards) == 0:
             raise ValueError(
-                "No labels found in the `input_label_cache_dir` "
-                + str(Path(cfg.path.input_label_cache_dir).resolve())
+                "No labels found in the `input_label_dir` " + str(Path(cfg.path.input_label_dir).resolve())
             )
         self.valid_event_ids, self.labels = None, None
 
@@ -126,7 +122,7 @@ class TabularDataset(TimeableMixin):
             to lists of corresponding labels.
         """
         label_fps = {
-            shard: (Path(self.cfg.path.input_label_cache_dir) / self.split / shard).with_suffix(".parquet")
+            shard: (Path(self.cfg.path.input_label_dir) / self.split / shard).with_suffix(".parquet")
             for shard in self._data_shards
         }
         cached_labels, cached_event_ids = {}, {}
@@ -300,10 +296,8 @@ class TabularDataset(TimeableMixin):
         """
         # column_shard is of form event_idx, feature_idx, value
         matrix = self._load_matrix(path)
-        if path.stem in ["first", "present"]:
-            agg = f"static/{path.stem}"
-        else:
-            agg = f"{path.parent.stem}/{path.stem}"
+        is_static = path.stem in ["mean", "present"]
+        agg = f"static/{path.stem}" if is_static else f"{path.parent.stem}/{path.stem}"
 
         return self._filter_shard_on_codes_and_freqs(agg, matrix)
 

@@ -74,7 +74,7 @@ def main(
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html
     """  # noqa: E501
 
-    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+    if not Path(cfg.input_label_dir).is_dir():
         raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
@@ -127,11 +127,8 @@ def main(
     tabularization_tasks = list(product(meds_shard_fps, static_aggs))
     np.random.shuffle(tabularization_tasks)
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
-        if cfg.input_label_dir:
-            label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
-            label_df = pl.scan_parquet(label_fp)
-        else:
-            label_df = None
+        label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
+        label_df = pl.scan_parquet(label_fp)
         out_fp = (
             Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
         ).with_suffix(".npz")
