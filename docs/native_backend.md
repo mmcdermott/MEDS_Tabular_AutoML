@@ -59,7 +59,9 @@ rare codes, subjects with several static values, labels at, between, before and 
 and unshuffled labels, random window sizes, code thresholds and compression. A difference is shrunk to a
 minimal dataset. A second property checks that the engine writes the same bytes as the Python writer for
 any block. By default 25 examples per property run, derandomized (`HYPOTHESIS_PROFILE=ci`); set
-`HYPOTHESIS_PROFILE=deep` for 300.
+`HYPOTHESIS_PROFILE=deep` for 300 (about 11 minutes on 20 cores). In CI, the parity property runs in the
+`MEDS_TAB_BACKEND=native` jobs only (it compares both backends itself), and the "Native parity (deep)"
+workflow runs the deep profile weekly and on demand.
 
 ## What the engine does differently
 

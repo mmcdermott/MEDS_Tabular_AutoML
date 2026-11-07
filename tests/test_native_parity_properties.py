@@ -159,6 +159,13 @@ def write_case(root: Path, rows: dict, labels: dict) -> tuple[Path, Path]:
     return data, label_dir
 
 
+# This test runs both backends itself, whatever MEDS_TAB_BACKEND says. CI runs the suite once per backend
+# (MEDS_TAB_BACKEND=python or native), so it runs only where the backend is native, not twice per Python
+# version. Locally, with MEDS_TAB_BACKEND unset, it always runs.
+@pytest.mark.skipif(
+    os.environ.get("MEDS_TAB_BACKEND") == "python",
+    reason="Compares both backends; runs in the MEDS_TAB_BACKEND=native jobs.",
+)
 @given(case=meds_cases(), config=tabularization_configs())
 def test_native_matches_python_at_label_times(case, config):
     """Same files, shapes, stored entries and values (sums within the summation-order bound), and one row per

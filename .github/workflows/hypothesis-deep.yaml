@@ -1,0 +1,34 @@
+name: Native parity (deep)
+
+# The Hypothesis parity tests between the native and the Python backends with the "deep" profile (300
+# generated examples per property; 11 minutes on a 20-core machine, longer on a GitHub runner). Pull requests
+# run the quick "ci" profile in the MEDS_TAB_BACKEND=native test jobs; this runs
+# weekly, and on demand from the Actions tab.
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays, 04:00 UTC.
+  workflow_dispatch:
+
+jobs:
+  hypothesis_deep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup
+        with:
+          python-version: "3.12"
+
+      - name: Check that the native engine was built
+        run: |
+          uv run python -c "from MEDS_tabular_automl.native import engine; engine.library()"
+
+      - name: Run the parity properties with the deep profile
+        env:
+          HYPOTHESIS_PROFILE: deep
+        run: |
+          uv run pytest -v --hypothesis-show-statistics tests/test_native_parity_properties.py
