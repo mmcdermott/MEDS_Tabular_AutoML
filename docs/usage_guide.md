@@ -2,6 +2,12 @@
 
 We provide a set of core CLI scripts to facilitate the tabularization and modeling of MEDS data. These scripts are designed to be run in sequence to transform raw MEDS data into tabularized data and train a model on the tabularized data.
 
+MEDS-Tab tabularizes **task-specific** features: given a task's labels, it computes features only at their prediction times, and every window ends at the prediction time. Stages 1 and 2 prepare the data; stages 3 and 4 tabularize it for one task; stage 5 trains models.
+
+!!! note "Removed: full tabularization and `meds-tab-cache-task`"
+
+    Versions up to 0.2.0 could also tabularize every event time of every subject once (`meds-tab-tabularize-static` and `-time-series` without `input_label_dir`), then select each task's rows with `meds-tab-cache-task`. That workflow is removed: it did not scale to large datasets, and its finite windows ended at the subject's last event before the prediction time rather than at the prediction time. Its documentation is in the [0.2.0 usage guide](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/0.2.0/docs/usage_guide.md). To migrate, tabularize each task with its own `input_label_dir` and `output_dir`, as below.
+
 ## 1. **`MEDS_transform-reshard_to_split`**
 
 This optional command reshards the data. A core challenge in tabularization is the high memory usage and slow compute time. We shard the data into small shards to reduce the memory usage as we can independently tabularize each shard, and we can reduce cpu time by parallelizing the processing of these shards across workers that are independently processing different shards.
@@ -93,7 +99,7 @@ For the rest of the tutorial we will assume that the data has been reshared into
 
 ## 2. **`meds-tab-describe`**
 
-This command processes MEDS data shards to compute the frequencies of different code types. It differentiates codes into the following categories:
+This command computes the frequencies of different code types over the **training subjects only**. Subjects are assigned to splits by the MEDS subject splits file, `metadata/subject_splits.parquet` under the MEDS root directory, and only subjects whose split is `train` are counted, regardless of how the data shards are organized into directories. This file is required: `meds-tab-describe` raises an error if it is missing. Because these frequencies drive feature selection in later stages (e.g., `min_code_inclusion_count`), fitting them on training subjects only keeps tuning and held-out data from influencing which features are kept. The codes are differentiated into the following categories:
 
 - dynamic codes (codes with timestamps)
 - dynamic numeric values (codes with timestamps and numerical values)
@@ -113,21 +119,30 @@ This stage is not parallelized as it runs very quickly.
 
     - `input_dir`: The directory containing the MEDS data.
     - `output_dir`: The directory to store the tabularized data.
+    - `meds_root_dir` (optional): The MEDS root directory containing `metadata/subject_splits.parquet`. Defaults to the parent of `input_dir`.
+
+!!! warning "Re-run after upgrading"
+
+    Earlier versions fit these frequencies on all splits. With `do_overwrite=False` (the default), an existing `metadata/codes.parquet` from such a run is reused as-is, so re-run `meds-tab-describe` with `do_overwrite=True` (and re-run the downstream stages) to get train-only frequencies.
 
 ### Input Data Structure
 
 ```text
 MEDS_RESHARD_DIR/
 │
-└─── <SPLIT A>
-│   │   <SHARD 0>.parquet
-│   │   <SHARD 1>.parquet
-│   │   ...
+└─── data
+│   └─── <SPLIT A>
+│   │   │   <SHARD 0>.parquet
+│   │   │   <SHARD 1>.parquet
+│   │   │   ...
+│   │
+│   └─── <SPLIT B>
+│       │   <SHARD 0>.parquet
+│       │   <SHARD 1>.parquet
+│       │   ...
 │
-└─── <SPLIT B>
-    │   <SHARD 0>.parquet
-    │   <SHARD 1>.parquet
-    │   ...
+└─── metadata
+    │   subject_splits.parquet
 ```
 
 ### Output Data Structure (New Files)
@@ -175,16 +190,17 @@ OUTPUT_DIR/
 
 ## 3. **`meds-tab-tabularize-static`**
 
-Filters and processes the dataset based on the count of codes, generating a tabular vector for each patient at each timestamp in the shards. Each row corresponds to a unique `subject_id` and `timestamp` combination. As a result, rows are duplicated across multiple timestamps for the same patient.
+Filters the codes by frequency and computes the static features of each label of the task: one row per label, in the order of the label files, holding its subject's static features.
 
 ```console
 meds-tab-tabularize-static \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
     do_overwrite=False \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 This stage is not parallelized as it runs very quickly.
@@ -192,11 +208,24 @@ This stage is not parallelized as it runs very quickly.
 ??? note "Args Description"
 
     - `input_dir`: The directory containing the MEDS data.
-    - `output_dir`: The directory to store the tabularized data.
+    - `output_dir`: The directory to store the tabularized data of this task.
+    - `input_label_dir`: The directory containing the task's labels (see "Label file layout" below).
     - `tabularization.min_code_inclusion_count`: The minimum number of times a code must appear.
     - `tabularization.window_sizes`: The window sizes to use for aggregations.
     - `do_overwrite`: Whether to overwrite existing files.
     - `tabularization.aggs`: The aggregation methods to use.
+
+!!! warning "Label file layout"
+
+    `input_label_dir` must mirror the sharding of the MEDS data: the labels of the subjects in `${MEDS_RESHARD_DIR}/data/<SPLIT>/<SHARD>.parquet` go in `${TASKS_DIR}/${TASK}/<SPLIT>/<SHARD>.parquet`, with columns `subject_id`, `prediction_time` and `boolean_value`.
+
+!!! note "Static numeric values (`static/mean`)"
+
+    The examples on this page leave out `static/mean`, the mean of a subject's static (timeless) numeric values of a code. Add it to `tabularization.aggs` only if your data has such values: if it has none, tabularization stops with `No static features found. Remove the aggregation function static/mean`. Many datasets record only categorical demographics as static and give every numeric measurement (height, weight, birth) a time, so the window features cover them instead. That is the case of the MEDS extractions of MIMIC-IV, eICU and NWICU.
+
+!!! tip "Several tasks"
+
+    Use one `output_dir` per task. Run `meds-tab-describe` once and copy its `metadata/` directory into each task's `output_dir` (e.g. `rsync -r "${OUTPUT_DIR}/metadata/" "${OUTPUT_DIR}/${TASK}/metadata"`), as [`MIMICIV_TUTORIAL/task_tabularize_meds.sh`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/MIMICIV_TUTORIAL/task_tabularize_meds.sh) does.
 
 !!! note "Code Inclusion Parameters"
 
@@ -210,7 +239,16 @@ This stage is not parallelized as it runs very quickly.
 ### Input Data Structure
 
 ```text
-[Previous structure remains the same]
+# Previous structure plus:
+TASKS_DIR/
+└─── TASK/
+    └─── <SPLIT A>
+    │   │   <SHARD 0>.parquet  # labels of the subjects of MEDS_RESHARD_DIR/data/<SPLIT A>/<SHARD 0>.parquet
+    │   │   <SHARD 1>.parquet
+    │   │   ...
+    │
+    └─── <SPLIT B>
+        │   ...
 ```
 
 ### Output Data Structure (New Files)
@@ -220,13 +258,11 @@ OUTPUT_DIR/
 └─── tabularize/
     └─── <SPLIT A>
     │   │   <SHARD 0>/none/static/present.npz
-    │   │   <SHARD 0>/none/static/first.npz
     │   │   <SHARD 1>/none/static/present.npz
     │   │   ...
     │
     └─── <SPLIT B>
         │   <SHARD 0>/none/static/present.npz
-        │   <SHARD 0>/none/static/first.npz
         │   <SHARD 1>/none/static/present.npz
         │   ...
 ```
@@ -237,27 +273,24 @@ OUTPUT_DIR/
 
     ??? folder "MEDS_DIR"
 
-        ??? folder "SPLIT A"
-
-            - 📄 SHARD 0.parquet
-
-        ??? folder "SPLIT B"
-
-            - 📄 SHARD 0.parquet
+        [Previous structure]
 
     ??? folder "MEDS_RESHARD_DIR"
 
-        ??? folder "SPLIT A"
+        [Previous structure]
 
-            - 📄 SHARD 0.parquet
-            - 📄 SHARD 1.parquet
-            - 📄 ...
+    ??? folder "TASKS_DIR"
 
-        ??? folder "SPLIT B"
+        ??? folder "TASK"
 
-            - 📄 SHARD 0.parquet
-            - 📄 SHARD 1.parquet
-            - 📄 ...
+            ??? folder "SPLIT A"
+
+                - 📄 SHARD 0.parquet
+                - 📄 SHARD 1.parquet
+
+            ??? folder "SPLIT B"
+
+                [Similar structure to SPLIT A]
 
     ??? folder "OUTPUT_DIR"
 
@@ -274,14 +307,12 @@ OUTPUT_DIR/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
 
                 ??? folder "SHARD 1"
 
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
 
             ??? folder "SPLIT B"
 
@@ -289,7 +320,7 @@ OUTPUT_DIR/
 
 ## 4. **`meds-tab-tabularize-time-series`**
 
-This stage handles the computationally intensive task of converting temporal medical data into feature vectors. The process employs several key optimizations: sparse matrix operations utilizing scipy.sparse for memory-efficient storage, data sharding that enables parallel processing, and efficient aggregation using Polars for fast rolling window computations.
+This stage computes the time-series features of each label: for every window size and aggregation, a summary of the subject's measurements in the window that ends at the label's prediction time. It is the computationally intensive stage, and uses sparse matrices (scipy.sparse), sharding for parallel processing, and Polars for the window computations.
 
 ```console
 meds-tab-tabularize-time-series \
@@ -298,10 +329,16 @@ meds-tab-tabularize-time-series \
     hydra/launcher=joblib \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    do_overwrite=False \
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
+
+!!! info "Windows end at the prediction time"
+
+    For a label at prediction time `t`, a window of size `w` holds the subject's measurements with a time in `(t - w, t]`, and a `full` window holds every measurement up to and including `t`, wherever the subject's last event before `t` falls. For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window, the window is (Jan 3, Jan 10\] and holds the Jan 6 measurements only. See [Terminology](terminology.md#where-a-window-ends).
 
 !!! warning "Memory Usage"
 
@@ -349,6 +386,10 @@ OUTPUT_DIR/tabularize/
 
         [Previous structure]
 
+    ??? folder "TASKS_DIR"
+
+        [Previous structure]
+
     ??? folder "OUTPUT_DIR"
 
         ??? folder "metadata"
@@ -364,7 +405,6 @@ OUTPUT_DIR/tabularize/
                     ??? folder "none/static"
 
                         - 📄 present.npz
-                        - 📄 first.npz
 
                     ??? folder "1d"
 
@@ -394,135 +434,9 @@ OUTPUT_DIR/tabularize/
 
                 [Similar structure to SPLIT A]
 
-## 5. **`meds-tab-cache-task`**
+## 5. **`meds-tab-model`**
 
-Aligns task-specific labels with the nearest prior event in the tabularized data. It requires a labeled dataset directory with three columns (`subject_id`, `timestamp`, `label`) structured similarly to the `input_dir`.
-
-```console
-meds-tab-cache-task \
-    --multirun \
-    hydra/launcher=joblib \
-    worker="range(0,$N_PARALLEL_WORKERS)" \
-    "input_dir=${MEDS_RESHARD_DIR}/data" \
-    "output_dir=$OUTPUT_DIR" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" \
-    "task_name=${TASK}" \
-    tabularization.min_code_inclusion_count=10 \
-    tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
-```
-
-!!! warning "Stage Duration"
-
-    This stage is the slowest stage, but should not be as memory intensive, so make sure to parallelize across as many workers as possible.
-
-!!! warning "Code Inclusion Parameters"
-
-    You must use the same code inclusion parameters (which in this example is just `tabularization.min_code_inclusion_count`) as in the previous stages to ensure that the same codes are included in the tabularized data.
-
-### Input Data Structure
-
-```text
-# Previous structure plus:
-TASKS_DIR/
-└─── TASK/
-    │   *.parquet  # All parquet files containing labels
-```
-
-### Output Data Structure (New Files)
-
-```text
-OUTPUT_DIR/
-└─── TASK/
-    ├─── labels/
-    │   └─── <SPLIT A>
-    │       │   <SHARD 0>.parquet
-    │       │   <SHARD 1>.parquet
-    │       └─── <SPLIT B>
-    │           │   <SHARD 0>.parquet
-    │           │   <SHARD 1>.parquet
-    └─── task_cache/
-        [Similar structure to tabularize/ but filtered for task]
-```
-
-### Complete Directory Structure
-
-!!! abstract "Stage 5 Directory Structure"
-
-    ??? folder "MEDS_DIR"
-
-        [Previous structure]
-
-    ??? folder "MEDS_RESHARD_DIR"
-
-        [Previous structure]
-
-    ??? folder "OUTPUT_DIR"
-
-        ??? folder "metadata"
-
-            - 📄 codes.parquet
-
-        ??? folder "tabularize"
-
-            [Previous structure]
-
-        ??? folder "${TASK}"
-
-            ??? folder "labels"
-
-                ??? folder "SPLIT A"
-
-                    - 📄 SHARD 0.parquet
-                    - 📄 SHARD 1.parquet
-
-                ??? folder "SPLIT B"
-
-                    - 📄 SHARD 0.parquet
-                    - 📄 SHARD 1.parquet
-
-            ??? folder "task_cache"
-
-                ??? folder "SPLIT A"
-
-                    ??? folder "SHARD 0"
-
-                        ??? folder "none/static"
-
-                            - 📄 present.npz
-                            - 📄 first.npz
-
-                        ??? folder "1d"
-
-                            ??? folder "code"
-
-                                - 📄 count.npz
-
-                            ??? folder "value"
-
-                                - 📄 sum.npz
-
-                        ??? folder "7d"
-
-                            ??? folder "code"
-
-                                - 📄 count.npz
-
-                            ??? folder "value"
-
-                                - 📄 sum.npz
-
-                    ??? folder "SHARD 1"
-
-                        [Similar structure to SHARD 0]
-
-                ??? folder "SPLIT B"
-
-                    [Similar structure to SPLIT A]
-
-## 6. **`meds-tab-model`**
-
-Trains a tabular model using user-specified parameters. The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
+Trains a tabular model on the task's tabularized data (read from `${output_dir}/tabularize`) and its labels (`input_label_dir`). The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
 
 ### Single Model Training
 
@@ -531,11 +445,12 @@ meds-tab-model \
     model_launcher=xgboost \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
     "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
     "task_name=$TASK" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ### Hyperparameter Optimization
@@ -546,20 +461,22 @@ meds-tab-model \
     model_launcher=xgboost \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
     "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
     "task_name=$TASK" \
     "hydra.sweeper.n_trials=1000" \
     "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
     tabularization.min_code_inclusion_count=10 \
     tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,static/first,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
 ??? note "Args Description for Model Stage"
 
     - `model_launcher`: Choose from `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
     - `input_dir`: The directory containing the MEDS data
-    - `output_dir`: The directory storing tabularized data
+    - `output_dir`: The directory storing the task's tabularized data
+    - `input_label_dir`: The directory containing the task's labels, as given to tabularization
     - `output_model_dir`: Where to save model outputs
     - `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
@@ -662,6 +579,7 @@ OUTPUT_MODEL_DIR/
     meds-tab-autogluon model_launcher=autogluon \
        "input_dir=${MEDS_RESHARD_DIR}/data" \
        "output_dir=$OUTPUT_DIR" \
+       "input_label_dir=${TASKS_DIR}/${TASK}/" \
        "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
        "task_name=$TASK"
     ```
