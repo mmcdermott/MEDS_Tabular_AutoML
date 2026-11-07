@@ -13,6 +13,7 @@ from omegaconf import DictConfig
 from .. import CACHE_TASK_CFG
 from ..describe_codes import filter_parquet, get_feature_columns
 from ..file_name import list_subdir_files
+from ..generate_static_features import get_flat_static_rep
 from ..utils import (
     CODE_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
@@ -69,6 +70,13 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
                [0, 0, 0],
                [0, 6, 0]])
 
+    Stored zeros (observed values of 0) in the selected rows are kept:
+
+        >>> zeros = sp.coo_array(([0.0, 5.0, 7.0], ([0, 1, 1], [0, 0, 1])), shape=(2, 2))
+        >>> result = generate_row_cached_matrix(zeros, pl.DataFrame({"event_id": [0, -1, 1]}).lazy())
+        >>> result.row.tolist(), result.col.tolist(), result.data.tolist()
+        ([0, 2, 2], [0, 0, 1], [0.0, 5.0, 7.0])
+
     And with no labels
 
         >>> label_df = pl.DataFrame({"event_id": []}, schema={"event_id": pl.Int64}).lazy()
@@ -96,14 +104,17 @@ def generate_row_cached_matrix(matrix: sp.coo_array, label_df: pl.LazyFrame) -> 
     csr: sp.csr_array = sp.csr_array(matrix)
 
     valid_ids = event_ids.to_numpy()
+    has_past_data = valid_ids != -1
 
-    csr = csr[valid_ids, :]
-
-    indices_with_no_past_data = valid_ids == -1
-
-    if indices_with_no_past_data.any().item():
-        csr[indices_with_no_past_data] = 0
-        csr.eliminate_zeros()
+    # Gather the rows of events with past data and give the others no entries. Clearing those rows and then
+    # calling `eliminate_zeros()` would also remove every stored zero of the gathered rows.
+    rows = csr[valid_ids[has_past_data], :]
+    row_lengths = np.zeros(len(valid_ids), dtype=rows.indptr.dtype)
+    row_lengths[has_past_data] = np.diff(rows.indptr)
+    csr = sp.csr_array(
+        (rows.data, rows.indices, np.concatenate([[0], np.cumsum(row_lengths)])),
+        shape=(len(valid_ids), csr.shape[1]),
+    )
 
     return sp.coo_array(csr)
 
@@ -153,7 +164,7 @@ def main(cfg: DictConfig):
     # iterate through them
     for data_fp in iter_wrapper(tabularization_tasks):
         # parse as time series agg
-        split, shard_num = Path(data_fp).with_suffix("").parts[-5:-3]
+        split, shard_num, _, code_type, agg_name = Path(data_fp).with_suffix("").parts[-5:]
         meds_data_in_fp = Path(cfg.input_dir) / split / f"{shard_num}.parquet"
         shard_label_fp = Path(cfg.output_label_cache_dir) / split / f"{shard_num}.parquet"
         out_fp = (
@@ -168,15 +179,20 @@ def main(cfg: DictConfig):
                 )
             return filter_parquet(meds_data_fp, cfg.tabularization._resolved_codes)
 
-        def extract_labels(meds_data_df):
+        def extract_labels(meds_data_df, shard_subjects):
             meds_data_df = (
                 get_unique_time_events_df(get_events_df(meds_data_df, feature_columns))
                 .with_row_index("event_id")
                 .select("subject_id", "time", "event_id")
             )
-            shard_label_df = label_df.join(
-                meds_data_df.select("subject_id").unique(), on="subject_id", how="inner"
-            ).join_asof(other=meds_data_df, by="subject_id", on="time")
+            # Keep the labels of every subject in the shard, including subjects without any timed event, and
+            # sort them: join_asof needs each subject's labels in time order, and the rows of the inner join
+            # otherwise come in no particular order.
+            shard_label_df = (
+                label_df.join(shard_subjects, on="subject_id", how="inner")
+                .sort("subject_id", "time")
+                .join_asof(other=meds_data_df, by="subject_id", on="time")
+            )
             null_event_ids = shard_label_df.select(pl.col("event_id").is_null().sum()).collect().item()
             if null_event_ids > 0:  # pragma: no cover
                 logger.warning(
@@ -195,7 +211,8 @@ def main(cfg: DictConfig):
                 logger.info(f"Extracting labels for {shard_label_fp}")  # noqa: B023
                 Path(shard_label_fp).parent.mkdir(parents=True, exist_ok=True)  # noqa: B023
                 meds_data_df = read_meds_data_df(meds_data_fp)
-                extracted_events = extract_labels(meds_data_df)
+                shard_subjects = pl.scan_parquet(meds_data_fp).select("subject_id").unique()
+                extracted_events = extract_labels(meds_data_df, shard_subjects)
                 write_lazyframe(extracted_events, shard_label_fp)  # noqa: B023
             else:
                 logger.info(f"Labels already exist, reading from {shard_label_fp}")  # noqa: B023
@@ -205,6 +222,16 @@ def main(cfg: DictConfig):
 
         def compute_fn(input_tuple):
             shard_label_df, matrix = input_tuple
+            if code_type == "static":  # noqa: B023
+                # Static features do not depend on the label time, so every label gets its subject's static
+                # features, including labels without past data (event_id -1), whose rows would otherwise be
+                # empty, and labels of subjects without timed events, which have no row in `matrix`.
+                return get_flat_static_rep(
+                    agg=f"{code_type}/{agg_name}",  # noqa: B023
+                    feature_columns=feature_columns,
+                    shard_df=read_meds_data_df(meds_data_in_fp),  # noqa: B023
+                    label_df=shard_label_df.select("subject_id", pl.col("time").alias("prediction_time")),
+                )
             row_cached_matrix = generate_row_cached_matrix(matrix=matrix, label_df=shard_label_df)
             return row_cached_matrix
 

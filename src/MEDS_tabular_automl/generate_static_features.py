@@ -84,9 +84,14 @@ def get_sparse_static_rep(
 ) -> coo_array:
     """Merges static and time-series dataframes into a sparse representation based on the subject_id column.
 
+    Each row of meds_df gets the static values of its subject, matched by subject_id, and each static value
+    goes to the column of its feature name in static_features. Rows of subjects without static records, and
+    columns of features that static_df lacks, are empty. Null, NaN and False values are not stored.
+
     Args:
         static_features: A list of static feature names.
-        static_df: A DataFrame containing static features.
+        static_df: A DataFrame containing static features, with one row per subject_id, sorted by subject_id,
+            and one column per static feature name.
         meds_df: A DataFrame containing time-series features.
         feature_columns (list[str]): A list of feature columns to include in the merged DataFrame.
 
@@ -102,6 +107,21 @@ def get_sparse_static_rep(
     >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
     ...                       meds_df=meds_df.lazy(), feature_columns=feature_columns).shape
     (6, 2)
+
+    Rows are matched to subjects by subject_id, so a subject without static records (here, 2) gets an empty
+    row, and values are matched to columns by name, so a feature missing from static_df (here, A) gets an
+    empty column. Observed zeros are stored:
+    >>> static_df = pl.DataFrame({"subject_id": [1, 3], "B": [4.0, 0.0]})
+    >>> meds_df = pl.DataFrame({"subject_id": [1, 2, 3, 3]})
+    >>> matrix = get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
+    ...                                meds_df=meds_df.lazy(), feature_columns=[])
+    >>> matrix.toarray()
+    array([[0., 4.],
+           [0., 0.],
+           [0., 0.],
+           [0., 0.]])
+    >>> matrix.row.tolist(), matrix.col.tolist(), matrix.data.tolist()
+    ([0, 2, 3], [1, 1, 1], [4.0, 0.0, 0.0])
     """
     # Make static data sparse and merge it with the time-series data
     logger.info("Make static data sparse and merge it with the time-series data")
@@ -114,22 +134,38 @@ def get_sparse_static_rep(
     ):
         raise ValueError("static_df has duplicate subject_id values.")
 
-    # load static data as sparse matrix
-    static_matrix = get_subject_specific_sparse_static_rep(
-        static_df=static_df, static_features=static_features
+    static_df = static_df.collect()
+    static_subjects = static_df["subject_id"].to_numpy()
+
+    # One row per subject of static_df, plus a last, empty row for subjects without static records.
+    data, rows, cols = [np.zeros(0)], [np.zeros(0, dtype=np.int64)], [np.zeros(0, dtype=np.int64)]
+    for col, feature in enumerate(static_features):
+        if feature not in static_df.columns:
+            continue
+        values = static_df[feature]
+        if values.dtype == pl.Boolean:
+            # Presence indicators: only True is an observation.
+            values = values.fill_null(False).to_numpy().astype(np.float64)
+            observed = values == 1
+        else:
+            # Values: nulls (and NaNs) are not observations.
+            values = values.cast(pl.Float64).to_numpy()
+            observed = ~np.isnan(values)
+        data.append(values[observed])
+        rows.append(np.flatnonzero(observed))
+        cols.append(np.full(observed.sum(), col))
+    static_matrix = csr_array(
+        (np.concatenate(data), (np.concatenate(rows), np.concatenate(cols))),
+        shape=(len(static_subjects) + 1, len(static_features)),
     )
-    # Duplicate static matrix rows to match time-series data
-    events_per_patient = (
-        meds_df.select(pl.col("subject_id").value_counts())
-        .unnest("subject_id")
-        .sort(by="subject_id")
-        .select(pl.col("count"))
-        .collect()
-        .to_series()
-    )
-    reindex_slices = np.repeat(range(len(events_per_patient)), events_per_patient)
-    static_matrix = static_matrix[reindex_slices, :]
-    return coo_array(static_matrix)
+
+    # Repeat each subject's static row for each of its rows in meds_df.
+    row_subjects = meds_df.select(pl.col("subject_id")).collect().to_series().to_numpy()
+    static_rows = np.searchsorted(static_subjects, row_subjects)
+    has_static = static_rows < len(static_subjects)
+    has_static[has_static] = static_subjects[static_rows[has_static]] == row_subjects[has_static]
+    static_rows[~has_static] = len(static_subjects)
+    return coo_array(static_matrix[static_rows, :])
 
 
 def summarize_static_measurements(
@@ -142,6 +178,8 @@ def summarize_static_measurements(
     This function first filters for features that need to be recorded as the first occurrence
     or simply as present, then performs a pivot to reshape the data for each patient, providing
     a tabular format where each row represents a patient and each column represents a static feature.
+    Only static (timeless) records are used; timed records of the same codes are not. The 'first' value of
+    a code is its first non-null value in the order of the records.
 
     Args:
         agg: The type of aggregation ('present' or 'first').
@@ -153,17 +191,19 @@ def summarize_static_measurements(
 
     Example:
     >>> feature_columns = ['A/static/first', 'B/static/first', 'A/static/present', 'B/static/present']
-    >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2], 'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A'],
-    ...                    'numeric_value': [1, None, 2, 3, None, None, 3]})
+    >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2, 2],
+    ...                    'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A', 'B'],
+    ...                    'time': [None, None, None, None, None, None, None, datetime(2021, 1, 1)],
+    ...                    'numeric_value': [1, None, 2, 3, None, None, 3, 4]})
     >>> result = summarize_static_measurements('static/first', feature_columns, df.lazy())
     >>> result
     shape: (2, 3)
     ┌────────────┬────────────────┬────────────────┐
     │ subject_id ┆ A/static/first ┆ B/static/first │
     │ ---        ┆ ---            ┆ ---            │
-    │ i64        ┆ f32            ┆ f32            │
+    │ i64        ┆ f64            ┆ f64            │
     ╞════════════╪════════════════╪════════════════╡
-    │ 1          ┆ 1.0            ┆ 2.5            │
+    │ 1          ┆ 1.0            ┆ 2.0            │
     │ 2          ┆ 3.0            ┆ null           │
     └────────────┴────────────────┴────────────────┘
     >>> result = summarize_static_measurements('static/present', feature_columns, df.lazy())
@@ -177,13 +217,30 @@ def summarize_static_measurements(
     │ 1          ┆ true             ┆ true             │
     │ 2          ┆ true             ┆ false            │
     └────────────┴──────────────────┴──────────────────┘
+
+    Static values keep their full precision:
+
+    >>> df = pl.DataFrame({'subject_id': [1], 'code': ['A'], 'time': [None],
+    ...                    'numeric_value': [160.3953106166676]})
+    >>> result = summarize_static_measurements('static/first', ['A/static/first'], df.lazy())
+    >>> result['A/static/first'].to_list()
+    [160.3953106166676]
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
         # Handling 'first' static values
         static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
-        code_subset = df.filter(pl.col("code").is_in(static_first_codes))
-        first_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
+        code_subset = df.filter(
+            pl.col("code").is_in(static_first_codes)
+            & pl.col("time").is_null()
+            & pl.col("numeric_value").is_not_null()
+        )
+        first_code_subset = (
+            code_subset.select("subject_id", "code", "numeric_value")
+            .group_by(["subject_id", "code"], maintain_order=True)
+            .first()
+            .collect()
+        )
         static_value_pivot_df = first_code_subset.pivot(
             index=["subject_id"], on=["code"], values=["numeric_value"], aggregate_function=None
         )
@@ -194,7 +251,7 @@ def summarize_static_measurements(
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(
-            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float32) for k, v in remap_cols.items()]
+            *["subject_id"], *[pl.col(k).alias(v).cast(pl.Float64) for k, v in remap_cols.items()]
         ).sort(by="subject_id")
         return static_value_pivot_df
     elif agg == STATIC_CODE_AGGREGATION:
@@ -202,7 +259,8 @@ def summarize_static_measurements(
         # Handling 'present' static indicators
         static_present_codes = [parse_static_feature_column(c)[0] for c in static_features]
         static_present_pivot_df = (
-            df.select(*["subject_id", "code"])
+            df.filter(pl.col("time").is_null())
+            .select(*["subject_id", "code"])
             .filter(pl.col("code").is_in(static_present_codes))
             .with_columns(pl.lit(True).alias("__indicator"))
             .collect()
