@@ -46,7 +46,7 @@ def test_static_values_follow_their_subject():
             (3, None, "HEIGHT", 170.0),
         ]
     )
-    matrix = get_flat_static_rep("static/first", ["ADMIT/code", "HEIGHT/static/first"], df, None)
+    matrix = get_flat_static_rep("static/mean", ["ADMIT/code", "HEIGHT/static/mean"], df, None)
     assert matrix.toarray().tolist() == [[160.0], [0.0]]
 
 
@@ -56,7 +56,7 @@ def test_label_rows_take_their_own_subjects_static_values():
     labels = pl.LazyFrame(
         {"subject_id": [2, 1, 2], "prediction_time": ["2020-01-02", "2020-01-02", "2020-01-03"]}
     ).with_columns(pl.col("prediction_time").str.to_datetime(TIME_FORMAT))
-    matrix = get_flat_static_rep("static/first", ["ADMIT/code", "HEIGHT/static/first"], df, labels)
+    matrix = get_flat_static_rep("static/mean", ["ADMIT/code", "HEIGHT/static/mean"], df, labels)
     assert matrix.toarray().tolist() == [[170.0], [160.0], [170.0]]
 
 
@@ -77,20 +77,6 @@ def test_timed_records_are_not_static():
             (2, "2020-01-01", "HEIGHT", 175.0),
         ]
     )
-    features = ["HEIGHT/code", "HEIGHT/static/first", "HEIGHT/static/present"]
-    assert get_flat_static_rep("static/first", features, df, None).toarray().tolist() == [[170.0], [0.0]]
+    features = ["HEIGHT/code", "HEIGHT/static/mean", "HEIGHT/static/present"]
+    assert get_flat_static_rep("static/mean", features, df, None).toarray().tolist() == [[170.0], [0.0]]
     assert get_flat_static_rep("static/present", features, df, None).toarray().tolist() == [[1.0], [0.0]]
-
-
-def test_static_first_is_the_first_value():
-    """`static/first` is the code's first non-null static value, in record order, not their mean."""
-    df = shard(
-        [
-            (1, None, "HEIGHT", None),
-            (1, None, "HEIGHT", 171.0),
-            (1, None, "HEIGHT", 170.5),
-            (1, "2020-01-01", "ADMIT", None),
-        ]
-    )
-    features = ["ADMIT/code", "HEIGHT/static/first"]
-    assert get_flat_static_rep("static/first", features, df, None).toarray().tolist() == [[171.0]]

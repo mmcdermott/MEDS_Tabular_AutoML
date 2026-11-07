@@ -101,7 +101,7 @@ def get_sparse_static_rep(
     Example:
     >>> static_df = pl.DataFrame({"subject_id": [1, 2, 3], "A": [1, 2, 3], "B": [4, 5, 6]})
     >>> meds_df = pl.DataFrame({"subject_id": [1, 1, 1, 2, 2, 2], "code": ["A", "B", "A", "B", "A", "B"]})
-    >>> feature_columns = ["A/static/present", "B/static/first", "A/static/present", "B/static/first"]
+    >>> feature_columns = ["A/static/present", "B/static/mean", "A/static/present", "B/static/mean"]
 
     Observe that you get a sparse matrix with one row per meds_df row
     >>> get_sparse_static_rep(static_features=["A", "B"], static_df=static_df.lazy(),
@@ -173,16 +173,15 @@ def summarize_static_measurements(
     feature_columns: list[str],
     df: pl.LazyFrame,
 ) -> pl.LazyFrame:
-    """Aggregates static measurements for feature columns that are marked as 'present' or 'first'.
+    """Aggregates static measurements for feature columns that are marked as 'present' or 'mean'.
 
-    This function first filters for features that need to be recorded as the first occurrence
-    or simply as present, then performs a pivot to reshape the data for each patient, providing
-    a tabular format where each row represents a patient and each column represents a static feature.
-    Only static (timeless) records are used; timed records of the same codes are not. The 'first' value of
-    a code is its first non-null value in the order of the records.
+    This function first filters for features that need to be recorded as the mean of the subject's static
+    values of the code or simply as present, then performs a pivot to reshape the data for each patient,
+    providing a tabular format where each row represents a patient and each column represents a static
+    feature. Only static (timeless) records are used; timed records of the same codes are not.
 
     Args:
-        agg: The type of aggregation ('present' or 'first').
+        agg: The type of aggregation ('present' or 'mean').
         feature_columns: A list of feature column identifiers marked for static analysis.
         df: The DataFrame from which features will be extracted and summarized.
 
@@ -190,22 +189,22 @@ def summarize_static_measurements(
         A LazyFrame containing summarized data pivoted by 'subject_id' for each static feature.
 
     Example:
-    >>> feature_columns = ['A/static/first', 'B/static/first', 'A/static/present', 'B/static/present']
+    >>> feature_columns = ['A/static/mean', 'B/static/mean', 'A/static/present', 'B/static/present']
     >>> df = pl.DataFrame({'subject_id': [1, 1, 1, 1, 1, 2, 2, 2],
     ...                    'code': ['A', 'A', 'B', 'B', 'C', 'A', 'A', 'B'],
     ...                    'time': [None, None, None, None, None, None, None, datetime(2021, 1, 1)],
     ...                    'numeric_value': [1, None, 2, 3, None, None, 3, 4]})
-    >>> result = summarize_static_measurements('static/first', feature_columns, df.lazy())
+    >>> result = summarize_static_measurements('static/mean', feature_columns, df.lazy())
     >>> result
     shape: (2, 3)
-    ┌────────────┬────────────────┬────────────────┐
-    │ subject_id ┆ A/static/first ┆ B/static/first │
-    │ ---        ┆ ---            ┆ ---            │
-    │ i64        ┆ f64            ┆ f64            │
-    ╞════════════╪════════════════╪════════════════╡
-    │ 1          ┆ 1.0            ┆ 2.0            │
-    │ 2          ┆ 3.0            ┆ null           │
-    └────────────┴────────────────┴────────────────┘
+    ┌────────────┬───────────────┬───────────────┐
+    │ subject_id ┆ A/static/mean ┆ B/static/mean │
+    │ ---        ┆ ---           ┆ ---           │
+    │ i64        ┆ f64           ┆ f64           │
+    ╞════════════╪═══════════════╪═══════════════╡
+    │ 1          ┆ 1.0           ┆ 2.5           │
+    │ 2          ┆ 3.0           ┆ null          │
+    └────────────┴───────────────┴───────────────┘
     >>> result = summarize_static_measurements('static/present', feature_columns, df.lazy())
     >>> result
     shape: (2, 3)
@@ -222,32 +221,23 @@ def summarize_static_measurements(
 
     >>> df = pl.DataFrame({'subject_id': [1], 'code': ['A'], 'time': [None],
     ...                    'numeric_value': [160.3953106166676]})
-    >>> result = summarize_static_measurements('static/first', ['A/static/first'], df.lazy())
-    >>> result['A/static/first'].to_list()
+    >>> result = summarize_static_measurements('static/mean', ['A/static/mean'], df.lazy())
+    >>> result['A/static/mean'].to_list()
     [160.3953106166676]
     """
     if agg == STATIC_VALUE_AGGREGATION:
         static_features = get_feature_names(agg=agg, feature_columns=feature_columns)
-        # Handling 'first' static values
-        static_first_codes = [parse_static_feature_column(c)[0] for c in static_features]
-        code_subset = df.filter(
-            pl.col("code").is_in(static_first_codes)
-            & pl.col("time").is_null()
-            & pl.col("numeric_value").is_not_null()
-        )
-        first_code_subset = (
-            code_subset.select("subject_id", "code", "numeric_value")
-            .group_by(["subject_id", "code"], maintain_order=True)
-            .first()
-            .collect()
-        )
-        static_value_pivot_df = first_code_subset.pivot(
+        # 'mean': the mean of each subject's static values of the code
+        static_mean_codes = [parse_static_feature_column(c)[0] for c in static_features]
+        code_subset = df.filter(pl.col("code").is_in(static_mean_codes) & pl.col("time").is_null())
+        mean_code_subset = code_subset.group_by(["subject_id", "code"]).mean().collect()
+        static_value_pivot_df = mean_code_subset.pivot(
             index=["subject_id"], on=["code"], values=["numeric_value"], aggregate_function=None
         )
         # rename code to feature name
         remap_cols = {
             input_name: output_name
-            for input_name, output_name in zip(static_first_codes, static_features, strict=False)
+            for input_name, output_name in zip(static_mean_codes, static_features, strict=False)
             if input_name in static_value_pivot_df.columns
         }
         static_value_pivot_df = static_value_pivot_df.select(

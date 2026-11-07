@@ -4,7 +4,7 @@
 
 Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks, using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
 
-Each task is characterized by its specific label and prediction time. For instance, predicting "30-day readmission" involves assessing whether a patient returns to the hospital within 30 days, with predictions made at the time of discharge. This allows input features to be derived from the entire duration of the patient's admission. In contrast, tasks like "In ICU Mortality" focus on predicting the occurrence of death using only data from the first 24 or 48 hours of ICU admission. Specifically, we use the terminology "Index Timestamp" to mean the timestamp such that no event included as input will occur later than this point.
+Each task is characterized by its specific label and prediction time. For instance, predicting "30-day readmission" involves assessing whether a patient returns to the hospital within 30 days, with predictions made at the time of discharge. This allows input features to be derived from the entire duration of the patient's admission. In contrast, tasks like "In ICU Mortality" focus on predicting the occurrence of death using only data from the first 24 or 48 hours of ICU admission. Specifically, the "prediction time" (the `prediction_time` column of MEDS labels) is the timestamp such that no event included as input occurs later than this point.
 
 We optimize predictive accuracy and model performance by using varied window sizes and aggregations of patient data. This approach allows us to effectively capture and leverage the temporal dynamics and clinical nuances inherent in each prediction task.
 
@@ -31,7 +31,7 @@ window_sizes:
   - full
 aggs:
   - static/present
-  - static/first
+  - static/mean
   - code/count
   - value/count
   - value/sum
@@ -44,7 +44,7 @@ Since this includes every window size and aggregation, it is the most expensive 
 
 #### 1.1 XGBoost Runtimes and Memory Usage on MIMIC-IV Tasks
 
-| Task                            | Index Timestamp   | Real Time | User Time | Sys Time | Avg Memory (MiB) | Peak Memory (MiB) |
+| Task                            | Prediction Time   | Real Time | User Time | Sys Time | Avg Memory (MiB) | Peak Memory (MiB) |
 | ------------------------------- | ----------------- | --------- | --------- | -------- | ---------------- | ----------------- |
 | Post-discharge 30 day Mortality | Discharge         | 2m59s     | 3m38s     | 0m38s    | 9,037            | 11,955            |
 | Post-discharge 1 year Mortality | Discharge         | 5m16s     | 6m10s     | 0m59s    | 10,804           | 12,330            |
@@ -62,7 +62,7 @@ Since this includes every window size and aggregation, it is the most expensive 
 
 To better understand the runtimes, we also report the task specific cohort size.
 
-| Task                            | Index Timestamp   | Number of Patients | Number of Events |
+| Task                            | Prediction Time   | Number of Patients | Number of Events |
 | ------------------------------- | ----------------- | ------------------ | ---------------- |
 | Post-discharge 30 day Mortality | Discharge         | 149,014            | 356,398          |
 | Post-discharge 1 year Mortality | Discharge         | 149,014            | 356,398          |
@@ -115,7 +115,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 
 #### 2.1 XGBoost Performance on MIMIC-IV
 
-| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Number of Included Codes\* | Window Sizes         | Aggregations                                                              |
+| Task                            | Prediction Time   | AUC   | Minimum Code Inclusion Count | Number of Included Codes\* | Window Sizes         | Aggregations                                                              |
 | ------------------------------- | ----------------- | ----- | ---------------------------- | -------------------------- | -------------------- | ------------------------------------------------------------------------- |
 | Post-discharge 30 day Mortality | Discharge         | 0.935 | 1,371                        | 5,712                      | [7d,full]            | [code/count,value/count,value/min,value/max]                              |
 | Post-discharge 1 year Mortality | Discharge         | 0.898 | 289                          | 10,048                     | [2h,12h,1d,30d,full] | [static/present,code/count,value/sum_sqd,value/min]                       |
@@ -135,7 +135,7 @@ For a complete example on MIMIC-IV and for all of our config files, see the [MIM
 
 Additionally, the model parameters from the highest performing run are reported below.
 
-| Task                            | Index Timestamp   | Eta   | Lambda | Alpha | Subsample | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
+| Task                            | Prediction Time   | Eta   | Lambda | Alpha | Subsample | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
 | ------------------------------- | ----------------- | ----- | ------ | ----- | --------- | -------------------- | ------------------------- | --------------------- | -------------- |
 | Post-discharge 30 day Mortality | Discharge         | 0.006 | 0.032  | 0.374 | 0.572     | 53                   | 703                       | 9                     | 16             |
 | Post-discharge 1 year Mortality | Discharge         | 0.009 | 0.086  | 0.343 | 0.899     | 76                   | 858                       | 9                     | 11             |
@@ -159,7 +159,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 
 #### 1. XGBoost Performance on eICU
 
-| Task                            | Index Timestamp   | AUC   | Minimum Code Inclusion Count | Window Sizes           | Aggregations                                                 |
+| Task                            | Prediction Time   | AUC   | Minimum Code Inclusion Count | Window Sizes           | Aggregations                                                 |
 | ------------------------------- | ----------------- | ----- | ---------------------------- | ---------------------- | ------------------------------------------------------------ |
 | Post-discharge 30 day Mortality | Discharge         | 0.603 | 68,235                       | [12h,1d,full]          | [code/count,value/sum_sqd,value/max]                         |
 | Post-discharge 1 year Mortality | Discharge         | 0.875 | 3,280                        | [30d,365d]             | [static/present,value/sum,value/sum_sqd,value/min,value/max] |
@@ -172,7 +172,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 
 #### 2. XGBoost Optimal Found Model Parameters
 
-| Task                            | Index Timestamp   | Eta   | Lambda | Alpha | Subsample | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
+| Task                            | Prediction Time   | Eta   | Lambda | Alpha | Subsample | Minimum Child Weight | Number of Boosting Rounds | Early Stopping Rounds | Max Tree Depth |
 | ------------------------------- | ----------------- | ----- | ------ | ----- | --------- | -------------------- | ------------------------- | --------------------- | -------------- |
 | In Hospital Mortality           | Admission + 24 hr | 0.043 | 0.001  | 0.343 | 0.879     | 13                   | 574                       | 9                     | 14             |
 | In Hospital Mortality           | Admission + 48 hr | 0.002 | 0.002  | 0.303 | 0.725     | 0                    | 939                       | 9                     | 12             |
@@ -185,7 +185,7 @@ For more details about eICU specific task generation and running, see the [eICU 
 
 #### 3. eICU Task Specific Training Cohort Size
 
-| Task                            | Index Timestamp   | Number of Patients | Number of Events |
+| Task                            | Prediction Time   | Number of Patients | Number of Events |
 | ------------------------------- | ----------------- | ------------------ | ---------------- |
 | Post-discharge 30 day Mortality | Discharge         | 91,405             | 91,405           |
 | Post-discharge 1 year Mortality | Discharge         | 91,405             | 91,405           |

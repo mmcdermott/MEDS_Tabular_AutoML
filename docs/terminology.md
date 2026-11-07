@@ -40,7 +40,7 @@ Note that "Static" and "Dynamic" refer to whether a timestamp is recorded in the
 | Aggregation      | Applies To             | Definition                                         |
 | ---------------- | ---------------------- | -------------------------------------------------- |
 | `static/present` | Static Codes           | Binary indicator of code presence                  |
-| `static/first`   | Static Numeric Values  | The numeric value                                  |
+| `static/mean`    | Static Numeric Values  | Mean of the subject's static values of the code    |
 | `code/count`     | Dynamic Codes          | Count of code occurrences within lookback window   |
 | `value/count`    | Dynamic Numeric Values | Count of measurements within lookback window       |
 | `value/sum`      | Dynamic Numeric Values | Sum of measurements within lookback window         |
@@ -55,7 +55,7 @@ We provide examples of these aggregations here. Notice that for dynamic aggregat
 | Aggregation      | Input Data                               | Result | Explanation                                                           |
 | ---------------- | ---------------------------------------- | ------ | --------------------------------------------------------------------- |
 | `static/present` | Gender//Female                           | 1      | Indicates the presence (1) of the code "Gender//Female"               |
-| `static/first`   | Birth Weight: 3.2 kg                     | 3.2    | Returns the numeric value of the static measurement                   |
+| `static/mean`    | Birth Weight: [3.2, 3.4] kg              | 3.3    | Mean of the subject's static values of the code                       |
 | `code/count`     | Heart Rate: [80, NULL, 78, 90]           | 4      | Counts the occurrences of codes within the lookback window            |
 | `value/count`    | Heart Rate: [80, 78, 90]                 | 3      | Counts the number of measurements recorded within the lookback window |
 | `value/sum`      | Glucose Levels: [100, 110, 105]          | 315    | Sums the measurement values within the lookback window                |
@@ -75,3 +75,17 @@ window_sizes:
   - 365d   # 1 year
   - full   # full subject history
 ```
+
+### Where a window ends
+
+A window of size `w` ending at time `t` holds the measurements with a time in `(t - w, t]`; a `full` window holds every measurement up to and including `t`. Which `t` is used depends on the workflow (see the [usage guide](usage_guide.md#task-specific-vs-cached-features)):
+
+- **Task-specific tabularization** ends each window at the label's prediction time.
+- **`meds-tab-cache-task`** gives each label the features of the subject's last event at or before the prediction time, so the window ends at that event's time. This is because it reuses rows precomputed at event times.
+
+For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window:
+
+- task-specific: window (Jan 3, Jan 10\], holding Jan 6 only;
+- `meds-tab-cache-task`: the row of Jan 6, window (Dec 30, Jan 6\], holding Jan 2 and Jan 6.
+
+`full` windows, and labels exactly at an event time, give identical results in both.

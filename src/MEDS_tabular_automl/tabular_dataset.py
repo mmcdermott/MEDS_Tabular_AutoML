@@ -300,10 +300,8 @@ class TabularDataset(TimeableMixin):
         """
         # column_shard is of form event_idx, feature_idx, value
         matrix = self._load_matrix(path)
-        if path.stem in ["first", "present"]:
-            agg = f"static/{path.stem}"
-        else:
-            agg = f"{path.parent.stem}/{path.stem}"
+        is_static = path.stem in ["mean", "present"]
+        agg = f"static/{path.stem}" if is_static else f"{path.parent.stem}/{path.stem}"
 
         return self._filter_shard_on_codes_and_freqs(agg, matrix)
 
