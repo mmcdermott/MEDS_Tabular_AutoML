@@ -10,13 +10,18 @@ model_launcher:
     objective: binary
     metric: binary_logloss
     boosting_type: gbdt
+    # `gpu` (OpenCL) works with the pip wheels on Linux and Windows given an OpenCL runtime (NVIDIA and AMD
+    # drivers include one); `cuda` needs a source build (`pip install lightgbm --no-binary lightgbm
+    # --config-settings=cmake.define.USE_CUDA=ON`).
     device_type: cpu
     # 0 uses OpenMP's default: every CPU in a single run. Under `--multirun`, the joblib launcher starts its
     # workers with OMP_NUM_THREADS=cpu_count/hydra.launcher.n_jobs (1 by default), so set this explicitly.
     num_threads: 0
-    # Tabularized features are wide and sparse, and most are counts: few bins per feature are enough,
-    # column-wise histograms suit many features, and exclusive feature bundling is on by default.
+    # LightGBM's GPU guide recommends 63 bins ("usually does not noticeably affect training accuracy on large
+    # datasets"); on CPU it reports only a marginal speedup. Count features have fewer distinct values than
+    # this anyway (LightGBM never uses more bins than distinct values), so it only coarsens value features.
     max_bin: 63
+    # Recommended by LightGBM when "the number of columns is large" (CPU only; ignored on GPU).
     force_col_wise: true
     bagging_freq: 1
     seed: ${seed}

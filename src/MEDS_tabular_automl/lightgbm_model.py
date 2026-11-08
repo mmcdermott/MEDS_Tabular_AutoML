@@ -7,12 +7,12 @@ import meds
 import numpy as np
 from omegaconf import OmegaConf
 
-from .xgboost_model import XGBoostModel
+from .gbdt_model import GradientBoostedTreesModel
 
 logger = logging.getLogger(__name__)
 
 
-class LightGBMModel(XGBoostModel):
+class LightGBMModel(GradientBoostedTreesModel):
     """Gradient-boosted trees with LightGBM, on the same data, splits and outputs as `XGBoostModel`.
 
     LightGBM bins each feature once, when its training `Dataset` is constructed, and bundles sparse features
@@ -20,8 +20,8 @@ class LightGBMModel(XGBoostModel):
     that tabularization produces. The data is always loaded in memory: LightGBM has no sparse streaming
     input, so `data_loading_params.keep_data_in_memory=False` only logs a warning.
 
-    Only data handling, training, raw prediction and model IO differ from `XGBoostModel`; split iterators,
-    `evaluate` and `predict` (the predictions frame aligned with the label files) are inherited.
+    Iterators (plain `TabularDataset`s), training, evaluation and the predictions frame come from
+    `GradientBoostedTreesModel`.
 
     Examples:
         >>> rng = np.random.default_rng(0)
