@@ -78,9 +78,10 @@ class LightGBMModel(XGBoostModel):
             valid_sets=[lgb.Dataset(X_tuning, label=y_tuning, reference=self.dtrain)],
             callbacks=[lgb.early_stopping(self.cfg.training_params.early_stopping_rounds, verbose=False)],
         )
+        # lgb.train returns the model truncated at its best early-stopping round.
         logger.info(
-            f"LightGBM: trained {self.model.current_iteration()} rounds "
-            f"(best {self.model.best_iteration}) in {time.perf_counter() - start:.1f}s"
+            f"LightGBM: kept {self.model.current_iteration()} rounds (best on tuning) "
+            f"after {time.perf_counter() - start:.1f}s of training"
         )
 
     def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
