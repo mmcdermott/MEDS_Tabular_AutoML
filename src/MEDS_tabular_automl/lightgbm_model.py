@@ -20,6 +20,9 @@ class LightGBMModel(GradientBoostedTreesModel):
     that tabularization produces. The data is always loaded in memory: LightGBM has no sparse streaming
     input, so `data_loading_params.keep_data_in_memory=False` only logs a warning.
 
+    Unlike XGBoost, LightGBM reads absent sparse entries as 0, so an observed value of 0 and no measurement
+    look the same in value aggregations; `value/count` carries the distinction (see the usage guide).
+
     Iterators (plain `TabularDataset`s), training, evaluation and the predictions frame come from
     `GradientBoostedTreesModel`.
 
