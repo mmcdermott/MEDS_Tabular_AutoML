@@ -1,0 +1,45 @@
+# @package _global_
+defaults:
+  - default
+  - _self_
+
+model_launcher:
+  _target_: MEDS_tabular_automl.lightgbm_model.LightGBMModel.initialize
+
+  model:
+    objective: binary
+    metric: binary_logloss
+    boosting_type: gbdt
+    device_type: cpu
+    # 0 uses OpenMP's default: every CPU in a single run. Under `--multirun`, the joblib launcher starts its
+    # workers with OMP_NUM_THREADS=cpu_count/hydra.launcher.n_jobs (1 by default), so set this explicitly.
+    num_threads: 0
+    # Tabularized features are wide and sparse, and most are counts: few bins per feature are enough,
+    # column-wise histograms suit many features, and exclusive feature bundling is on by default.
+    max_bin: 63
+    force_col_wise: true
+    bagging_freq: 1
+    seed: ${seed}
+    verbosity: -1
+
+  training_params:
+    num_boost_round: 1000
+    early_stopping_rounds: 5
+
+path:
+  model_file_stem: "lightgbm"
+  model_file_extension: .txt
+
+hydra:
+  sweeper:
+    params:
+      +model_launcher.model.learning_rate: tag(log, interval(0.005, 0.3))
+      +model_launcher.model.num_leaves: tag(log, int(interval(15, 1023)))
+      +model_launcher.model.min_child_samples: tag(log, int(interval(5, 500)))
+      +model_launcher.model.feature_fraction: interval(0.1, 1)
+      +model_launcher.model.bagging_fraction: interval(0.5, 1)
+      +model_launcher.model.lambda_l1: tag(log, interval(0.001, 10))
+      +model_launcher.model.lambda_l2: tag(log, interval(0.001, 10))
+      model_launcher.training_params.num_boost_round: range(100, 1000)
+      model_launcher.training_params.early_stopping_rounds: range(1, 10)
+      tabularization.min_code_inclusion_count: tag(log, int(interval(10, 1000000)))

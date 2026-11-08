@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A LightGBM model launcher, `model_launcher=lightgbm`, with its own sweep space. It trains on the same
+    in-memory data as XGBoost and stores best-trial predictions the same way; LightGBM is now a dependency.
+
 ## 0.3.0
 
 Feature values differ from 0.2.0: several aggregation bugs are fixed (see Fixed) and the workflow changed (see

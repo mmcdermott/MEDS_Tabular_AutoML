@@ -473,13 +473,14 @@ meds-tab-model \
 
 ??? note "Args Description for Model Stage"
 
-    - `model_launcher`: Choose from `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
+    - `model_launcher`: Choose from `xgboost`, `lightgbm`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
     - `input_dir`: The directory containing the MEDS data
     - `output_dir`: The directory storing the task's tabularized data
     - `input_label_dir`: The directory containing the task's labels, as given to tabularization
     - `output_model_dir`: Where to save model outputs
     - `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
+    - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`, and set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
 
 ??? note "Code Inclusion Parameters in Modeling"
 
@@ -490,7 +491,7 @@ meds-tab-model \
 
 ??? note "Data Preprocessing Options"
 
-    - **Tree-based methods** (e.g., XGBoost):
+    - **Tree-based methods** (e.g., XGBoost, LightGBM):
         - Insensitive to normalization
         - Generally don't benefit from missing value imputation
         - XGBoost handles missing data natively
