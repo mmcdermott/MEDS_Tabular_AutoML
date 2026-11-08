@@ -44,6 +44,15 @@ class LightGBMModel(GradientBoostedTreesModel):
         ...     reloaded._set_data((X, y), (X, y), (X, y))
         ...     bool(np.allclose(reloaded._predict("held_out")[1], model._predict("held_out")[1]))
         True
+
+        Integer matrices, as the native backend writes for counts and presence, are accepted too:
+
+        >>> X_int = X.astype(np.uint8)
+        >>> model_int = LightGBMModel(cfg)
+        >>> model_int._set_data((X_int, y), (X_int, y), (X_int, y))
+        >>> model_int._train()
+        >>> model_int.dtuning[0].dtype
+        dtype('float32')
         >>> model._predict("train")
         Traceback (most recent call last):
             ...
@@ -60,11 +69,19 @@ class LightGBMModel(GradientBoostedTreesModel):
         logger.info(f"LightGBM: loaded train/tuning/held_out in {time.perf_counter() - start:.1f}s")
 
     def _set_data(self, train, tuning, held_out):
-        """Keeps tuning and held-out matrices for prediction; the training one only lives in the `Dataset`."""
+        """Keeps tuning and held-out matrices for prediction; the training one only lives in the `Dataset`.
+
+        LightGBM's sparse input must be float32 or float64, while tabularized blocks can be integer (the
+        native backend writes counts and presence as uint8), so integer matrices are cast to float32.
+        """
+
+        def as_float(X):
+            return X if X.dtype in (np.float32, np.float64) else X.astype(np.float32)
+
         X_train, y_train = train
-        self.dtrain = lgb.Dataset(X_train, label=y_train)
-        self.dtuning = tuning
-        self.dheld_out = held_out
+        self.dtrain = lgb.Dataset(as_float(X_train), label=y_train)
+        self.dtuning = (as_float(tuning[0]), tuning[1])
+        self.dheld_out = (as_float(held_out[0]), held_out[1])
 
     def _train(self):
         """Trains with early stopping on the tuning split; the binned `Dataset` is built on first use."""
