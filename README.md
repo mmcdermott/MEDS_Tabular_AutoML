@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://www.python.org/downloads/release/python-3100/"><img alt="Python" src="https://img.shields.io/badge/-Python_3.12+-blue?logo=python&logoColor=white"></a>
-  <a href="https://pypi.org/project/meds-tab/"><img alt="PyPI" src="https://img.shields.io/badge/PyPI-v0.2.5-orange?logoColor=orange"></a>
+  <a href="https://pypi.org/project/meds-tab/"><img alt="PyPI" src="https://img.shields.io/pypi/v/meds-tab?color=orange"></a>
   <a href="https://hydra.cc/"><img alt="Hydra" src="https://img.shields.io/badge/Config-Hydra_1.3-89b8cd"></a>
   <a href="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML"><img alt="Codecov" src="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML/graph/badge.svg?token=6GD05EDQ39"></a>
   <a href="https://github.com/mmcdermott/MEDS_Tabular_AutoML/actions/workflows/tests.yaml"><img alt="Tests" src="https://github.com/mmcdermott/MEDS_Tabular_AutoML/actions/workflows/tests.yaml/badge.svg"></a>
@@ -84,7 +84,9 @@ MEDS-Tab is designed to scale to hundreds of millions of events and tens of thou
 
 ## Overview
 
-The MEDS-Tab pipeline consists of six main stages, with the first being optional. The pipeline begins with an optional (1) data resharding stage that optimizes processing by restructuring input data into manageable chunks. This is followed by (2) data description, which computes some summary statistics over the features in the dataset. The core processing happens in the (3) static and (4) time-series tabularization stages, which transform the data into a format suitable for tabular machine learning. (5) Task-specific data caching then aligns this data with prediction tasks, and finally, the (6) model training stage provides efficient training capabilities with support for multiple model types and hyperparameter optimization.
+The MEDS-Tab pipeline consists of five main stages, with the first being optional. The pipeline begins with an optional (1) data resharding stage that optimizes processing by restructuring input data into manageable chunks. This is followed by (2) data description, which computes some summary statistics over the features in the dataset. The core processing happens in the (3) static and (4) time-series tabularization stages, which compute task-specific features: one row per label of a prediction task, with every window ending at the label's prediction time. Finally, the (5) model training stage provides efficient training capabilities with support for multiple model types and hyperparameter optimization.
+
+Versions up to 0.2.0 could also tabularize every event time once and then cache each task's rows (`meds-tab-cache-task`); that workflow has been removed (see the [usage guide](https://meds-tab.readthedocs.io/en/latest/usage_guide/)).
 
 ## Memory Management Via Sparse Data Structures
 
@@ -98,13 +100,20 @@ The system implements efficient aggregation using Polars for fast rolling window
 
 ## Improved Computational Speed Via Parallel Processing
 
-Our processing strategy differentiates between sequential and parallel operations based on computational needs and data dependencies. The data description and static tabularization stages operate sequentially, as they have manageable computational requirements. In contrast, time-series tabularization, task-specific caching, and model training leverage parallel processing over independent workers (which may be spawned on different cores on a local machine or over a slurm cluster) to handle their more intensive computational demands.
+Our processing strategy differentiates between sequential and parallel operations based on computational needs and data dependencies. The data description and static tabularization stages operate sequentially, as they have manageable computational requirements. In contrast, time-series tabularization and model training leverage parallel processing over independent workers (which may be spawned on different cores on a local machine or over a slurm cluster) to handle their more intensive computational demands.
 
 Data flow through the pipeline is optimized through caching and sharding. Each stage's output is structured to minimize memory requirements while maintaining accessibility for subsequent stages. The system preserves sparsity wherever possible and uses efficient shard management to increase processing speed and reduce total memory consumption.
 
+## Native Backend
+
+Static and time-series tabularization can also run on an optional C++ engine, which is compiled when
+MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
+writes the same files as the Python implementation, so `TabularDataset` and the model launchers are
+unchanged. See the [native backend guide](docs/native_backend.md).
+
 ## Feature Engineering Via Rolling Windows and Aggregation Functions
 
-MEDS-Tab implements a comprehensive feature engineering approach that handles both static and temporal data. For static features, we capture both presence and first-recorded values (as there should be only one occurrence of a static code). Time-series features are processed through various aggregation methods including counts, sums, minimums, and maximums. These aggregations can be computed over multiple time windows (1 day, 30 days, 365 days, or the full patient history), providing temporal context at different scales.
+MEDS-Tab implements a comprehensive feature engineering approach that handles both static and temporal data. For static features, we capture both presence and, for codes with static numeric values, the mean of the subject's values (`static/mean`). Time-series features are processed through various aggregation methods including counts, sums, minimums, and maximums. These aggregations can be computed over multiple time windows (1 day, 30 days, 365 days, or the full patient history), providing temporal context at different scales.
 
 Our feature engineering framework maintains flexibility while enforcing consistency. All aggregations preserve sparsity where possible, and the system includes configurable thresholds for feature inclusion based on frequency and relevance to the target task.
 

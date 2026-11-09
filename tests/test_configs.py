@@ -4,6 +4,7 @@ import pytest
 from hydra import compose, initialize
 from omegaconf import DictConfig
 
+from MEDS_tabular_automl.lightgbm_model import LightGBMModel
 from MEDS_tabular_automl.sklearn_model import SklearnModel
 from MEDS_tabular_automl.xgboost_model import XGBoostModel
 from tests.test_integration import run_command
@@ -13,6 +14,7 @@ from tests.test_integration import run_command
     "model_launcher_override",
     [
         "xgboost",
+        "lightgbm",
         "sgd_classifier",
         "knn_classifier",
         "logistic_regression",
@@ -29,6 +31,7 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
         "input_dir": input_dir,
         "output_dir": "/bar/",
         "output_model_dir": "/baz/",
+        "input_label_dir": "/labels/",
         "++tabularization.filtered_code_metadata_fp": code_metadata_fp,
         "++tabularization.min_code_inclusion_count": "0",
         "task_name": "foo_bar",
@@ -48,6 +51,10 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
         case "xgboost":
             assert isinstance(model_launcher, XGBoostModel), (
                 "model_launcher should be an instance of XGBoostModel"
+            )
+        case "lightgbm":
+            assert isinstance(model_launcher, LightGBMModel), (
+                "model_launcher should be an instance of LightGBMModel"
             )
         case "autogluon":
             assert isinstance(model_launcher, DictConfig), (

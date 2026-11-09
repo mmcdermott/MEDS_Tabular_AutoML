@@ -9,7 +9,7 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import TABULARIZATION_CFG
+from .. import TABULARIZATION_CFG, native
 from ..describe_codes import (
     convert_to_df,
     filter_parquet,
@@ -74,7 +74,7 @@ def main(
     .. _link: https://pola-rs.github.io/polars/py-polars/html/reference/dataframe/api/polars.DataFrame.groupby_rolling.html
     """  # noqa: E501
 
-    if cfg.input_label_dir and not Path(cfg.input_label_dir).is_dir():
+    if not Path(cfg.input_label_dir).is_dir():
         raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
 
     iter_wrapper = load_tqdm(cfg.tqdm)
@@ -112,6 +112,11 @@ def main(
         do_overwrite=cfg.do_overwrite,
     )
 
+    if native.use_native(cfg):
+        # The native backend writes the static and the time-series blocks together.
+        native.tabularize(cfg, "tabularize_static")
+        return
+
     # Step 2: Produce static data representation
     meds_shard_fps = list_subdir_files(cfg.input_dir, "parquet")
     feature_columns = get_feature_columns(cfg.tabularization.filtered_code_metadata_fp)
@@ -122,11 +127,8 @@ def main(
     tabularization_tasks = list(product(meds_shard_fps, static_aggs))
     np.random.shuffle(tabularization_tasks)
     for shard_fp, agg in iter_wrapper(tabularization_tasks):
-        if cfg.input_label_dir:
-            label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
-            label_df = pl.scan_parquet(label_fp)
-        else:
-            label_df = None
+        label_fp = Path(cfg.input_label_dir) / shard_fp.relative_to(shard_fp.parents[1])
+        label_df = pl.scan_parquet(label_fp)
         out_fp = (
             Path(cfg.output_tabularized_dir) / get_shard_prefix(cfg.input_dir, shard_fp) / "none" / agg
         ).with_suffix(".npz")

@@ -29,7 +29,7 @@ rm meds_extract_0.0.7_data.zip
 ```console
 conda create -n meds_tab python=3.12
 conda activate meds_tab
-pip install "meds-tab==0.0.5"
+pip install "meds-tab>=0.3.0"
 ```
 
 Next we need to get some labels for our tasks. We will use the `long_los` and `icu_mortality` tasks as examples.
@@ -82,11 +82,9 @@ for TASK_NAME in "${TASKS[@]}"; do
 done
 ```
 
-## Tabularization Workflows
+## Task-specific Tabularization
 
-### (Recommended Approach) Selective Task Tabularization
-
-When working with only one or a few tasks of interest, use the selective tabularization script. This approach minimizes computational overhead by only processing event times for specific tasks:
+`task_tabularize_meds.sh` tabularizes each task at the prediction times of its labels, with every window ending at the prediction time, then trains an XGBoost model per task:
 
 ```console
 export N_PARALLEL_WORKERS=48 # Set number of workers
@@ -97,23 +95,4 @@ bash MIMICIV_TUTORIAL/task_tabularize_meds.sh "${MIMICIV_MEDS_DIR}" $OUTPUT_TABU
     "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
 ```
 
-### (Not Recommended Approach) Full Data Tabularization and XGBoost Baseline
-
-To tabularize all data comprehensively, this script performs a one-time, extensive tabularization of every unique subject_id across all time points. This is an incredibly storage and memory-intensive operation that creates a complete tabular representation of the entire dataset.
-
-The key advantages of this approach include:
-
-- Generates a full tabular dataset once, which can be reused for multiple prediction tasks
-- Enables efficient subselection of relevant rows for each different prediction task
-
-We recommend using this script, as opposed to the task specific script, when tabularizing all unique event times would be faster than tabularizing only the relevant events for each task separately.
-
-```console
-export N_PARALLEL_WORKERS=48 # Set number of workers
-export RESHARD_DIR=${ROOT_DIR}/resharded_meds/ # set to directory to output resharded meds data
-TASKS_STR=$(echo ${TASKS[@]} | tr ' ' ',')
-bash MIMICIV_TUTORIAL/tabularize_meds.sh "${MIMICIV_MEDS_DIR}" "$RESHARD_DIR" $OUTPUT_TABULARIZATION_DIR \
-    "${TASKS_STR}" $TASKS_DIR $OUTPUT_MODEL_DIR $N_PARALLEL_WORKERS \
-    "tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]" \
-    "tabularization.window_sizes=[2h,12h,1d,7d,30d,365d,full]"
-```
+Versions up to 0.2.0 also shipped `tabularize_meds.sh`, which tabularized every event time of every subject once and then cached each task's rows with `meds-tab-cache-task`. That workflow has been removed from MEDS-Tab; see the [0.2.0 tutorial](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/0.2.0/MIMICIV_TUTORIAL/README.MD) if you need it.

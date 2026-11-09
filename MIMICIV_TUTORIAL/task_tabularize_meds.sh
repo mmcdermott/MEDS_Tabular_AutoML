@@ -4,11 +4,10 @@ set -e
 
 # Function to print help message
 print_help() {
-    echo "Usage: $0 <MIMICIV_MEDS_DIR> <MIMICIV_MEDS_RESHARD_DIR> <OUTPUT_TABULARIZATION_DIR> <TASKS> <TASKS_DIR> <OUTPUT_MODEL_DIR> <N_PARALLEL_WORKERS> [additional arguments]"
+    echo "Usage: $0 <MIMICIV_MEDS_DIR> <OUTPUT_TABULARIZATION_DIR> <TASKS> <TASKS_DIR> <OUTPUT_MODEL_DIR> <N_PARALLEL_WORKERS> [additional arguments]"
     echo
     echo "Arguments:"
-    echo "  MIMICIV_MEDS_DIR            Directory containing MIMIC-IV medications data"
-    echo "  MIMICIV_MEDS_RESHARD_DIR    Directory for resharded MIMIC-IV medications data"
+    echo "  MIMICIV_MEDS_DIR            Directory containing the MIMIC-IV MEDS data (with a data/ subdirectory)"
     echo "  OUTPUT_TABULARIZATION_DIR   Output directory for tabularized data"
     echo "  TASKS                       Comma-separated list of tasks to run (e.g., 'long_los,icu_mortality')"
     echo "  TASKS_DIR                   Directory containing task-specific data"
@@ -84,7 +83,6 @@ do
         "input_dir=${MIMICIV_MEDS_DIR}/data" "output_dir=$OUTPUT_TABULARIZATION_DIR/${TASK}" \
         "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" do_overwrite=False \
         "hydra.sweeper.n_trials=1000" "hydra.sweeper.n_jobs=${N_PARALLEL_WORKERS}" \
-        "input_tabularized_cache_dir=${OUTPUT_TABULARIZATION_DIR}/tabularize/" \
-        "input_label_cache_dir=${TASKS_DIR}/${TASK}/" \
+        "input_label_dir=${TASKS_DIR}/${TASK}/" \
         "$@"
 done
