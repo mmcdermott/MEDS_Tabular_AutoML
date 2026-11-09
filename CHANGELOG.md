@@ -1,12 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- A LightGBM model launcher, `model_launcher=lightgbm`, with its own sweep space. It trains on the same
-    in-memory data as XGBoost and stores best-trial predictions the same way; LightGBM is now a dependency.
-
 ## 0.3.0
 
 Feature values differ from 0.2.0: several aggregation bugs are fixed (see Fixed) and the workflow changed (see
@@ -21,6 +14,12 @@ outputs of the two versions.
     C++17 compiler and the zlib headers; the PyPI wheel stays pure Python. On a MIMIC-IV cohort of 3,562
     subjects and 4,591 labels it tabularizes in about 12 s, against 26.5 min for the Python backend with 16
     workers, with identical outputs. See `docs/native_backend.md`.
+- A LightGBM model launcher, `model_launcher=lightgbm`, with its own sweep space (#181); LightGBM is now a
+    dependency. It trains on the same in-memory data as XGBoost, and best-trial predictions are now stored
+    for any model that can be reloaded (XGBoost and LightGBM). On the 10 MIMIC-IV "MG" tasks with 2 trials
+    each, it matched XGBoost's held-out AUROC (mean 0.9512 against 0.9511) with lower peak memory. The usage
+    guide explains how `hydra.launcher.n_jobs` caps model threads under `--multirun`, and where XGBoost and
+    LightGBM read an observed 0 differently from no measurement.
 
 ### Changed (breaking)
 
