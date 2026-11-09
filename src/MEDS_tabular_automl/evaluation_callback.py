@@ -113,15 +113,22 @@ class EvaluationCallback(Callback):
             ...     (best_trial_dir / 'test_predictions.parquet').exists()
             True
         """
-        config = Path(best_trial_dir) / "config.log"
-        xgboost_fp = Path(best_trial_dir) / "xgboost.json"
-        if not xgboost_fp.exists():
-            logger.warning("Prediction parquets not stored, we only support storing them for xgboost models.")
+        config_fp = Path(best_trial_dir) / "config.log"
+        cfg = OmegaConf.load(config_fp) if config_fp.exists() else OmegaConf.create()
+        path_cfg = cfg.get("path") or {}
+        model_name = path_cfg.get("model_file_stem", "xgboost") + path_cfg.get(
+            "model_file_extension", ".json"
+        )
+        model_fp = Path(best_trial_dir) / model_name
+        model_launcher = hydra.utils.instantiate(cfg.model_launcher) if model_fp.exists() else None
+        if not hasattr(model_launcher, "load_model"):
+            logger.warning(
+                "Prediction parquets not stored: only supported for models that can be reloaded "
+                "(xgboost, lightgbm)."
+            )
             return
 
-        cfg = OmegaConf.load(config)
-        model_launcher = hydra.utils.instantiate(cfg.model_launcher)
-        model_launcher.load_model(xgboost_fp)
+        model_launcher.load_model(model_fp)
         model_launcher._build()
 
         for split in splits:

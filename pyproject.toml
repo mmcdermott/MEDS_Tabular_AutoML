@@ -27,6 +27,7 @@ dependencies = [
   "pandas",
   "tqdm",
   "xgboost",
+  "lightgbm>=4",
   "scikit-learn",
   "hydra-optuna-sweeper",
   "hydra-joblib-launcher",

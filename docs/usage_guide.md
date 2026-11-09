@@ -473,13 +473,15 @@ meds-tab-model \
 
 ??? note "Args Description for Model Stage"
 
-    - `model_launcher`: Choose from `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
+    - `model_launcher`: Choose from `xgboost`, `lightgbm`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
     - `input_dir`: The directory containing the MEDS data
     - `output_dir`: The directory storing the task's tabularized data
     - `input_label_dir`: The directory containing the task's labels, as given to tabularization
     - `output_model_dir`: Where to save model outputs
     - `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
+    - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`, and set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
+    - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
 
 ??? note "Code Inclusion Parameters in Modeling"
 
@@ -490,10 +492,10 @@ meds-tab-model \
 
 ??? note "Data Preprocessing Options"
 
-    - **Tree-based methods** (e.g., XGBoost):
+    - **Tree-based methods** (e.g., XGBoost, LightGBM):
         - Insensitive to normalization
         - Generally don't benefit from missing value imputation
-        - XGBoost handles missing data natively
+        - XGBoost handles missing data natively; LightGBM treats absent entries as zeros (see the note below)
     - **Other supported models**:
         - Support sparse matrices
         - May benefit from normalization or imputation
@@ -507,6 +509,27 @@ meds-tab-model \
         - `mean_imputer`
         - `median_imputer`
         - `mode_imputer`
+
+??? note "Observed zeros vs. no measurement: XGBoost and LightGBM differ"
+
+    Tabularized matrices are sparse, and MEDS-Tab stores an observed value of 0 as an explicit entry, distinct
+    from an absent entry (no measurement in the window). The two libraries read this differently:
+
+    - **XGBoost** treats absent entries as missing and stored zeros as observed values, so it can tell them
+        apart.
+    - **LightGBM** treats both as 0 with its default settings. Setting `zero_as_missing=true` treats both as
+        missing; neither setting restores the distinction.
+
+    This affects the value aggregations (`value/sum`, `value/sum_sqd`, `value/min`, `value/max`) and
+    `static/mean`, where an observed 0 means something other than no measurement. It does not affect
+    `code/count`, `value/count` or `static/present`, which are 0 exactly when nothing was observed.
+
+    When `value/count` is among the aggregations, as in the default configurations, LightGBM can recover the
+    distinction from it: a code's `value/count` is positive whenever a value, 0 included, was observed in the
+    window. On synthetic data where the label depends only on observed-0 vs. absent, LightGBM reached an AUROC
+    of 0.64 from the value column alone and 0.78 once the count column was added; XGBoost reached 0.77 from
+    the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
+    prefer XGBoost or add an observation indicator if the distinction matters for your task.
 
 ### Input/Output Data Structure
 

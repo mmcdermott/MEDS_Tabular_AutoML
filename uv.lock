@@ -2552,7 +2552,8 @@ version = "4.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
-    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "scipy", version = "1.16.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/68/0b/a2e9f5c5da7ef047cc60cef37f86185088845e8433e54d2e7ed439cce8a3/lightgbm-4.6.0.tar.gz", hash = "sha256:cb1c59720eb569389c0ba74d14f52351b573af489f230032a1c9f314f8bab7fe", size = 1703705, upload-time = "2025-02-15T04:03:03.111Z" }
 wheels = [
@@ -2856,6 +2857,7 @@ dependencies = [
     { name = "hydra-core" },
     { name = "hydra-joblib-launcher" },
     { name = "hydra-optuna-sweeper" },
+    { name = "lightgbm" },
     { name = "meds" },
     { name = "meds-evaluation" },
     { name = "meds-transforms" },
@@ -2910,6 +2912,7 @@ requires-dist = [
     { name = "hydra-core", specifier = ">=1.3.2,<2" },
     { name = "hydra-joblib-launcher" },
     { name = "hydra-optuna-sweeper" },
+    { name = "lightgbm", specifier = ">=4" },
     { name = "matplotlib", marker = "extra == 'profiling'" },
     { name = "meds", specifier = ">=0.4.0" },
     { name = "meds-evaluation", specifier = "==0.0.3" },

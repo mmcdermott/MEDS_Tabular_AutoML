@@ -4,14 +4,11 @@ from pathlib import Path
 
 import meds
 import numpy as np
-import polars as pl
 import scipy.sparse as sp
 import xgboost as xgb
-from meds_evaluation.schema import BINARY_CLASSIFICATION_SCHEMA_DICT
 from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import roc_auc_score
 
-from .base_model import BaseModel
+from .gbdt_model import GradientBoostedTreesModel
 from .tabular_dataset import TabularDataset
 
 logger = logging.getLogger(__name__)
@@ -78,136 +75,27 @@ class XGBIterator(xgb.DataIter, TabularDataset):
         self._it = 0
 
 
-class XGBoostModel(BaseModel):
-    """Class for configuring, training, and evaluating an XGBoost model.
+class XGBoostModel(GradientBoostedTreesModel):
+    """Gradient-boosted trees with XGBoost.
 
-    This class utilizes the configuration settings provided to manage the training and evaluation
-    process of an XGBoost model, ensuring the model is trained and validated using specified parameters
-    and data splits. It supports training with in-memory data handling as well as direct streaming from
-    disk using XGBIterators.
+    Splits are turned into `DMatrix` objects, either from matrices loaded in memory or streamed from disk
+    through `XGBIterator` (`data_loading_params.keep_data_in_memory`). Iterators, training, evaluation and
+    the predictions frame come from `GradientBoostedTreesModel`.
 
     Args:
         cfg: The configuration settings for the model, including data paths, model parameters,
             and flags for data handling.
-
-    Attributes:
-        cfg: Configuration object containing all settings required for model operation.
-        model: The XGBoost model after being trained.
-        dtrain: The training dataset in DMatrix format.
-        dtuning: The tuning (validation) dataset in DMatrix format.
-        dheld_out: The held-out (test) dataset in DMatrix format.
-        itrain: XGBIterator for the training dataset.
-        ituning: XGBIterator for the tuning dataset.
-        iheld_out: XGBIterator for the held-out dataset.
-        keep_data_in_memory: Flag indicating whether to keep all data in memory or stream from disk.
     """
 
-    def __init__(self, cfg: DictConfig):
-        """Initializes the XGBoostClassifier with the provided configuration.
-
-        Args:
-            cfg: The configuration dictionary.
-        """
-        self.cfg = cfg
-        self.keep_data_in_memory = cfg.data_loading_params.keep_data_in_memory
-
-        self.itrain = None
-        self.ituning = None
-        self.iheld_out = None
-
-        self.dtrain = None
-        self.dtuning = None
-        self.dheld_out = None
-
-        self.model = None
+    iterator_class = XGBIterator
 
     def _build(self):
-        """Builds necessary data structures for training."""
+        """Builds the iterators and the `DMatrix` of every split."""
+        self._build_iterators()
         if self.keep_data_in_memory:
-            self._build_iterators()
             self._build_dmatrix_in_memory()
         else:
-            self._build_iterators()
             self._build_dmatrix_from_iterators()
-
-    def load_model(self, xgboost_json_fp: Path):
-        self.model = xgb.Booster()
-        self.model.load_model(str(xgboost_json_fp))
-
-    def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
-        """Helper Function that retrieves model predictions and labels."""
-        if split == meds.tuning_split:
-            y_pred = self.model.predict(self.dtuning)
-            y_true = self.dtuning.get_label()
-        elif split == meds.held_out_split:
-            y_pred = self.model.predict(self.dheld_out)
-            y_true = self.dheld_out.get_label()
-        elif split == meds.train_split:
-            y_pred = self.model.predict(self.dtrain)
-            y_true = self.dtrain.get_label()
-        else:
-            raise ValueError(f"Invalid split for evaluation: {split}")
-        return y_true, y_pred
-
-    def predict(self, split="held_out") -> pl.DataFrame:
-        """Retrieves logits for the given split.
-
-        Returns:
-            The evaluation metric as the ROC AUC score.
-        """
-        y_true, y_pred = self._predict(split)
-
-        if split == meds.tuning_split:
-            xgb_iterator = self.ituning
-        elif split == meds.held_out_split:
-            xgb_iterator = self.iheld_out
-        elif split == meds.train_split:
-            xgb_iterator = self.itrain
-        else:
-            raise ValueError(f"Invalid split for evaluation: {split}")
-        _, cached_labels = xgb_iterator._load_ids_and_labels(load_ids=False, load_labels=True)
-        parquet_files = [
-            Path(self.cfg.path.input_label_dir) / split / f"{key}.parquet" for key in cached_labels
-        ]
-        labels = pl.concat([pl.read_parquet(fp) for fp in parquet_files])
-        if "event_id" not in labels.schema:
-            labels = labels.with_row_index("event_id")
-        if "time" not in labels.schema:
-            labels = labels.rename({"prediction_time": "time"})
-        if "boolean_value" in labels.schema:
-            labels = labels.rename({"boolean_value": "label"})
-        predictions_df = pl.DataFrame(
-            {
-                "subject_id": labels["subject_id"],
-                "prediction_time": labels["time"],
-                "boolean_value": y_true,
-                "predicted_boolean_value": y_pred.round(),
-                "predicted_boolean_probability": y_pred,
-                "event_id": labels["event_id"],
-            },
-            schema={**BINARY_CLASSIFICATION_SCHEMA_DICT, "event_id": pl.Int64},
-        )
-        if not (predictions_df["boolean_value"] == labels["label"]).all():
-            mismatched_labels = predictions_df["boolean_value"] != labels["label"]
-            raise ValueError(f"Label mismatch: {sum(mismatched_labels)} incorrect predictions")
-
-        return predictions_df
-
-    def _train(self):
-        """Trains the model."""
-        self.model = xgb.train(
-            OmegaConf.to_container(self.cfg.model),
-            self.dtrain,
-            num_boost_round=self.cfg.training_params.num_boost_round,
-            early_stopping_rounds=self.cfg.training_params.early_stopping_rounds,
-            evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
-            verbose_eval=0,
-        )
-
-    def train(self):
-        """Trains the model."""
-        self._build()
-        self._train()
 
     def _build_dmatrix_in_memory(self):
         """Builds the DMatrix from the data in memory."""
@@ -224,23 +112,31 @@ class XGBoostModel(BaseModel):
         self.dtuning = xgb.DMatrix(self.ituning)
         self.dheld_out = xgb.DMatrix(self.iheld_out)
 
-    def _build_iterators(self):
-        """Builds the iterators for training, validation, and testing."""
-        self.itrain = XGBIterator(self.cfg, split="train")
-        self.ituning = XGBIterator(self.cfg, split="tuning")
-        self.iheld_out = XGBIterator(self.cfg, split="held_out")
+    def _train(self):
+        """Trains the model."""
+        self.model = xgb.train(
+            OmegaConf.to_container(self.cfg.model),
+            self.dtrain,
+            num_boost_round=self.cfg.training_params.num_boost_round,
+            early_stopping_rounds=self.cfg.training_params.early_stopping_rounds,
+            evals=[(self.dtrain, "train"), (self.dtuning, "tuning")],
+            verbose_eval=0,
+        )
 
-    def evaluate(self, split="tuning") -> float:
-        """Evaluates the model on the tuning set.
-
-        Returns:
-            The evaluation metric as the ROC AUC score.
-        """
-        y_true, y_pred = self._predict(split)
-        if len(np.unique(y_true)) != 2:
-            logger.warning("There is only one class in the ground truth labels, returning 0 AUC")
-            return 0.0
-        return roc_auc_score(y_true, y_pred)
+    def _predict(self, split="held_out") -> tuple[np.ndarray, np.ndarray]:
+        """Helper Function that retrieves model predictions and labels."""
+        if split == meds.tuning_split:
+            y_pred = self.model.predict(self.dtuning)
+            y_true = self.dtuning.get_label()
+        elif split == meds.held_out_split:
+            y_pred = self.model.predict(self.dheld_out)
+            y_true = self.dheld_out.get_label()
+        elif split == meds.train_split:
+            y_pred = self.model.predict(self.dtrain)
+            y_true = self.dtrain.get_label()
+        else:
+            raise ValueError(f"Invalid split for evaluation: {split}")
+        return y_true, y_pred
 
     def save_model(self, output_fp: Path):
         """Saves the trained model to the specified file path.
@@ -249,3 +145,7 @@ class XGBoostModel(BaseModel):
             output_fp: The file path to save the model to.
         """
         self.model.save_model(output_fp)
+
+    def load_model(self, xgboost_json_fp: Path):
+        self.model = xgb.Booster()
+        self.model.load_model(str(xgboost_json_fp))

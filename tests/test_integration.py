@@ -244,6 +244,7 @@ def test_integration(tmp_path):
 
     for model in [
         "xgboost",
+        "lightgbm",
         "knn_classifier",
         "logistic_regression",
         "random_forest_classifier",
@@ -270,9 +271,10 @@ def test_integration(tmp_path):
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
-        if model == "xgboost":
-            assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.json"))) == 2
-            assert len(glob.glob(str(output_model_dir / "*/best_trial/*.json"))) == 1
+        if model in ("xgboost", "lightgbm"):
+            ext = "json" if model == "xgboost" else "txt"
+            assert len(glob.glob(str(output_model_dir / f"*/sweep_results/**/*.{ext}"))) == 2
+            assert len(glob.glob(str(output_model_dir / f"*/best_trial/*.{ext}"))) == 1
 
             time_output_dir = next(output_model_dir.iterdir())
             assert (time_output_dir / "best_trial/held_out_predictions.parquet").exists()
