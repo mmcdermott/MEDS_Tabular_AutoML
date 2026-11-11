@@ -8,8 +8,14 @@
     Same algorithm as the LightGBM launcher (Newton boosting, histograms, leaf-wise growth, bagging, early
     stopping); absent entries are never stored or scanned, features that can no longer split in a node are
     dropped from it, and each tree uses one window per (code, aggregation) from precomputed layouts. On the
-    MIMIC-IV MG1 task it trained in 10 s against 122 s for LightGBM, at equal held-out AUROC. A separate optional
-    library (`csrc/sparsegb`, needs OpenMP), built when MEDS-Tab is installed from source.
+    MIMIC-IV MG1 task it trained in about 25 s against 306 s for LightGBM, at equal held-out AUROC. A separate
+    optional library (`csrc/sparsegb`, needs OpenMP), included in the compiled wheels and built when MEDS-Tab is
+    installed from source.
+
+- **Compiled wheels on PyPI**, with `sparsegb` and the native engine, for Linux (x86_64 and aarch64,
+    manylinux_2_28) and macOS 15+ on Apple silicon (libomp bundled), for CPython 3.11 to 3.13. The publish
+    workflow builds them with cibuildwheel and installs each one to check that both libraries load and
+    sparsegb's doctests pass. Other platforms and Python versions still get the pure-Python wheel.
 
 - `data_loading_params.cache_matrices` (on by default; see Changed): each split's matrix with every tabularized column is
     cached under `cache_dir` on first load, and later loads (the trials of a sweep) apply their own code filter
@@ -19,11 +25,12 @@
 ### Changed
 
 - **`sparsegb` is the default model launcher** (it was `xgboost`), and a `sparsegb` hyperparameter sweep is the
-    recommended way to train. It needs the compiled library, built by a source install on Linux (GCC, or clang +
-    libomp) or macOS (Apple clang + Homebrew `libomp`, or `LIBOMP_PREFIX`), with
-    `pip install --no-binary meds-tab meds-tab`; Windows is not supported yet; the pure-Python wheel does not include it, so pass
-    `model_launcher=xgboost` (the previous default) or `model_launcher=lightgbm` there. Without the library,
-    `sparsegb` now stops with an error before loading any data.
+    recommended way to train. It needs the compiled library: `pip install meds-tab` includes it on Linux and
+    Apple-silicon macOS 15+ (Python 3.11 to 3.13). Elsewhere, build it from source on Linux (GCC, or clang +
+    libomp) or macOS (Apple clang + Homebrew `libomp`, or `LIBOMP_PREFIX`) with
+    `pip install --no-binary meds-tab meds-tab`. Windows is not supported yet: pass `model_launcher=xgboost`
+    (the previous default) or `model_launcher=lightgbm` there. Without the library, `sparsegb` now stops with
+    an error before loading any data.
 - **`data_loading_params.cache_matrices` is on by default.** It costs about one more copy of the task's
     model-ready data on disk, under `<output_dir>/.cache/matrices`; set it to `false` to turn it off.
 - `sparsegb` raises an error, instead of silently wrapping its 32-bit row offsets, when a column layout has

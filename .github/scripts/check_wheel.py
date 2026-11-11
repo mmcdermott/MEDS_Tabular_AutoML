@@ -1,7 +1,7 @@
 """Checks an installed compiled MEDS-Tab wheel (run by cibuildwheel after each build).
 
-Both compiled libraries are optional extensions, so a failed compile still produces a wheel; this makes such
-a wheel fail instead. It loads the native engine, checks that sparsegb is built, and runs sparsegb's doctests
+Both compiled libraries are optional extensions, so a failed compile still produces a wheel; this makes such a
+wheel fail instead. It loads the native engine, checks that sparsegb is built, and runs sparsegb's doctests
 (train, predict, save and reload, input checks) against the installed library.
 """
 

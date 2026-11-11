@@ -52,23 +52,33 @@ This repository consists of two key pieces:
 
 To use MEDS-Tab, install the dependencies following commands below:
 
-**Recommended: install from source** with a C++17 compiler and OpenMP: GCC on Linux, or on macOS Apple clang
-after `brew install libomp`. Windows is not supported yet for `sparsegb` (use WSL, or the wheel below). This
-builds the `sparsegb` model launcher, the default and recommended model, and the native tabularization engine:
-
-```console
-pip install --no-binary meds-tab meds-tab
-# or, from a clone of the git repo:
-pip install .
-```
-
-Check the build with `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
-
-**Pip wheel** (pure Python, any platform; no `sparsegb`, so pass e.g. `model_launcher=lightgbm` to
-`meds-tab-model`):
+**Pip Install**
 
 ```console
 pip install meds-tab
+```
+
+On Linux (x86_64 and aarch64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13, this
+installs a compiled wheel that includes `sparsegb`, the default and recommended model launcher, and the native
+tabularization engine. Check with
+`python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
+
+On other platforms or Python versions, pip installs a pure-Python wheel without them. To build them there,
+install from source with a C++17 compiler and OpenMP (GCC on Linux; Apple clang after `brew install libomp`
+on macOS):
+
+```console
+pip install --no-binary meds-tab meds-tab
+```
+
+Windows is not supported yet for `sparsegb` (use WSL), so pass e.g. `model_launcher=lightgbm` to
+`meds-tab-model` there.
+
+**Local Install**
+
+```console
+# clone the git repo
+pip install .
 ```
 
 ## Scripts and Examples
@@ -112,8 +122,8 @@ Data flow through the pipeline is optimized through caching and sharding. Each s
 
 ## Native Backend
 
-Static and time-series tabularization can also run on an optional C++ engine, which is compiled when
-MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
+Static and time-series tabularization can also run on an optional C++ engine, included in the compiled
+wheels on Linux and Apple-silicon macOS and compiled when MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
 writes the same files as the Python implementation, so `TabularDataset` and the model launchers are
 unchanged. See the [native backend guide](docs/native_backend.md).
 

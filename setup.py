@@ -1,12 +1,14 @@
-"""Builds the native engine (csrc/) into the package as MEDS_tabular_automl.native._engine.
+"""Builds the compiled libraries: the native engine (csrc/, MEDS_tabular_automl.native._engine) and
+sparsegb (csrc/sparsegb/, MEDS_tabular_automl.sparsegb._sparsegb).
 
-The engine is a C shared library that ``native/engine.py`` loads with ctypes. It is declared
-as an optional extension module, so installing MEDS-Tab compiles it when a C++17 compiler and
-the zlib headers are available and installs the package without it otherwise. Nothing loads it
-unless ``backend=native`` is selected. All other metadata is in pyproject.toml.
+Both are C shared libraries loaded with ctypes and declared as optional extension modules, so
+installing MEDS-Tab compiles them when a C++17 compiler (plus the zlib headers for the engine and
+OpenMP for sparsegb) is available and installs the package without them otherwise. All other
+metadata is in pyproject.toml.
 
-MEDS_TAB_BUILD_ENGINE=0 builds the package without the engine. The PyPI workflow uses it for the
-published wheel, which stays pure Python; the published source distribution includes the engine.
+MEDS_TAB_BUILD_ENGINE=0 builds the package without either. The PyPI workflow uses it for the
+pure-Python fallback wheel; it publishes compiled wheels (cibuildwheel, see pyproject.toml) and a
+source distribution that include both.
 """
 
 import os
