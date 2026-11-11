@@ -14,12 +14,12 @@
 //  * active features: a feature with fewer than min_child_samples non-zero rows in a node cannot
 //  split it or any
 //    descendant, so all its per-bin work is skipped there (exact);
-//  * a row-major subset of the sampled columns, with per-row chunk offsets, so each split is one
-//  parallel pass over
-//    chunks: smaller child's histogram, larger child by subtraction from the parent, best split of
-//    both children;
-//  * root histograms from the columns; partitions through the split column's row flags; software
-//  prefetching.
+//  * a row-major subset of the sampled columns, cut into feature chunks (16-bit bin ids local to
+//    each chunk) with per-row chunk offsets, so each split is one parallel pass over chunks:
+//    smaller child's histogram, larger child by subtraction from the parent, best split of both
+//    children;
+//  * root histograms by streaming rows; partitions through a per-row bin array of the split
+//    feature, kept for later splits on it; software prefetching.
 //
 // C ABI (ctypes, MEDS_tabular_automl/sparsegb): sgb_train / sgb_predict / sgb_save / sgb_load /
 // sgb_free.
@@ -37,6 +37,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -145,6 +146,28 @@ struct HB {  // histogram bin
   int64_t c;
 };
 #endif
+
+// Allocator that leaves new elements uninitialized on resize: histogram buffers are recycled across
+// splits and layouts, and every bin is written before it is read.
+template <class T>
+struct NoInit : std::allocator<T> {
+  template <class U>
+  struct rebind {
+    using other = NoInit<U>;
+  };
+  NoInit() = default;
+  template <class U>
+  NoInit(const NoInit<U>&) noexcept {}
+  template <class U>
+  void construct(U* p) noexcept {
+    ::new (static_cast<void*>(p)) U;
+  }
+  template <class U, class... A>
+  void construct(U* p, A&&... a) {
+    ::new (static_cast<void*>(p)) U(std::forward<A>(a)...);
+  }
+};
+using HBVec = std::vector<HB, NoInit<HB>>;
 
 struct Split {
   double gain = -1.0;  // > 0 when valid
@@ -269,13 +292,13 @@ double predict_row(const Model& m, const int32_t* idx, const float* val, int64_t
 
 extern "C" {
 
-// params: [0] threads, [1] max_bin, [2] num_leaves, [3] min_child_samples, [4] lambda_l2, [5]
-// learning_rate,
-//         [6] bagging_fraction, [7] max_rounds, [8] early_stopping, [9] seed, [10] min_sum_hessian,
-//         [11] slot_k
+// params: [0] threads, [1] max_bin, [2] num_leaves, [3] min_child_samples, [4] lambda_l2,
+//         [5] learning_rate, [6] bagging_fraction, [7] max_rounds, [8] early_stopping, [9] seed,
+//         [10] min_sum_hessian, [11] slot_k, [12] refresh, [13] unused, [14] layouts,
+//         [15] goss_top, [16] goss_other
 // info out: [0] best_iter, [1] trees, [2] t_bins, [3] t_rowbins, [4] t_trees_total, [5] t_subset,
-// [6] t_grow,
-//           [7] t_score, [8] train_rows_nnz_kept
+//           [6] t_grow, [7] t_score, [8] train_rows_nnz_kept, [9] t_root, [10] t_partition,
+//           [11] t_big_splits, [12] t_small_splits, [13] n_big, [14] n_small
 void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
                 const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
                 const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
@@ -372,26 +395,31 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   std::vector<double> g(n), h(n), gh(2 * n);
   std::vector<int> used, loc(m_cols, -1);
   std::vector<int64_t> off, sp;
-  std::vector<uint32_t> sv;
+  std::vector<uint16_t> sv;  // row-major entries: bin id local to its chunk (bin - off[cf[c]])
   int L = 0;
   int64_t total_bins = 0;
   std::vector<uint8_t> flag(n, 0);
   std::vector<uint8_t> in_bag(n, 0);
   std::vector<uint8_t> dir;  // partition scratch: 1 = left
-  const int NC =
-      std::max(1, static_cast<int>(params[13])) * threads;  // fixed chunks per feature-sample block
+  // Dense per-row bins (255 = zero bin) of features already split on, filled on their first split
+  // and reused by later splits on them (any tree): a split's partition is then one lookup per row.
+  constexpr int64_t kDenseBytes = int64_t{256} << 20;
+  const int64_t max_dense = std::min<int64_t>(m_cols, kDenseBytes / std::max<int64_t>(n, 1));
+  std::vector<int32_t> dense_of(m_cols, -1);
+  std::vector<std::vector<uint8_t>> dense;
+  int NC = threads;                // chunks in the current layout (cf.size() - 1)
   std::vector<int> cf(NC + 1, 0);  // chunk c covers local features [cf[c], cf[c+1])
   std::vector<uint32_t> rco;  // rco[r*(NC+1)+c]: first entry of row r in chunk c (absolute in sv)
-                              // // partition scratch: 0 = zero bin, 1 = left, 2 = right
   double t_subset = 0, t_grow = 0, t_score = 0, t_root = 0, t_part = 0, t_big = 0, t_small = 0;
   int64_t n_big = 0, n_small = 0;
   auto t_trees = Clock::now();
-  std::vector<std::vector<HB>> pool;  // histogram buffers, reused across splits and trees
+  std::vector<HBVec> pool;  // histogram buffers, reused across splits and trees
 
   struct Layout {
     std::vector<int> used, loc, cf;
     std::vector<int64_t> off, sp;
-    std::vector<uint32_t> sv, rco;
+    std::vector<uint16_t> sv;
+    std::vector<uint32_t> rco;
     int L = 0;
     int64_t total_bins = 0;
   };
@@ -405,115 +433,96 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
     sp.swap(lay.sp);
     sv.swap(lay.sv);
     rco.swap(lay.rco);
+    NC = std::max<int>(1, static_cast<int>(cf.size()) - 1);
     std::swap(L, lay.L);
     std::swap(total_bins, lay.total_bins);
   };
-  auto build_current =
-      [&]() {  // subset (sp, sv), chunks (cf) and row chunk offsets (rco) for `used`
-        bool rco_ready = false;
-        L = static_cast<int>(used.size());
-        std::fill(loc.begin(), loc.end(), -1);
-        off.assign(L + 1, 0);
-        for (int l = 0; l < L; ++l) {
-          loc[used[l]] = l;
-          off[l + 1] = off[l] + feats[used[l]].nbin;
+  // Subset (sp, sv), chunks (cf) and row chunk offsets (rco) for `used`.
+  auto build_current = [&]() {
+    L = static_cast<int>(used.size());
+    std::fill(loc.begin(), loc.end(), -1);
+    off.assign(L + 1, 0);
+    for (int l = 0; l < L; ++l) {
+      loc[used[l]] = l;
+      off[l + 1] = off[l] + feats[used[l]].nbin;
+    }
+    total_bins = off[L];
+    // Chunks: one per thread, balanced by non-zeros, plus a cut wherever a chunk would exceed 65535
+    // bins (sv ids are 16-bit and local to their chunk).
+    const int T = threads;
+    int64_t tot = 0;
+    for (int l = 0; l < L; ++l) tot += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
+    cf.assign(1, 0);
+    {
+      int64_t acc = 0;
+      int t = 1;
+      for (int l = 0; l < L; ++l) {
+        if (off[l + 1] - off[cf.back()] > 65535) cf.push_back(l);
+        acc += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
+        while (t < T && acc >= tot * t / T) {
+          cf.push_back(l + 1);
+          ++t;
         }
-        total_bins = off[L];
-        // Subset of ALL rows, scattered from the sampled CSC columns: per-thread ranges of `used`
-        // (balanced by non-zeros), per-(thread, row) offsets; entries ascend by local feature
-        // within each row.
-        {
-          const int T = threads;
-          std::vector<int> ustart(T + 1, L);
-          ustart[0] = 0;
-          int64_t tot = 0;
-          for (int l = 0; l < L; ++l) tot += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
-          int64_t acc = 0;
-          for (int l = 0, t = 1; l < L && t < T; ++l) {
-            acc += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
-            while (t < T && acc >= tot * t / T) ustart[t++] = l + 1;
-          }
-          std::vector<int64_t> cnt(static_cast<size_t>(T) * n, 0);
-#pragma omp parallel for schedule(static, 1)
-          for (int t = 0; t < T; ++t) {
-            int64_t* ct = cnt.data() + static_cast<size_t>(t) * n;
-            for (int l = ustart[t]; l < ustart[t + 1]; ++l)
-              for (int64_t j = csc_ptr[used[l]]; j < csc_ptr[used[l] + 1]; ++j)
-                if (col_bins[j] != 255) ++ct[csc_idx[j]];
-          }
-          sp.assign(n + 1, 0);
-          for (int64_t r = 0; r < n; ++r) {
-            int64_t rt = 0;
-            for (int t = 0; t < T; ++t) {
-              const int64_t v = cnt[static_cast<size_t>(t) * n + r];
-              cnt[static_cast<size_t>(t) * n + r] = rt;
-              rt += v;
-            }
-            sp[r + 1] = rt;
-          }
-          for (int64_t r = 0; r < n; ++r) sp[r + 1] += sp[r];
-          if (NC == T) {  // chunk c = thread range c (same balancing): offsets come from the
-                          // scatter's prefix sums
-            cf.assign(ustart.begin(), ustart.end());
-            rco.resize(static_cast<size_t>(n) * (NC + 1));
+      }
+      while (t++ < T) cf.push_back(L);
+      if (cf.back() != L) cf.push_back(L);
+    }
+    NC = static_cast<int>(cf.size()) - 1;
+    // Per-(chunk, row) counts, then row starts (sp) and row chunk offsets (rco); entries ascend by
+    // local feature within each row.
+    std::vector<int64_t> cnt(static_cast<size_t>(NC) * n, 0);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int c = 0; c < NC; ++c) {
+      int64_t* ct = cnt.data() + static_cast<size_t>(c) * n;
+      for (int l = cf[c]; l < cf[c + 1]; ++l)
+        for (int64_t j = csc_ptr[used[l]]; j < csc_ptr[used[l] + 1]; ++j)
+          if (col_bins[j] != 255) ++ct[csc_idx[j]];
+    }
+    sp.assign(n + 1, 0);
+    for (int64_t r = 0; r < n; ++r) {
+      int64_t rt = 0;
+      for (int c = 0; c < NC; ++c) {
+        const int64_t v = cnt[static_cast<size_t>(c) * n + r];
+        cnt[static_cast<size_t>(c) * n + r] = rt;
+        rt += v;
+      }
+      sp[r + 1] = rt;
+    }
+    for (int64_t r = 0; r < n; ++r) sp[r + 1] += sp[r];
+    rco.resize(static_cast<size_t>(n) * (NC + 1));
 #pragma omp parallel for schedule(static)
-            for (int64_t r = 0; r < n; ++r) {
-              uint32_t* ro = rco.data() + static_cast<size_t>(r) * (NC + 1);
-              for (int c = 0; c < NC; ++c)
-                ro[c] = static_cast<uint32_t>(sp[r] + cnt[static_cast<size_t>(c) * n + r]);
-              ro[NC] = static_cast<uint32_t>(sp[r + 1]);
+    for (int64_t r = 0; r < n; ++r) {
+      uint32_t* ro = rco.data() + static_cast<size_t>(r) * (NC + 1);
+      for (int c = 0; c < NC; ++c)
+        ro[c] = static_cast<uint32_t>(sp[r] + cnt[static_cast<size_t>(c) * n + r]);
+      ro[NC] = static_cast<uint32_t>(sp[r + 1]);
+    }
+    sv.resize(sp[n]);
+#pragma omp parallel for schedule(dynamic, 1)
+    for (int c = 0; c < NC; ++c) {
+      // Row-blocked scatter: walk the chunk's columns block by block (columns are sorted by row),
+      // so writes stay within a cache-sized window of sv.
+      int64_t* pt = cnt.data() + static_cast<size_t>(c) * n;
+      const int la = cf[c], lb = cf[c + 1];
+      const int64_t base = off[la];
+      std::vector<int64_t> cur(lb - la);
+      for (int l = la; l < lb; ++l) cur[l - la] = csc_ptr[used[l]];
+      constexpr int64_t kRowBlock = 1024;
+      for (int64_t r0 = 0; r0 < n; r0 += kRowBlock) {
+        const int64_t r1 = std::min(n, r0 + kRowBlock);
+        for (int l = la; l < lb; ++l) {
+          int64_t j = cur[l - la];
+          const int64_t je = csc_ptr[used[l] + 1];
+          for (; j < je && csc_idx[j] < r1; ++j)
+            if (col_bins[j] != 255) {
+              const int64_t r = csc_idx[j];
+              sv[sp[r] + pt[r]++] = static_cast<uint16_t>(off[l] - base + col_bins[j]);
             }
-            rco_ready = true;
-          }
-          sv.resize(sp[n]);
-#pragma omp parallel for schedule(static, 1)
-          for (int t = 0; t < T; ++t) {
-            // Row-blocked scatter: each thread walks its columns block by block (columns are sorted
-            // by row), so its writes stay within a cache-sized window of sv. Same writes, same
-            // order within each row.
-            int64_t* pt = cnt.data() + static_cast<size_t>(t) * n;
-            const int la = ustart[t], lb = ustart[t + 1];
-            std::vector<int64_t> cur(lb - la);
-            for (int l = la; l < lb; ++l) cur[l - la] = csc_ptr[used[l]];
-            constexpr int64_t kRowBlock = 1024;
-            for (int64_t r0 = 0; r0 < n; r0 += kRowBlock) {
-              const int64_t r1 = std::min(n, r0 + kRowBlock);
-              for (int l = la; l < lb; ++l) {
-                int64_t j = cur[l - la];
-                const int64_t je = csc_ptr[used[l] + 1];
-                for (; j < je && csc_idx[j] < r1; ++j)
-                  if (col_bins[j] != 255) {
-                    const int64_t r = csc_idx[j];
-                    sv[sp[r] + pt[r]++] = static_cast<uint32_t>(off[l] + col_bins[j]);
-                  }
-                cur[l - la] = j;
-              }
-            }
-          }
+          cur[l - la] = j;
         }
-        if (!rco_ready) {
-          int64_t tot = 0;
-          for (int l = 0; l < L; ++l) tot += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
-          std::fill(cf.begin(), cf.end(), L);
-          cf[0] = 0;
-          int64_t acc = 0;
-          for (int l = 0, c = 1; l < L && c < NC; ++l) {
-            acc += csc_ptr[used[l] + 1] - csc_ptr[used[l]];
-            while (c < NC && acc >= tot * c / NC) cf[c++] = l + 1;
-          }
-          rco.resize(static_cast<size_t>(n) * (NC + 1));
-#pragma omp parallel for schedule(static)
-          for (int64_t r = 0; r < n; ++r) {
-            int64_t pos = sp[r];
-            uint32_t* ro = rco.data() + static_cast<size_t>(r) * (NC + 1);
-            for (int c = 0; c <= NC; ++c) {
-              const uint32_t bound = static_cast<uint32_t>(off[cf[c]]);
-              while (pos < sp[r + 1] && sv[pos] < bound) ++pos;
-              ro[c] = static_cast<uint32_t>(pos);
-            }
-          }
-        }
-      };
+      }
+    }
+  };
   for (int it = 0; it < max_rounds; ++it) {
     auto ts = Clock::now();
     // Gradients.
@@ -615,7 +624,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       int64_t begin, end;
       double G, H;
       int64_t C;
-      std::vector<HB> hist;
+      HBVec hist;
       Split best;
       int parent_node;  // node index whose child pointer leads here (-1 for root)
       bool is_left;
@@ -626,7 +635,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
     std::vector<int64_t> order(rows);
     auto get_hist =
         [&]() {  // buffers are reused across splits and trees (contents are always overwritten)
-          std::vector<HB> v;
+          HBVec v;
           if (!pool.empty()) {
             v = std::move(pool.back());
             pool.pop_back();
@@ -699,6 +708,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         if (cf[c + 1] <= cf[c]) continue;
         const int64_t blo = off[cf[c]], bhi = off[cf[c + 1]];
         HB* hist = root.hist.data();
+        HB* hc = hist + blo;  // the chunk's slice (sv ids are local to it)
         std::memset(static_cast<void*>(hist + blo), 0, sizeof(HB) * (bhi - blo));
         for (int64_t k = 0; k < mr; ++k) {
           if (k + 16 < mr)
@@ -709,13 +719,13 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
           }
           const int64_t i = ord0[k];
           const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint32_t* p = sv.data() + ro[c];
-          const uint32_t* e = sv.data() + ro[c + 1];
+          const uint16_t* p = sv.data() + ro[c];
+          const uint16_t* e = sv.data() + ro[c + 1];
           const double gi = gh[2 * i], hi = gh[2 * i + 1];
           for (; p < e; ++p) {
-            hist[*p].g += gi;
-            hist[*p].h += hi;
-            hist[*p].c += 1;
+            hc[*p].g += gi;
+            hc[*p].h += hi;
+            hc[*p].c += 1;
           }
         }
         for (int l = cf[c]; l < cf[c + 1]; ++l)
@@ -746,7 +756,6 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       const Feat& f = feats[used[l]];
       auto tp0 = Clock::now();
       // Partition P's rows (stable): left = bin <= thr.
-      const uint32_t flo = static_cast<uint32_t>(off[l]), fhi = static_cast<uint32_t>(off[l + 1]);
       int64_t nl = 0, nr = 0;
       const int gf = used[l];
       const int64_t col_nnz = csc_ptr[gf + 1] - csc_ptr[gf];
@@ -757,7 +766,27 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       const bool by_column = np * 8 > col_nnz;
       const int lc = static_cast<int>(std::upper_bound(cf.begin(), cf.end(), l) - cf.begin()) -
                      1;  // l's chunk
-      if (by_column) {   // flag rows from the column, then a sequential lookup per row
+      const uint16_t flo = static_cast<uint16_t>(off[l] - off[cf[lc]]),
+                     fhi = static_cast<uint16_t>(off[l + 1] - off[cf[lc]]);  // chunk-local
+      if (dense_of[gf] < 0 && static_cast<int64_t>(dense.size()) < max_dense) {
+        dense_of[gf] = static_cast<int32_t>(dense.size());
+        dense.emplace_back(n, uint8_t{255});
+        uint8_t* d = dense.back().data();
+#pragma omp parallel for schedule(static) if (col_par)
+        for (int64_t j = csc_ptr[gf]; j < csc_ptr[gf + 1]; ++j) d[csc_idx[j]] = col_bins[j];
+      }
+      const bool dense_inline = dense_of[gf] >= 0 && np < 65536;
+      if (dense_inline) {              // small node: decide and place in one serial pass (below)
+      } else if (dense_of[gf] >= 0) {  // one lookup per row
+        const uint8_t* d = dense[dense_of[gf]].data();
+        const bool zero_left = f.zero_bin <= s.thr;
+        const int thr = s.thr;
+#pragma omp parallel for schedule(static) if (par)
+        for (int64_t k = 0; k < np; ++k) {
+          const uint8_t v = d[order[P.begin + k]];
+          dir[k] = (v == 255 ? zero_left : v <= thr) ? 1 : 0;
+        }
+      } else if (by_column) {  // flag rows from the column, then a sequential lookup per row
 #pragma omp parallel for schedule(static) if (col_par)
         for (int64_t j = csc_ptr[gf]; j < csc_ptr[gf + 1]; ++j)
           if (col_bins[j] != 255) flag[csc_idx[j]] = col_bins[j] <= s.thr ? 1 : 2;
@@ -782,20 +811,35 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
           const int64_t i = order[P.begin + k];
           // Search only the row's slice of the feature's chunk.
           const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint32_t* a = sv.data() + ro[lc];
-          const uint32_t* b = sv.data() + ro[lc + 1];
-          const uint32_t* q = std::lower_bound(a, b, flo);
+          const uint16_t* a = sv.data() + ro[lc];
+          const uint16_t* b = sv.data() + ro[lc + 1];
+          const uint16_t* q = std::lower_bound(a, b, flo);
           const int bin = (q != b && *q < fhi) ? static_cast<int>(*q - flo) : f.zero_bin;
           dir[k] = bin <= s.thr ? 1 : 0;
         }
       }
-      for (int64_t k = 0; k < np;
-           ++k) {  // stable placement: left rows in place, right rows via tmp
-        const int64_t i = order[P.begin + k];
-        if (dir[k]) {
-          order[P.begin + nl++] = i;
-        } else {
-          tmp[nr++] = i;
+      if (dense_inline) {
+        const uint8_t* d = dense[dense_of[gf]].data();
+        const bool zero_left = f.zero_bin <= s.thr;
+        const int thr = s.thr;
+        for (int64_t k = 0; k < np; ++k) {  // stable placement: left rows in place, right via tmp
+          const int64_t i = order[P.begin + k];
+          const uint8_t v = d[i];
+          if (v == 255 ? zero_left : v <= thr) {
+            order[P.begin + nl++] = i;
+          } else {
+            tmp[nr++] = i;
+          }
+        }
+      } else {
+        for (int64_t k = 0; k < np;
+             ++k) {  // stable placement: left rows in place, right rows via tmp
+          const int64_t i = order[P.begin + k];
+          if (dir[k]) {
+            order[P.begin + nl++] = i;
+          } else {
+            tmp[nr++] = i;
+          }
         }
       }
       std::copy(tmp.begin(), tmp.begin() + nr, order.begin() + P.begin + nl);
@@ -844,6 +888,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         if (qa[c + 1] <= qa[c]) continue;  // no active feature here: rows are not touched
         HB* hs_ = S.hist.data();
         HB* hb_ = B.hist.data();
+        HB* hsc = hs_ + off[cf[c]];  // the chunk's slice (sv ids are local to it)
         for (int q = qa[c]; q < qa[c + 1]; ++q) {
           const int ll = act[q];
           std::memset(static_cast<void*>(hs_ + off[ll]), 0, sizeof(HB) * (off[ll + 1] - off[ll]));
@@ -862,13 +907,13 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
           }
           const int64_t i = ord[k];
           const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint32_t* p = sv.data() + ro[c];
-          const uint32_t* b = sv.data() + ro[c + 1];
+          const uint16_t* p = sv.data() + ro[c];
+          const uint16_t* b = sv.data() + ro[c + 1];
           const double gi = gh[2 * i], hi = gh[2 * i + 1];
           for (; p < b; ++p) {
-            hs_[*p].g += gi;
-            hs_[*p].h += hi;
-            hs_[*p].c += 1;
+            hsc[*p].g += gi;
+            hsc[*p].h += hi;
+            hsc[*p].c += 1;
           }
         }
         for (int q = qa[c]; q < qa[c + 1]; ++q) {
@@ -936,11 +981,14 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         while (node >= 0) {
           const Node& tn = tree.nodes[node];
           const int l = loc[tn.feat];
-          const uint32_t flo = static_cast<uint32_t>(off[l]),
-                         fhi = static_cast<uint32_t>(off[l + 1]);
-          const uint32_t* a = sv.data() + sp[i];
-          const uint32_t* b = sv.data() + sp[i + 1];
-          const uint32_t* q = std::lower_bound(a, b, flo);
+          const int lc =
+              static_cast<int>(std::upper_bound(cf.begin(), cf.end(), l) - cf.begin()) - 1;
+          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
+          const uint16_t flo = static_cast<uint16_t>(off[l] - off[cf[lc]]),
+                         fhi = static_cast<uint16_t>(off[l + 1] - off[cf[lc]]);
+          const uint16_t* a = sv.data() + ro[lc];
+          const uint16_t* b = sv.data() + ro[lc + 1];
+          const uint16_t* q = std::lower_bound(a, b, flo);
           const int bin =
               (q != b && *q < fhi) ? static_cast<int>(*q - flo) : feats[tn.feat].zero_bin;
           node = bin <= tn.thr ? tn.left : tn.right;
