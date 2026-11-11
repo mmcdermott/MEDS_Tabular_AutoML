@@ -365,10 +365,13 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       std::max(0, static_cast<int>(params[14]));  // precomputed layouts (0 = sample per refresh)
   omp_set_num_threads(threads);
 
-  // 1. Bins per column (parallel), from the non-zero training values.
+  // 1. Bins per column (parallel), from the non-zero training values; then the column's training
+  // entries are binned while it is in cache (255 = zero bin).
   auto t0 = Clock::now();
   std::vector<Feat> feats(m_cols);
-#pragma omp parallel for schedule(dynamic, 64)
+  std::vector<uint8_t> col_bins(csc_ptr[m_cols]);
+  int64_t kept = 0;
+#pragma omp parallel for schedule(dynamic, 64) reduction(+ : kept)
   for (int64_t c = 0; c < m_cols; ++c) {
     std::vector<float> v;
     v.reserve(csc_ptr[c + 1] - csc_ptr[c]);
@@ -381,15 +384,6 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
     } else {
       make_bins(v, max_bin, &feats[c]);
     }
-  }
-  info[2] = secs(t0);
-
-  // 2. Row-major bins for train / tuning / held-out (non-zero-bin entries only).
-  t0 = Clock::now();
-  std::vector<uint8_t> col_bins(csc_ptr[m_cols]);
-  int64_t kept = 0;
-#pragma omp parallel for schedule(dynamic, 64) reduction(+ : kept)
-  for (int64_t c = 0; c < m_cols; ++c) {
     const Feat& fc = feats[c];
     for (int64_t j = csc_ptr[c]; j < csc_ptr[c + 1]; ++j) {
       const int k = fc.nbin >= 2 ? to_bin(fc, csc_val[j]) : fc.zero_bin;
@@ -397,6 +391,10 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       kept += k != fc.zero_bin;
     }
   }
+  info[2] = secs(t0);
+
+  // 2. Tuning / held-out bins (column-major, non-zero-bin entries only).
+  t0 = Clock::now();
   ColBins tu = bin_csr_cols(n_tun, m_cols, tun_ptr, tun_idx, tun_val, feats, threads);
   ColBins ho = bin_csr_cols(n_held, m_cols, held_ptr, held_idx, held_val, feats, threads);
   info[3] = secs(t0);
@@ -445,11 +443,14 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   std::vector<uint8_t> flag(n, 0);
   std::vector<uint8_t> in_bag(n, 0);
   std::vector<uint8_t> dir;  // partition scratch: 1 = left
-  // Dense per-row bins (255 = zero bin) of features already split on, filled on their first split
-  // and reused by later splits on them (any tree): a split's partition is then one lookup per row.
+  // Dense per-row bins (255 = zero bin) of features split on more than once, filled on their second
+  // split and reused by later splits on them (any tree): a split's partition is then one lookup per
+  // row. Many features are split on only once; admitting on reuse keeps the memory cap for the
+  // rest.
   constexpr int64_t kDenseBytes = int64_t{256} << 20;
   const int64_t max_dense = std::min<int64_t>(m_cols, kDenseBytes / std::max<int64_t>(n, 1));
   std::vector<int32_t> dense_of(m_cols, -1);
+  std::vector<uint8_t> split_before(m_cols, 0);
   std::vector<std::vector<uint8_t>> dense;
   int NC = threads;                // chunks in the current layout (cf.size() - 1)
   std::vector<int> cf(NC + 1, 0);  // chunk c covers local features [cf[c], cf[c+1])
@@ -806,14 +807,19 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       const int64_t col_nnz = csc_ptr[gf + 1] - csc_ptr[gf];
       const int64_t np = P.end - P.begin;
       if (static_cast<int64_t>(dir.size()) < np) dir.resize(np);
-      const bool par = np >= 16384;
-      const bool col_par = col_nnz >= 16384;
+      // Parallel regions only where a serial loop would take long: a few nanoseconds per row for
+      // the lookups and column flags, far more for the per-row search.
+      const bool par = np >= (int64_t{1} << 18);
+      const bool col_par = col_nnz >= (int64_t{1} << 18);
+      const bool par_search = np >= 16384;
       const bool by_column = np * 8 > col_nnz;
       const int lc = static_cast<int>(std::upper_bound(cf.begin(), cf.end(), l) - cf.begin()) -
                      1;  // l's chunk
       const uint16_t flo = static_cast<uint16_t>(off[l] - off[cf[lc]]),
                      fhi = static_cast<uint16_t>(off[l + 1] - off[cf[lc]]);  // chunk-local
-      if (dense_of[gf] < 0 && static_cast<int64_t>(dense.size()) < max_dense) {
+      const bool reused = split_before[gf] != 0;
+      split_before[gf] = 1;
+      if (dense_of[gf] < 0 && reused && static_cast<int64_t>(dense.size()) < max_dense) {
         dense_of[gf] = static_cast<int32_t>(dense.size());
         dense.emplace_back(n, uint8_t{255});
         uint8_t* d = dense.back().data();
@@ -846,7 +852,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       } else {
         const uint32_t* rs = rco.data() + static_cast<size_t>(lc) * n;
         const uint32_t* re = rs + n;
-#pragma omp parallel for schedule(static) if (par)
+#pragma omp parallel for schedule(static) if (par_search)
         for (int64_t k = 0; k < np; ++k) {
           if (k + 16 < np) {
             __builtin_prefetch(rs + order[P.begin + k + 16]);
