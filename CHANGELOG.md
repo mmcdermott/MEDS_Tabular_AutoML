@@ -19,12 +19,15 @@
 ### Changed
 
 - **`sparsegb` is the default model launcher** (it was `xgboost`), and a `sparsegb` hyperparameter sweep is the
-    recommended way to train. It needs the compiled library, built by a source install on Linux with GCC
-    (`pip install --no-binary meds-tab meds-tab`); the pure-Python wheel does not include it, so pass
+    recommended way to train. It needs the compiled library, built by a source install on Linux with GCC or
+    clang + libomp (`pip install --no-binary meds-tab meds-tab`); the pure-Python wheel does not include it, so pass
     `model_launcher=xgboost` (the previous default) or `model_launcher=lightgbm` there. Without the library,
     `sparsegb` now stops with an error before loading any data.
 - **`data_loading_params.cache_matrices` is on by default.** It costs about one more copy of the task's
     model-ready data on disk, under `<output_dir>/.cache/matrices`; set it to `false` to turn it off.
+- `sparsegb` raises an error, instead of silently wrapping its 32-bit row offsets, when a column layout has
+    more than 2^32 - 1 non-zero training entries. Errors during training now raise a Python `RuntimeError` with
+    their message rather than aborting the process.
 - `sparsegb`'s `threads=0` now honors `OMP_NUM_THREADS` (set per worker by the joblib launcher) and the
     process's CPU affinity, so parallel sweep trials no longer each start one thread per CPU of the machine.
 - Faster model-stage loading with identical data: code filtering selects the kept columns directly from each

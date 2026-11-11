@@ -36,6 +36,7 @@
 #include <numeric>
 #include <random>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -334,7 +335,42 @@ double predict_row(const Model& m, const int32_t* idx, const float* val, int64_t
 
 }  // namespace
 
+namespace {
+thread_local std::string last_error;  // message of the last failed sgb_train on this thread
+}  // namespace
+
 extern "C" {
+
+// Message of the last sgb_train that returned null on this thread ("" if none).
+const char* sgb_last_error() { return last_error.c_str(); }
+
+static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
+                        const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
+                        const int32_t* tun_idx, const float* tun_val, const float* y_tun,
+                        int64_t n_held, const int64_t* held_ptr, const int32_t* held_idx,
+                        const float* held_val, const int32_t* slot_of, const double* params,
+                        double* out_tun, double* out_held, double* info);
+
+// Trains a model; returns null (message in sgb_last_error) instead of letting a C++ exception cross
+// the C ABI. Exceptions are only thrown outside OpenMP regions.
+void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
+                const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
+                const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
+                const int64_t* held_ptr, const int32_t* held_idx, const float* held_val,
+                const int32_t* slot_of, const double* params, double* out_tun, double* out_held,
+                double* info) {
+  last_error.clear();
+  try {
+    return train_impl(n, m_cols, csc_ptr, csc_idx, csc_val, y, n_tun, tun_ptr, tun_idx, tun_val,
+                      y_tun, n_held, held_ptr, held_idx, held_val, slot_of, params, out_tun,
+                      out_held, info);
+  } catch (const std::exception& e) {
+    last_error = e.what();
+  } catch (...) {
+    last_error = "unknown error";
+  }
+  return nullptr;
+}
 
 // params: [0] threads, [1] max_bin, [2] num_leaves, [3] min_child_samples, [4] lambda_l2,
 //         [5] learning_rate, [6] bagging_fraction, [7] max_rounds, [8] early_stopping, [9] seed,
@@ -343,12 +379,12 @@ extern "C" {
 // info out: [0] best_iter, [1] trees, [2] t_bins, [3] t_rowbins, [4] t_trees_total, [5] t_subset,
 //           [6] t_grow, [7] t_score, [8] train_rows_nnz_kept, [9] t_root, [10] t_partition,
 //           [11] t_big_splits, [12] t_small_splits, [13] n_big, [14] n_small
-void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
-                const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
-                const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
-                const int64_t* held_ptr, const int32_t* held_idx, const float* held_val,
-                const int32_t* slot_of, const double* params, double* out_tun, double* out_held,
-                double* info) {
+static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
+                        const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
+                        const int32_t* tun_idx, const float* tun_val, const float* y_tun,
+                        int64_t n_held, const int64_t* held_ptr, const int32_t* held_idx,
+                        const float* held_val, const int32_t* slot_of, const double* params,
+                        double* out_tun, double* out_held, double* info) {
   const int threads = static_cast<int>(params[0]);
   const int max_bin = std::min(255, static_cast<int>(params[1]));
   const int num_leaves = static_cast<int>(params[2]);
@@ -538,6 +574,13 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       sp[r + 1] = rt;
     }
     for (int64_t r = 0; r < n; ++r) sp[r + 1] += sp[r];
+    // rco holds 32-bit offsets into sv; refuse layouts they cannot address instead of wrapping.
+    if (sp[n] > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()))
+      throw std::length_error(
+          "sparsegb supports at most 4294967295 non-zero training entries per column layout, got " +
+          std::to_string(sp[n]) +
+          "; raise tabularization.min_code_inclusion_count, use fewer windows or aggregations, or "
+          "train on fewer rows");
     rco.resize(static_cast<size_t>(n) * (NC + 1));
 #pragma omp parallel for schedule(static)
     for (int64_t r = 0; r < n; ++r) {

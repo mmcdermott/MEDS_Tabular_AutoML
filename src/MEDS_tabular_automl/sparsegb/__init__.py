@@ -115,6 +115,8 @@ def library() -> ct.CDLL:
         F64P,
         F64P,
     ]
+    lib.sgb_last_error.restype = ct.c_char_p
+    lib.sgb_last_error.argtypes = []
     lib.sgb_predict.restype = ct.c_int
     lib.sgb_predict.argtypes = [ct.c_void_p, ct.c_int64, I64P, I32P, F32P, ct.c_int, F64P]
     lib.sgb_save.restype = ct.c_int
@@ -272,6 +274,9 @@ class SparseGB:
             _ptr(out_held, F64P),
             _ptr(info, F64P),
         )
+        if not self._handle:  # null: training failed; the library kept the reason
+            self._handle = None
+            raise RuntimeError(f"sparsegb training failed: {lib.sgb_last_error().decode()}")
         self.info = {
             "best_iteration": int(info[0]),
             "trees_trained": int(info[1]),
