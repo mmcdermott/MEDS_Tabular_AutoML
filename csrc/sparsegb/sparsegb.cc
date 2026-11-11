@@ -292,6 +292,8 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   const double min_hess = params[10];
   const int slot_k = std::max(1, static_cast<int>(params[11]));
   const int refresh = std::max(1, static_cast<int>(params[12]));  // trees per feature sample
+  const double goss_top = params[15],
+               goss_other = params[16];  // GOSS row sampling (goss_top = 0: bagging)
   const int n_layouts =
       std::max(0, static_cast<int>(params[14]));  // precomputed layouts (0 = sample per refresh)
   omp_set_num_threads(threads);
@@ -384,7 +386,6 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   double t_subset = 0, t_grow = 0, t_score = 0, t_root = 0, t_part = 0, t_big = 0, t_small = 0;
   int64_t n_big = 0, n_small = 0;
   auto t_trees = Clock::now();
-  const int n_chunks = threads;
   std::vector<std::vector<HB>> pool;  // histogram buffers, reused across splits and trees
 
   struct Layout {
@@ -467,13 +468,27 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
           sv.resize(sp[n]);
 #pragma omp parallel for schedule(static, 1)
           for (int t = 0; t < T; ++t) {
+            // Row-blocked scatter: each thread walks its columns block by block (columns are sorted
+            // by row), so its writes stay within a cache-sized window of sv. Same writes, same
+            // order within each row.
             int64_t* pt = cnt.data() + static_cast<size_t>(t) * n;
-            for (int l = ustart[t]; l < ustart[t + 1]; ++l)
-              for (int64_t j = csc_ptr[used[l]]; j < csc_ptr[used[l] + 1]; ++j)
-                if (col_bins[j] != 255) {
-                  const int64_t r = csc_idx[j];
-                  sv[sp[r] + pt[r]++] = static_cast<uint32_t>(off[l] + col_bins[j]);
-                }
+            const int la = ustart[t], lb = ustart[t + 1];
+            std::vector<int64_t> cur(lb - la);
+            for (int l = la; l < lb; ++l) cur[l - la] = csc_ptr[used[l]];
+            constexpr int64_t kRowBlock = 1024;
+            for (int64_t r0 = 0; r0 < n; r0 += kRowBlock) {
+              const int64_t r1 = std::min(n, r0 + kRowBlock);
+              for (int l = la; l < lb; ++l) {
+                int64_t j = cur[l - la];
+                const int64_t je = csc_ptr[used[l] + 1];
+                for (; j < je && csc_idx[j] < r1; ++j)
+                  if (col_bins[j] != 255) {
+                    const int64_t r = csc_idx[j];
+                    sv[sp[r] + pt[r]++] = static_cast<uint32_t>(off[l] + col_bins[j]);
+                  }
+                cur[l - la] = j;
+              }
+            }
           }
         }
         if (!rco_ready) {
@@ -510,10 +525,32 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       gh[2 * i] = g[i];
       gh[2 * i + 1] = h[i];
     }
-    // Bagging: selection sampling (rows stay in ascending order).
+    // Row sampling: GOSS (top |gradient| rows + a reweighted random share of the rest) or bagging
+    // (selection sampling). Rows stay in ascending order.
     std::vector<int64_t> rows;
     rows.reserve(static_cast<size_t>(bag * n) + 1);
-    {
+    if (goss_top > 0) {
+      std::vector<double> a(n);
+      for (int64_t i = 0; i < n; ++i) a[i] = std::abs(g[i]);
+      const int64_t k_top = std::max<int64_t>(1, static_cast<int64_t>(goss_top * n));
+      std::vector<double> tmp_a(a);
+      std::nth_element(tmp_a.begin(), tmp_a.begin() + (n - k_top), tmp_a.end());
+      const double thr = tmp_a[n - k_top];
+      const double keep = goss_other / std::max(1e-12, 1.0 - goss_top);  // share of the rest kept
+      const double w = (1.0 - goss_top) / std::max(1e-12, goss_other);   // their weight
+      std::uniform_real_distribution<double> u(0.0, 1.0);
+      for (int64_t i = 0; i < n; ++i) {
+        if (a[i] >= thr) {
+          rows.push_back(i);
+        } else if (u(rng) < keep) {
+          rows.push_back(i);
+          g[i] *= w;
+          h[i] *= w;
+          gh[2 * i] = g[i];
+          gh[2 * i + 1] = h[i];
+        }
+      }
+    } else {
       int64_t need = static_cast<int64_t>(std::llround(bag * n));
       std::uniform_real_distribution<double> u(0.0, 1.0);
       for (int64_t i = 0; i < n && need > 0; ++i) {
@@ -635,21 +672,6 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       }
       return sc;
     };
-    // Chunks of a feature list balanced by bins: returns boundaries (indices into the list), n_ch +
-    // 1 entries.
-    auto chunk_list = [&](const std::vector<int>& act, int n_ch) {
-      std::vector<int> bounds(n_ch + 1, static_cast<int>(act.size()));
-      bounds[0] = 0;
-      int64_t tot = 0;
-      for (int l : act) tot += off[l + 1] - off[l];
-      int64_t acc = 0;
-      int c = 1;
-      for (int i = 0; i < static_cast<int>(act.size()) && c < n_ch; ++i) {
-        acc += off[act[i] + 1] - off[act[i]];
-        while (c < n_ch && acc >= tot * c / n_ch) bounds[c++] = i + 1;
-      }
-      return bounds;
-    };
     // Root.
     auto tr0 = Clock::now();
     {
@@ -666,39 +688,41 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       root.hist = get_hist();
       root.parent_node = -1;
       root.is_left = false;
-      std::vector<int> all(L);
-      std::iota(all.begin(), all.end(), 0);
-      const std::vector<int> bounds = chunk_list(all, n_chunks);
-      std::vector<Split> cb(n_chunks);
-      std::vector<std::vector<int>> cact(n_chunks);
+      // Root histogram by row streaming: chunk c's thread walks the bagged rows in ascending order
+      // and reads each row's slice of chunk c (rco), so reads are sequential and per-bin sums keep
+      // the row order.
+      std::vector<Split> cb(NC);
+      std::vector<std::vector<int>> cact(NC);
+      const int64_t* ord0 = order.data();
 #pragma omp parallel for schedule(dynamic, 1)
-      for (int c = 0; c < n_chunks; ++c) {
-        if (bounds[c + 1] <= bounds[c]) continue;
-        const int64_t blo = off[bounds[c]], bhi = off[bounds[c + 1]];
+      for (int c = 0; c < NC; ++c) {
+        if (cf[c + 1] <= cf[c]) continue;
+        const int64_t blo = off[cf[c]], bhi = off[cf[c + 1]];
         HB* hist = root.hist.data();
         std::memset(static_cast<void*>(hist + blo), 0, sizeof(HB) * (bhi - blo));
-        for (int l = bounds[c]; l < bounds[c + 1]; ++l) {
-          const int gf = used[l];
-          HB* hb = hist + off[l];
-          const int64_t je = csc_ptr[gf + 1];
-          for (int64_t j = csc_ptr[gf]; j < je; ++j) {
-            if (j + 16 < je) {
-              __builtin_prefetch(gh.data() + 2 * csc_idx[j + 16]);
-              __builtin_prefetch(in_bag.data() + csc_idx[j + 16]);
-            }
-            const uint8_t bb = col_bins[j];
-            const int64_t r = csc_idx[j];
-            if (bb == 255 || !in_bag[r]) continue;
-            hb[bb].g += gh[2 * r];
-            hb[bb].h += gh[2 * r + 1];
-            hb[bb].c += 1;
+        for (int64_t k = 0; k < mr; ++k) {
+          if (k + 16 < mr)
+            __builtin_prefetch(rco.data() + static_cast<size_t>(ord0[k + 16]) * (NC + 1) + c);
+          if (k + 8 < mr) {
+            const uint32_t* ro8 = rco.data() + static_cast<size_t>(ord0[k + 8]) * (NC + 1);
+            __builtin_prefetch(sv.data() + ro8[c]);
+          }
+          const int64_t i = ord0[k];
+          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
+          const uint32_t* p = sv.data() + ro[c];
+          const uint32_t* e = sv.data() + ro[c + 1];
+          const double gi = gh[2 * i], hi = gh[2 * i + 1];
+          for (; p < e; ++p) {
+            hist[*p].g += gi;
+            hist[*p].h += hi;
+            hist[*p].c += 1;
           }
         }
-        for (int l = bounds[c]; l < bounds[c + 1]; ++l)
+        for (int l = cf[c]; l < cf[c + 1]; ++l)
           if (best_of_feature(hist, l, root.G, root.H, root.C, &cb[c]) >= min_child)
             cact[c].push_back(l);
       }
-      for (int c = 0; c < n_chunks; ++c) {
+      for (int c = 0; c < NC; ++c) {
         if (cb[c].gain > root.best.gain) root.best = cb[c];
         root.active.insert(root.active.end(), cact[c].begin(), cact[c].end());
       }
@@ -731,7 +755,9 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       const bool par = np >= 16384;
       const bool col_par = col_nnz >= 16384;
       const bool by_column = np * 8 > col_nnz;
-      if (by_column) {  // flag rows from the column, then a sequential lookup per row
+      const int lc = static_cast<int>(std::upper_bound(cf.begin(), cf.end(), l) - cf.begin()) -
+                     1;  // l's chunk
+      if (by_column) {   // flag rows from the column, then a sequential lookup per row
 #pragma omp parallel for schedule(static) if (col_par)
         for (int64_t j = csc_ptr[gf]; j < csc_ptr[gf + 1]; ++j)
           if (col_bins[j] != 255) flag[csc_idx[j]] = col_bins[j] <= s.thr ? 1 : 2;
@@ -746,18 +772,18 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       } else {
 #pragma omp parallel for schedule(static) if (par)
         for (int64_t k = 0; k < np; ++k) {
-          if (k + 16 < np) __builtin_prefetch(sp.data() + order[P.begin + k + 16]);
+          if (k + 16 < np)
+            __builtin_prefetch(rco.data() +
+                               static_cast<size_t>(order[P.begin + k + 16]) * (NC + 1) + lc);
           if (k + 8 < np) {
             const int64_t i8 = order[P.begin + k + 8];
-            const uint32_t* a8 = sv.data() + sp[i8];
-            const int64_t len8 = sp[i8 + 1] - sp[i8];
-            __builtin_prefetch(a8 + len8 / 2);
-            __builtin_prefetch(a8 + len8 / 4);
-            __builtin_prefetch(a8 + 3 * len8 / 4);
+            __builtin_prefetch(sv.data() + rco[static_cast<size_t>(i8) * (NC + 1) + lc]);
           }
           const int64_t i = order[P.begin + k];
-          const uint32_t* a = sv.data() + sp[i];
-          const uint32_t* b = sv.data() + sp[i + 1];
+          // Search only the row's slice of the feature's chunk.
+          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
+          const uint32_t* a = sv.data() + ro[lc];
+          const uint32_t* b = sv.data() + ro[lc + 1];
           const uint32_t* q = std::lower_bound(a, b, flo);
           const int bin = (q != b && *q < fhi) ? static_cast<int>(*q - flo) : f.zero_bin;
           dir[k] = bin <= s.thr ? 1 : 0;

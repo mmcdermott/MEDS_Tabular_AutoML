@@ -195,7 +195,8 @@ class SparseGB:
                 p["refresh"],
                 1,
                 p["layouts"],
-                0,
+                0.0,  # GOSS top share (0: bagging)
+                0.0,  # GOSS other share
             ],
             dtype=np.float64,
         )
