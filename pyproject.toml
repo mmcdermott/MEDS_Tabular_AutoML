@@ -57,7 +57,7 @@ environment-pass = ["SETUPTOOLS_SCM_PRETEND_VERSION"]
 [tool.cibuildwheel.macos]
 # Apple clang + Homebrew's libomp (setup.py finds it); delocate bundles libomp into the wheel.
 before-all = "brew install libomp"
-environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
+environment = { MACOSX_DEPLOYMENT_TARGET = "15.0" }
 
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
