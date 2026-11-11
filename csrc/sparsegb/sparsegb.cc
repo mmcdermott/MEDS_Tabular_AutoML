@@ -188,59 +188,103 @@ struct Tree {
   std::vector<double> leaf_value;
 };
 
-struct RowBins {  // row-major (feature, bin) entries, sorted by feature within each row
-  std::vector<int64_t> ptr;
-  std::vector<int32_t> feat;
+// Evaluation set (tuning / held-out) as column-major non-zero-bin entries (rows ascending within
+// each column), plus per-row bin arrays (255 = zero bin) of the features the trees split on, filled
+// on first use up to a memory cap.
+struct ColBins {
+  int64_t n = 0;
+  std::vector<int64_t> ptr;  // per column
+  std::vector<int32_t> row;
   std::vector<uint8_t> bin;
+  std::vector<int32_t> dense_of;
+  std::vector<std::vector<uint8_t>> dense;
+  int64_t max_dense = 0;
+  // Per-row bins of feature f, or nullptr past the memory cap (then use bin_of).
+  const uint8_t* dense_bins(int f) {
+    if (dense_of[f] < 0) {
+      if (static_cast<int64_t>(dense.size()) >= max_dense) return nullptr;
+      dense_of[f] = static_cast<int32_t>(dense.size());
+      dense.emplace_back(n, uint8_t{255});
+      uint8_t* d = dense.back().data();
+      for (int64_t j = ptr[f]; j < ptr[f + 1]; ++j) d[row[j]] = bin[j];
+    }
+    return dense[dense_of[f]].data();
+  }
   int bin_of(int64_t r, int f, int zero_bin) const {
-    const int32_t* a = feat.data() + ptr[r];
-    const int32_t* b = feat.data() + ptr[r + 1];
-    const int32_t* p = std::lower_bound(a, b, f);
-    return (p != b && *p == f) ? bin[p - feat.data()] : zero_bin;
+    const int32_t* a = row.data() + ptr[f];
+    const int32_t* b = row.data() + ptr[f + 1];
+    const int32_t* p = std::lower_bound(a, b, static_cast<int32_t>(r));
+    return (p != b && *p == r) ? bin[p - row.data()] : zero_bin;
   }
 };
 
-int route(const Tree& t, const RowBins& rb, int64_t r, const std::vector<Feat>& feats) {
-  int node = 0;
-  while (node >= 0) {
-    const Node& n = t.nodes[node];
-    node = rb.bin_of(r, n.feat, feats[n.feat].zero_bin) <= n.thr ? n.left : n.right;
+// CSR input (float values) -> ColBins keeping only non-zero-bin entries.
+ColBins bin_csr_cols(int64_t n, int64_t m_cols, const int64_t* ptr, const int32_t* idx,
+                     const float* val, const std::vector<Feat>& feats, int threads) {
+  ColBins cb;
+  cb.n = n;
+  const int T = std::max(1, threads);
+  std::vector<int64_t> cnt(static_cast<size_t>(T) * (m_cols + 1), 0);  // per (thread, column)
+#pragma omp parallel for schedule(static, 1)
+  for (int t = 0; t < T; ++t) {
+    int64_t* ct = cnt.data() + static_cast<size_t>(t) * (m_cols + 1);
+    for (int64_t r = n * t / T; r < n * (t + 1) / T; ++r)
+      for (int64_t j = ptr[r]; j < ptr[r + 1]; ++j) {
+        const Feat& f = feats[idx[j]];
+        if (f.nbin >= 2 && to_bin(f, val[j]) != f.zero_bin) ++ct[idx[j]];
+      }
   }
-  return ~node;
+  cb.ptr.assign(m_cols + 1, 0);
+  int64_t acc = 0;
+  for (int64_t c = 0; c < m_cols; ++c) {
+    cb.ptr[c] = acc;
+    for (int t = 0; t < T; ++t) {
+      const int64_t v = cnt[static_cast<size_t>(t) * (m_cols + 1) + c];
+      cnt[static_cast<size_t>(t) * (m_cols + 1) + c] = acc;
+      acc += v;
+    }
+  }
+  cb.ptr[m_cols] = acc;
+  cb.row.resize(acc);
+  cb.bin.resize(acc);
+#pragma omp parallel for schedule(static, 1)
+  for (int t = 0; t < T; ++t) {
+    int64_t* ct = cnt.data() + static_cast<size_t>(t) * (m_cols + 1);
+    for (int64_t r = n * t / T; r < n * (t + 1) / T; ++r)
+      for (int64_t j = ptr[r]; j < ptr[r + 1]; ++j) {
+        const Feat& f = feats[idx[j]];
+        if (f.nbin < 2) continue;
+        const int b = to_bin(f, val[j]);
+        if (b != f.zero_bin) {
+          const int64_t o = ct[idx[j]]++;
+          cb.row[o] = static_cast<int32_t>(r);
+          cb.bin[o] = static_cast<uint8_t>(b);
+        }
+      }
+  }
+  cb.dense_of.assign(m_cols, -1);
+  cb.max_dense = (int64_t{256} << 20) / std::max<int64_t>(n, 1);
+  return cb;
 }
 
-// CSR input (float values) -> RowBins keeping only non-zero-bin entries.
-RowBins bin_csr(int64_t n, const int64_t* ptr, const int32_t* idx, const float* val,
-                const std::vector<Feat>& feats) {
-  RowBins rb;
-  rb.ptr.assign(n + 1, 0);
-#pragma omp parallel for schedule(dynamic, 256)
-  for (int64_t r = 0; r < n; ++r) {
-    int64_t k = 0;
-    for (int64_t j = ptr[r]; j < ptr[r + 1]; ++j) {
-      const Feat& f = feats[idx[j]];
-      if (f.nbin >= 2 && to_bin(f, val[j]) != f.zero_bin) ++k;
+// Leaf index of row r of an evaluation set; d[node] = per-row bins of the node's feature, or
+// nullptr.
+int route_cols(const Tree& t, const ColBins& cb, const std::vector<const uint8_t*>& d, int64_t r,
+               const std::vector<Feat>& feats) {
+  int node = 0;
+  while (node >= 0) {
+    const Node& tn = t.nodes[node];
+    const int zb = feats[tn.feat].zero_bin;
+    int bin;
+    if (d[node] != nullptr) {
+      const uint8_t v = d[node][r];
+      bin = v == 255 ? zb : v;
+    } else {
+      bin = cb.bin_of(r, tn.feat, zb);
     }
-    rb.ptr[r + 1] = k;
+    node = bin <= tn.thr ? tn.left : tn.right;
   }
-  for (int64_t r = 0; r < n; ++r) rb.ptr[r + 1] += rb.ptr[r];
-  rb.feat.resize(rb.ptr[n]);
-  rb.bin.resize(rb.ptr[n]);
-#pragma omp parallel for schedule(dynamic, 256)
-  for (int64_t r = 0; r < n; ++r) {
-    int64_t o = rb.ptr[r];
-    for (int64_t j = ptr[r]; j < ptr[r + 1]; ++j) {
-      const Feat& f = feats[idx[j]];
-      if (f.nbin < 2) continue;
-      const int b = to_bin(f, val[j]);
-      if (b != f.zero_bin) {
-        rb.feat[o] = idx[j];
-        rb.bin[o] = static_cast<uint8_t>(b);
-        ++o;
-      }
-    }
-  }
-  return rb;
+  return ~node;
 }
 
 double logloss(const std::vector<double>& s, const float* y) {
@@ -353,8 +397,8 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
       kept += k != fc.zero_bin;
     }
   }
-  const RowBins tu = bin_csr(n_tun, tun_ptr, tun_idx, tun_val, feats);
-  const RowBins ho = bin_csr(n_held, held_ptr, held_idx, held_val, feats);
+  ColBins tu = bin_csr_cols(n_tun, m_cols, tun_ptr, tun_idx, tun_val, feats, threads);
+  ColBins ho = bin_csr_cols(n_held, m_cols, held_ptr, held_idx, held_val, feats, threads);
   info[3] = secs(t0);
   info[8] = static_cast<double>(kept);
 
@@ -409,7 +453,8 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   std::vector<std::vector<uint8_t>> dense;
   int NC = threads;                // chunks in the current layout (cf.size() - 1)
   std::vector<int> cf(NC + 1, 0);  // chunk c covers local features [cf[c], cf[c+1])
-  std::vector<uint32_t> rco;  // rco[r*(NC+1)+c]: first entry of row r in chunk c (absolute in sv)
+  std::vector<uint32_t>
+      rco;  // rco[c*n+r]: first entry of row r in chunk c (absolute in sv), c <= NC
   double t_subset = 0, t_grow = 0, t_score = 0, t_root = 0, t_part = 0, t_big = 0, t_small = 0;
   int64_t n_big = 0, n_small = 0;
   auto t_trees = Clock::now();
@@ -492,10 +537,10 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
     rco.resize(static_cast<size_t>(n) * (NC + 1));
 #pragma omp parallel for schedule(static)
     for (int64_t r = 0; r < n; ++r) {
-      uint32_t* ro = rco.data() + static_cast<size_t>(r) * (NC + 1);
       for (int c = 0; c < NC; ++c)
-        ro[c] = static_cast<uint32_t>(sp[r] + cnt[static_cast<size_t>(c) * n + r]);
-      ro[NC] = static_cast<uint32_t>(sp[r + 1]);
+        rco[static_cast<size_t>(c) * n + r] =
+            static_cast<uint32_t>(sp[r] + cnt[static_cast<size_t>(c) * n + r]);
+      rco[static_cast<size_t>(NC) * n + r] = static_cast<uint32_t>(sp[r + 1]);
     }
     sv.resize(sp[n]);
 #pragma omp parallel for schedule(dynamic, 1)
@@ -710,17 +755,17 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         HB* hist = root.hist.data();
         HB* hc = hist + blo;  // the chunk's slice (sv ids are local to it)
         std::memset(static_cast<void*>(hist + blo), 0, sizeof(HB) * (bhi - blo));
+        const uint32_t* rs = rco.data() + static_cast<size_t>(c) * n;  // row starts in chunk c
+        const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = 0; k < mr; ++k) {
-          if (k + 16 < mr)
-            __builtin_prefetch(rco.data() + static_cast<size_t>(ord0[k + 16]) * (NC + 1) + c);
-          if (k + 8 < mr) {
-            const uint32_t* ro8 = rco.data() + static_cast<size_t>(ord0[k + 8]) * (NC + 1);
-            __builtin_prefetch(sv.data() + ro8[c]);
+          if (k + 16 < mr) {
+            __builtin_prefetch(rs + ord0[k + 16]);
+            __builtin_prefetch(re + ord0[k + 16]);
           }
+          if (k + 8 < mr) __builtin_prefetch(sv.data() + rs[ord0[k + 8]]);
           const int64_t i = ord0[k];
-          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint16_t* p = sv.data() + ro[c];
-          const uint16_t* e = sv.data() + ro[c + 1];
+          const uint16_t* p = sv.data() + rs[i];
+          const uint16_t* e = sv.data() + re[i];
           const double gi = gh[2 * i], hi = gh[2 * i + 1];
           for (; p < e; ++p) {
             hc[*p].g += gi;
@@ -799,20 +844,19 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
 #pragma omp parallel for schedule(static) if (col_par)
         for (int64_t j = csc_ptr[gf]; j < csc_ptr[gf + 1]; ++j) flag[csc_idx[j]] = 0;
       } else {
+        const uint32_t* rs = rco.data() + static_cast<size_t>(lc) * n;
+        const uint32_t* re = rs + n;
 #pragma omp parallel for schedule(static) if (par)
         for (int64_t k = 0; k < np; ++k) {
-          if (k + 16 < np)
-            __builtin_prefetch(rco.data() +
-                               static_cast<size_t>(order[P.begin + k + 16]) * (NC + 1) + lc);
-          if (k + 8 < np) {
-            const int64_t i8 = order[P.begin + k + 8];
-            __builtin_prefetch(sv.data() + rco[static_cast<size_t>(i8) * (NC + 1) + lc]);
+          if (k + 16 < np) {
+            __builtin_prefetch(rs + order[P.begin + k + 16]);
+            __builtin_prefetch(re + order[P.begin + k + 16]);
           }
+          if (k + 8 < np) __builtin_prefetch(sv.data() + rs[order[P.begin + k + 8]]);
           const int64_t i = order[P.begin + k];
           // Search only the row's slice of the feature's chunk.
-          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint16_t* a = sv.data() + ro[lc];
-          const uint16_t* b = sv.data() + ro[lc + 1];
+          const uint16_t* a = sv.data() + rs[i];
+          const uint16_t* b = sv.data() + re[i];
           const uint16_t* q = std::lower_bound(a, b, flo);
           const int bin = (q != b && *q < fhi) ? static_cast<int>(*q - flo) : f.zero_bin;
           dir[k] = bin <= s.thr ? 1 : 0;
@@ -895,20 +939,22 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         }
         // Entries of inactive features of this chunk land in never-read slots of the buffer:
         // harmless.
+        const uint32_t* rs = rco.data() + static_cast<size_t>(c) * n;  // row starts in chunk c
+        const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = S.begin; k < S.end; ++k) {
-          if (k + 16 < S.end)
-            __builtin_prefetch(rco.data() + static_cast<size_t>(ord[k + 16]) * (NC + 1) + c);
+          if (k + 16 < S.end) {
+            __builtin_prefetch(rs + ord[k + 16]);
+            __builtin_prefetch(re + ord[k + 16]);
+          }
           if (k + 8 < S.end) {
             const int64_t i8 = ord[k + 8];
-            const uint32_t* ro8 = rco.data() + static_cast<size_t>(i8) * (NC + 1);
-            __builtin_prefetch(sv.data() + ro8[c]);
-            __builtin_prefetch(sv.data() + ro8[c] + 16);
+            __builtin_prefetch(sv.data() + rs[i8]);
+            __builtin_prefetch(sv.data() + rs[i8] + 32);
             __builtin_prefetch(gh.data() + 2 * i8);
           }
           const int64_t i = ord[k];
-          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
-          const uint16_t* p = sv.data() + ro[c];
-          const uint16_t* b = sv.data() + ro[c + 1];
+          const uint16_t* p = sv.data() + rs[i];
+          const uint16_t* b = sv.data() + re[i];
           const double gi = gh[2 * i], hi = gh[2 * i + 1];
           for (; p < b; ++p) {
             hsc[*p].g += gi;
@@ -973,21 +1019,41 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
 #pragma omp parallel for schedule(static)
       for (int64_t i = 0; i < n; ++i)
         if (!in_bag[i]) score[i] += tree.leaf_value[0];
+      for (int64_t i = 0; i < n_tun; ++i) s_tun[i] += tree.leaf_value[0];
+      for (int64_t i = 0; i < n_held; ++i) s_held[i] += tree.leaf_value[0];
     } else {
+      const size_t nn = tree.nodes.size();
+      std::vector<const uint8_t*> d_tr(nn), d_tu(nn), d_ho(nn);
+      for (size_t k = 0; k < nn; ++k) {
+        const int gfk = tree.nodes[k].feat;
+        d_tr[k] = dense_of[gfk] >= 0 ? dense[dense_of[gfk]].data() : nullptr;
+        d_tu[k] = tu.dense_bins(gfk);
+        d_ho[k] = ho.dense_bins(gfk);
+      }
+#pragma omp parallel for schedule(static)
+      for (int64_t i = 0; i < n_tun; ++i)
+        s_tun[i] += tree.leaf_value[route_cols(tree, tu, d_tu, i, feats)];
+#pragma omp parallel for schedule(static)
+      for (int64_t i = 0; i < n_held; ++i)
+        s_held[i] += tree.leaf_value[route_cols(tree, ho, d_ho, i, feats)];
 #pragma omp parallel for schedule(static)
       for (int64_t i = 0; i < n; ++i) {
         if (in_bag[i]) continue;
         int node = 0;
         while (node >= 0) {
           const Node& tn = tree.nodes[node];
+          if (d_tr[node] != nullptr) {
+            const uint8_t v = d_tr[node][i];
+            node = (v == 255 ? feats[tn.feat].zero_bin : v) <= tn.thr ? tn.left : tn.right;
+            continue;
+          }
           const int l = loc[tn.feat];
           const int lc =
               static_cast<int>(std::upper_bound(cf.begin(), cf.end(), l) - cf.begin()) - 1;
-          const uint32_t* ro = rco.data() + static_cast<size_t>(i) * (NC + 1);
           const uint16_t flo = static_cast<uint16_t>(off[l] - off[cf[lc]]),
                          fhi = static_cast<uint16_t>(off[l + 1] - off[cf[lc]]);
-          const uint16_t* a = sv.data() + ro[lc];
-          const uint16_t* b = sv.data() + ro[lc + 1];
+          const uint16_t* a = sv.data() + rco[static_cast<size_t>(lc) * n + i];
+          const uint16_t* b = sv.data() + rco[static_cast<size_t>(lc + 1) * n + i];
           const uint16_t* q = std::lower_bound(a, b, flo);
           const int bin =
               (q != b && *q < fhi) ? static_cast<int>(*q - flo) : feats[tn.feat].zero_bin;
@@ -996,10 +1062,7 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
         score[i] += tree.leaf_value[~node];
       }
     }
-#pragma omp parallel for schedule(static)
-    for (int64_t i = 0; i < n_tun; ++i) s_tun[i] += tree.leaf_value[route(tree, tu, i, feats)];
-#pragma omp parallel for schedule(static)
-    for (int64_t i = 0; i < n_held; ++i) s_held[i] += tree.leaf_value[route(tree, ho, i, feats)];
+
     t_score += secs(ts);
     ++trees;
     all_trees.push_back(std::move(tree));
