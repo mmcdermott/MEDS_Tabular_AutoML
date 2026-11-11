@@ -1,3 +1,9 @@
+import hashlib
+import json
+import logging
+import os
+import shutil
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -11,6 +17,45 @@ from scipy.stats import pearsonr
 from .describe_codes import get_feature_columns
 from .file_name import get_model_files, list_subdir_files
 from .utils import get_feature_indices
+
+logger = logging.getLogger(__name__)
+
+
+def select_csc_columns(X: sp.csc_matrix, cols: np.ndarray) -> sp.csc_matrix:
+    """Selects columns of a CSC matrix by integer index, directly from its arrays.
+
+    Gives the same matrix as ``X[:, cols]`` (same column order, same entry order within each column) without
+    scipy's generic fancy-indexing, whose index validation dominates when many blocks are filtered.
+
+    Args:
+        X: The matrix.
+        cols: Integer column indices.
+
+    Returns:
+        The selected columns, as a CSC matrix.
+
+    Examples:
+        >>> X = sp.random(6, 8, density=0.4, format="csc", random_state=0)
+        >>> cols = np.array([0, 3, 4, 7])
+        >>> Y = select_csc_columns(X, cols)
+        >>> ref = X[:, cols]
+        >>> Y.shape == ref.shape and (Y != ref).nnz == 0
+        True
+        >>> bool(np.array_equal(Y.indptr, ref.indptr) and np.array_equal(Y.indices, ref.indices))
+        True
+        >>> select_csc_columns(X, np.array([], dtype=int)).shape
+        (6, 0)
+    """
+    cols = np.asarray(cols, dtype=np.int64)
+    indptr = X.indptr
+    starts = indptr[cols]
+    lens = indptr[cols + 1] - starts
+    new_indptr = np.zeros(len(cols) + 1, dtype=indptr.dtype)
+    np.cumsum(lens, out=new_indptr[1:])
+    pos = np.repeat(starts - new_indptr[:-1], lens) + np.arange(new_indptr[-1], dtype=np.int64)
+    return sp.csc_matrix(
+        (X.data[pos], X.indices[pos], new_indptr), shape=(X.shape[0], len(cols)), dtype=X.dtype
+    )
 
 
 class TabularDataset(TimeableMixin):
@@ -367,11 +412,25 @@ class TabularDataset(TimeableMixin):
         ckey = f"_filter_shard_on_codes_and_freqs/{agg}"
         self._register_start(key=ckey)
 
-        df = df[:, self.code_masks[agg]]
+        cols = self._code_index(agg)
+        if df.shape[1] != len(self.code_masks[agg]):
+            raise ValueError(
+                f"{agg}: the matrix has {df.shape[1]} columns but the code mask {len(self.code_masks[agg])}"
+            )
+        if len(cols) < df.shape[1]:
+            df = select_csc_columns(sp.csc_matrix(df), cols)
 
         self._register_end(key=ckey)
 
         return df
+
+    def _code_index(self, agg: str) -> np.ndarray:
+        """Column indices kept by the code mask of `agg` (computed once per aggregation)."""
+        if not hasattr(self, "_code_index_cache"):
+            self._code_index_cache = {}
+        if agg not in self._code_index_cache:
+            self._code_index_cache[agg] = np.flatnonzero(np.asarray(self.code_masks[agg], dtype=bool))
+        return self._code_index_cache[agg]
 
     def get_data_shards(self, idx: int | list[int]) -> tuple[sp.csc_matrix, np.ndarray]:
         """Retrieves the feature data and labels for specific shards.
@@ -401,11 +460,105 @@ class TabularDataset(TimeableMixin):
     def get_data(self) -> tuple[sp.csc_matrix, np.ndarray]:
         """Retrieves the feature data and labels for the current split.
 
+        With ``data_loading_params.cache_matrices`` (and no imputer or scaler), the split's matrix with every
+        tabularized column is built once and cached under ``cache_dir``; each call then only applies its own
+        code filter to the cache. The result is identical either way.
+
         Returns:
             A tuple where the first element is a sparse matrix containing the
             feature data, and the second element is a numpy array containing the labels.
         """
+        if (
+            self.cfg.data_loading_params.get("cache_matrices", False)
+            and self.imputer is None
+            and self.scaler is None
+        ):
+            return self._get_data_from_matrix_cache()
         return self.get_data_shards(range(len(self._data_shards)))
+
+    def _matrix_cache_dir(self, files_by_shard: list[list[Path]]) -> Path:
+        """Cache directory for this split's unfiltered matrix, keyed on its inputs (paths, sizes, mtimes)."""
+        label_dir = Path(self.cfg.path.input_label_dir) / self.split
+        inputs = [f for files in files_by_shard for f in files]
+        inputs += [(label_dir / shard).with_suffix(".parquet") for shard in self._data_shards]
+        key = {
+            "version": 1,
+            "split": self.split,
+            "binarize_task": bool(self.cfg.data_loading_params.get("binarize_task", False)),
+            "inputs": [(str(p.resolve()), p.stat().st_size, p.stat().st_mtime_ns) for p in inputs],
+        }
+        digest = hashlib.sha256(json.dumps(key).encode()).hexdigest()[:20]
+        return Path(self.cfg.path.cache_dir) / "matrices" / f"{self.split}-{digest}"
+
+    def _build_matrix_cache(self, files_by_shard: list[list[Path]], out: Path) -> None:
+        """Stacks every shard's blocks without code filtering and writes them as .npy arrays (atomically)."""
+        shards, widths = [], None
+        for files in files_by_shard:
+            blocks = [self._load_matrix(f) for f in files]
+            shard_widths = [b.shape[1] for b in blocks]
+            if widths is None:
+                widths = shard_widths
+            elif shard_widths != widths:
+                raise ValueError(
+                    f"Shards of {self.split} have different block widths: {widths} vs {shard_widths}"
+                )
+            shards.append(sp.hstack(blocks, format="csc"))
+        X = sp.vstack(shards, format="csc")
+        tmp = out.parent / f".{out.name}.{os.getpid()}.{time.time_ns()}"
+        tmp.mkdir(parents=True)
+        np.save(tmp / "indptr.npy", X.indptr)
+        np.save(tmp / "indices.npy", X.indices)
+        np.save(tmp / "data.npy", X.data)
+        (tmp / "meta.json").write_text(json.dumps({"shape": list(X.shape), "widths": widths}))
+        try:
+            tmp.rename(out)
+        except OSError:  # another trial finished it first
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def _get_data_from_matrix_cache(self) -> tuple[sp.csc_matrix, np.ndarray]:
+        """`get_data` through the matrix cache: the cached unfiltered matrix, filtered by this config's
+        codes."""
+        files_by_shard = [get_model_files(self.cfg, self.split, shard) for shard in self._data_shards]
+        for files in files_by_shard:
+            missing = [f for f in files if not f.exists()]
+            if missing:
+                raise ValueError(f"Not all files exist for split {self.split}. Missing: {missing}")
+        out = self._matrix_cache_dir(files_by_shard)
+        if not out.exists():
+            logger.info(f"Building the matrix cache for {self.split} in {out}")
+            self._build_matrix_cache(files_by_shard, out)
+        meta = json.loads((out / "meta.json").read_text())
+        # Columns this config keeps: block by block, as the uncached path filters and stacks them.
+        cols, offset = [], 0
+        for f, width in zip(files_by_shard[0], meta["widths"], strict=True):
+            agg = f"static/{f.stem}" if f.stem in ["mean", "present"] else f"{f.parent.stem}/{f.stem}"
+            if not hasattr(self, "codes_set") or self.codes_set is None:
+                kept = np.arange(width)
+            else:
+                if width != len(self.code_masks[agg]):
+                    raise ValueError(
+                        f"{agg}: cached block has {width} columns, the code mask {len(self.code_masks[agg])}"
+                    )
+                kept = self._code_index(agg)
+            cols.append(kept + offset)
+            offset += width
+        cols = np.concatenate(cols) if cols else np.array([], dtype=np.int64)
+        keep_all = len(cols) == meta["shape"][1]  # every column kept (cols is then 0..n-1)
+        mode = None if keep_all else "r"  # all: one sequential read; else map and gather
+        X = sp.csc_matrix(
+            (
+                np.load(out / "data.npy", mmap_mode=mode),
+                np.load(out / "indices.npy", mmap_mode=mode),
+                np.load(out / "indptr.npy", mmap_mode=mode),
+            ),
+            shape=tuple(meta["shape"]),
+        )
+        if not keep_all:
+            X = select_csc_columns(X, cols)
+        if self.labels is None:
+            self.labels = self._load_labels()
+        y = np.concatenate([self.labels[shard] for shard in self._data_shards], axis=0)
+        return X, y
 
     def get_data_shard_count(self) -> int:
         """Retrieves the number of data shards.
@@ -442,13 +595,15 @@ class TabularDataset(TimeableMixin):
         agg_wind_combos = [extract_name(test_file) for test_file in files]
 
         feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
+        names_by_agg = {}  # the feature names of an aggregation are the same for every window
         all_feats = []
         for agg_wind in agg_wind_combos:
             window, feat, agg = agg_wind.split("/")
-            feature_ids = get_feature_indices(feat + "/" + agg, feature_columns)
-            feature_names = [feature_columns[i] for i in feature_ids]
-            for feat_name in feature_names:
-                all_feats.append(f"{feat_name}/{agg}/{window}")
+            key = feat + "/" + agg
+            if key not in names_by_agg:
+                names_by_agg[key] = [feature_columns[i] for i in get_feature_indices(key, feature_columns)]
+            suffix = f"/{agg}/{window}"
+            all_feats.extend(name + suffix for name in names_by_agg[key])
 
         return all_feats
 
@@ -458,22 +613,7 @@ class TabularDataset(TimeableMixin):
         Returns:
             The names of the columns.
         """
-        files = get_model_files(self.cfg, self.split, self._data_shards[0])
-
-        def extract_name(test_file):
-            return str(Path(test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
-
-        agg_wind_combos = [extract_name(test_file) for test_file in files]
-
-        feature_columns = get_feature_columns(self.cfg.tabularization.filtered_code_metadata_fp)
-        all_feats = []
-        for agg_wind in agg_wind_combos:
-            window, feat, agg = agg_wind.split("/")
-            feature_ids = get_feature_indices(feat + "/" + agg, feature_columns)
-            feature_names = [feature_columns[i] for i in feature_ids]
-            for feat_name in feature_names:
-                all_feats.append(f"{feat_name}/{agg}/{window}")
-
+        all_feats = self.get_all_column_names()
         # filter by only those in the list of indices
         if indices is not None:
             all_feats = [all_feats[i] for i in indices]

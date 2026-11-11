@@ -482,6 +482,8 @@ meds-tab-model \
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
     - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`, and set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
     - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
+    - A swept parameter given a value on the command line is fixed at that value: the hyperparameter optimization command above fixes `tabularization.min_code_inclusion_count` at 10, although every model launcher's sweep space includes it. Leave it off the command line to let the sweep search it.
+    - `data_loading_params.cache_matrices=true`: cache each split's matrix, with every tabularized column, under `cache_dir` (default `<output_dir>/.cache`) the first time it is loaded. Later loads, such as the other trials of a sweep, read the cache and apply their own code filter instead of reading and stacking every block again. The data is the same as without it. It costs about one more copy of the task's tabularized data on disk, is rebuilt when the tabularized files or labels change, and is not used with an imputer or a normalizer.
 
 ??? note "Code Inclusion Parameters in Modeling"
 
