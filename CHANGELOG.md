@@ -11,6 +11,18 @@
     MIMIC-IV MG1 task it trained in 10 s against 122 s for LightGBM, at equal held-out AUROC. A separate optional
     library (`csrc/sparsegb`, needs OpenMP), built when MEDS-Tab is installed from source.
 
+- `data_loading_params.cache_matrices` (off by default): each split's matrix with every tabularized column is
+    cached under `cache_dir` on first load, and later loads (the trials of a sweep) apply their own code filter
+    to it. On a MIMIC-IV task (455,555 columns at `min_code_inclusion_count=10`), loading the three splits takes
+    6.5 s from the cache against about 30 s before this release; the data is identical.
+
+### Changed
+
+- Faster model-stage loading with identical data: code filtering selects the kept columns directly from each
+    block instead of through scipy's boolean indexing, and column names are built once per aggregation. On the
+    same task, loading the three splits drops from about 30 s to 17 s at `min_code_inclusion_count=10`, and from
+    28 s to 8 s at 100,000.
+
 ## 0.3.0
 
 Feature values differ from 0.2.0: several aggregation bugs are fixed (see Fixed) and the workflow changed (see
