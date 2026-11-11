@@ -47,7 +47,7 @@ def libomp_prefix() -> Path | None:
 
 
 def sparsegb_extension() -> Extension | None:
-    """sparsegb (model_launcher=sparsegb): a separate optional library, since it needs OpenMP.
+    """Builds sparsegb (model_launcher=sparsegb), a separate optional library since it needs OpenMP.
 
     Linux: GCC, or clang with LLVM's libomp. macOS: Apple clang with libomp (`brew install libomp`, or set
     LIBOMP_PREFIX, e.g. to a conda environment with llvm-openmp), or GCC (CC=gcc-14 ...). Windows is not

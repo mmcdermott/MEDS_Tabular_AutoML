@@ -97,6 +97,8 @@ def check_inputs(X_train, y_train, X_tuning, y_tuning) -> None:
             raise ValueError(f"y_{name} must hold binary labels (0/1 or booleans)")
     if X_tuning.shape[1] != X_train.shape[1]:
         raise ValueError(f"X_tuning has {X_tuning.shape[1]} columns, X_train {X_train.shape[1]}")
+
+
 I64P, I32P, F32P, F64P = (ct.POINTER(t) for t in (ct.c_int64, ct.c_int32, ct.c_float, ct.c_double))
 
 

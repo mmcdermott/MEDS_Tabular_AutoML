@@ -120,8 +120,8 @@ void make_bins(std::vector<float>& vals, int max_bin, Feat* out) {
     k_neg = n_neg == 0 ? 0
                        : std::max(1, static_cast<int>(std::lround(avail * double(cnt_neg) /
                                                                   (cnt_neg + cnt_pos))));
-    // Positive values keep at least one bin, as negative values do; otherwise they would share the zero
-    // bin (when >= ~96% of the non-zeros are negative) and look absent.
+    // Positive values keep at least one bin, as negative values do; otherwise they would share the
+    // zero bin (when >= ~96% of the non-zeros are negative) and look absent.
     if (n_pos > 0) k_neg = std::min(k_neg, avail - 1);
     k_neg = static_cast<int>(std::min<int64_t>(k_neg, n_neg));
     k_pos = static_cast<int>(std::min<int64_t>(avail - k_neg, n_pos));

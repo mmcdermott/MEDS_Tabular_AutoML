@@ -6,9 +6,9 @@ import meds
 import numpy as np
 import scipy.sparse as sp
 
+from . import sparsegb
 from .file_name import get_model_files
 from .gbdt_model import GradientBoostedTreesModel
-from . import sparsegb
 from .sparsegb import SparseGB
 from .tabular_dataset import TabularDataset
 
