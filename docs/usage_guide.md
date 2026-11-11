@@ -473,7 +473,7 @@ meds-tab-model \
 
 ??? note "Args Description for Model Stage"
 
-    - `model_launcher`: Choose from `xgboost`, `lightgbm`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
+    - `model_launcher`: Choose from `xgboost`, `lightgbm`, `sparsegb`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
     - `input_dir`: The directory containing the MEDS data
     - `output_dir`: The directory storing the task's tabularized data
     - `input_label_dir`: The directory containing the task's labels, as given to tabularization
@@ -482,6 +482,7 @@ meds-tab-model \
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
     - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`, and set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
     - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
+    - `sparsegb`: MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP) and handles binary tasks. Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`).
 
 ??? note "Code Inclusion Parameters in Modeling"
 

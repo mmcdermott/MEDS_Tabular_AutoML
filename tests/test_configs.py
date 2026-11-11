@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 
 from MEDS_tabular_automl.lightgbm_model import LightGBMModel
 from MEDS_tabular_automl.sklearn_model import SklearnModel
+from MEDS_tabular_automl.sparsegb_model import SparseGBModel
 from MEDS_tabular_automl.xgboost_model import XGBoostModel
 from tests.test_integration import run_command
 
@@ -15,6 +16,7 @@ from tests.test_integration import run_command
     [
         "xgboost",
         "lightgbm",
+        "sparsegb",
         "sgd_classifier",
         "knn_classifier",
         "logistic_regression",
@@ -51,6 +53,10 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
         case "xgboost":
             assert isinstance(model_launcher, XGBoostModel), (
                 "model_launcher should be an instance of XGBoostModel"
+            )
+        case "sparsegb":
+            assert isinstance(model_launcher, SparseGBModel), (
+                "model_launcher should be an instance of SparseGBModel"
             )
         case "lightgbm":
             assert isinstance(model_launcher, LightGBMModel), (

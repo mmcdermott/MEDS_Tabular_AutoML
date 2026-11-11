@@ -26,4 +26,14 @@ engine = Extension(
     optional=True,
 )
 
-setup(ext_modules=[] if os.environ.get("MEDS_TAB_BUILD_ENGINE") == "0" else [engine])
+# sparsegb (model_launcher=sparsegb): a separate optional library, since it needs OpenMP.
+sparsegb = Extension(
+    "MEDS_tabular_automl.sparsegb._sparsegb",
+    sources=sorted(str(path) for path in Path("csrc/sparsegb").glob("*.cc")),
+    language="c++",
+    extra_compile_args=["-std=c++17", "-O3", "-fopenmp"],
+    extra_link_args=["-fopenmp"],
+    optional=True,
+)
+
+setup(ext_modules=[] if os.environ.get("MEDS_TAB_BUILD_ENGINE") == "0" else [engine, sparsegb])

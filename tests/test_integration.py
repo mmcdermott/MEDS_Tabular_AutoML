@@ -10,6 +10,7 @@ import polars as pl
 from hydra import compose, initialize
 from meds_evaluation.schema import validate_binary_classification_schema
 
+from MEDS_tabular_automl import sparsegb
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
 from MEDS_tabular_automl.utils import (
@@ -242,14 +243,17 @@ def test_integration(tmp_path):
         "generate-subsets", ["[static/present,static/mean]"], {}, "generate-subsets aggs"
     )
 
-    for model in [
+    models = [
         "xgboost",
         "lightgbm",
         "knn_classifier",
         "logistic_regression",
         "random_forest_classifier",
         "sgd_classifier",
-    ]:
+    ]
+    if sparsegb.is_available():  # compiled library (source installs with a C++17 compiler and OpenMP)
+        models.insert(2, "sparsegb")
+    for model in models:
         model_config = {
             **shared_config,
             "tabularization.min_code_inclusion_count": 1,
@@ -271,7 +275,7 @@ def test_integration(tmp_path):
 
         stderr, stdout = run_command(script, overrides, model_config, f"launch_model_{model}")
         assert "Performance of best model:" in stdout, f"Model {model} failed!\n{stderr}\n{stdout}"
-        if model in ("xgboost", "lightgbm"):
+        if model in ("xgboost", "lightgbm", "sparsegb"):
             ext = "json" if model == "xgboost" else "txt"
             assert len(glob.glob(str(output_model_dir / f"*/sweep_results/**/*.{ext}"))) == 2
             assert len(glob.glob(str(output_model_dir / f"*/best_trial/*.{ext}"))) == 1
