@@ -1,7 +1,7 @@
 defaults:
   - default
   - tabularization: default
-  - model_launcher: xgboost
+  - model_launcher: sparsegb
   - override hydra/sweeper: optuna
   - override hydra/callbacks: evaluation_callback
   - override hydra/launcher: joblib

@@ -46,7 +46,7 @@ ______________________________________________________________________
 This repository consists of two key pieces:
 
 1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backward in time from a given index date.
-2. Running a basic XGBoost AutoML pipeline over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
+2. Running a gradient-boosted-trees AutoML pipeline (by default `sparsegb`, MEDS-Tab's own booster for wide, sparse matrices; XGBoost, LightGBM and others are also available) over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
 
 ## Quick Start
 
@@ -57,6 +57,22 @@ To use MEDS-Tab, install the dependencies following commands below:
 ```console
 pip install meds-tab
 ```
+
+On Linux (x86_64 and aarch64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13, this
+installs a compiled wheel that includes `sparsegb`, the default and recommended model launcher, and the native
+tabularization engine. Check with
+`python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
+
+On other platforms or Python versions, pip installs a pure-Python wheel without them. To build them there,
+install from source with a C++17 compiler and OpenMP (GCC on Linux; Apple clang after `brew install libomp`
+on macOS):
+
+```console
+pip install --no-binary meds-tab meds-tab
+```
+
+Windows is not supported yet for `sparsegb` (use WSL), so pass e.g. `model_launcher=lightgbm` to
+`meds-tab-model` there.
 
 **Local Install**
 
@@ -106,8 +122,8 @@ Data flow through the pipeline is optimized through caching and sharding. Each s
 
 ## Native Backend
 
-Static and time-series tabularization can also run on an optional C++ engine, which is compiled when
-MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
+Static and time-series tabularization can also run on an optional C++ engine, included in the compiled
+wheels on Linux and Apple-silicon macOS and compiled when MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
 writes the same files as the Python implementation, so `TabularDataset` and the model launchers are
 unchanged. See the [native backend guide](docs/native_backend.md).
 
@@ -119,7 +135,7 @@ Our feature engineering framework maintains flexibility while enforcing consiste
 
 ## Model Support and Normalization/Imputation Options
 
-The architecture includes robust support for multiple model types, with XGBoost as the primary implementation. Additional supported models include KNN Classifier, Logistic Regression, Random Forest Classifier, and SGD Classifier. An experimental AutoGluon integration provides automated model selection and tuning capabilities.
+The architecture includes robust support for multiple model types. The default and recommended one is `sparsegb`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data: on the MIMIC-IV MG tasks it trains about 10x faster than LightGBM at the same held-out AUROC, which makes large hyperparameter sweeps practical. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files. XGBoost and LightGBM are also supported, as are KNN Classifier, Logistic Regression, Random Forest Classifier, and SGD Classifier. An experimental AutoGluon integration provides automated model selection and tuning capabilities.
 
 Data processing options are designed to maintain efficiency while providing necessary transformations. Normalization options (standard scaler, max abs scaler) preserve sparsity, while imputation methods (mean, median, mode) are available when dense representations are required or beneficial.
 
