@@ -39,6 +39,26 @@ dependencies = [
 
 [tool.setuptools_scm]
 
+# Compiled wheels (native engine + sparsegb), built by the publish workflow. Platforms without one fall back
+# to the pure-Python wheel.
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-*"
+skip = "*-musllinux_*"
+build-verbosity = 1
+# Fails if a compiled library is missing (both are optional extensions, so a failed build is silent).
+test-command = "python {project}/.github/scripts/check_wheel.py"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+before-all = "dnf install -y zlib-devel || yum install -y zlib-devel"
+environment-pass = ["SETUPTOOLS_SCM_PRETEND_VERSION"]
+
+[tool.cibuildwheel.macos]
+# Apple clang + Homebrew's libomp (setup.py finds it); delocate bundles libomp into the wheel.
+before-all = "brew install libomp"
+environment = { MACOSX_DEPLOYMENT_TARGET = "14.0" }
+
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
 meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"
