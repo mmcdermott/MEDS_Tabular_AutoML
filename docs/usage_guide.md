@@ -449,8 +449,10 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
     `sparsegb` is a compiled library, so **install MEDS-Tab from source** with a C++17 compiler and OpenMP:
     `pip install --no-binary meds-tab meds-tab`, or `pip install .` from a clone. The pip wheel does not
     include it; check with `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
-    It builds on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`).
-    With MSVC (Windows) or Apple clang (macOS), the build is currently skipped and the install still succeeds. Without the library, `model_launcher=sparsegb` stops with an error before
+    It builds on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`),
+    and on macOS with Apple clang once `libomp` is installed (`brew install libomp`; or set `LIBOMP_PREFIX`,
+    e.g. to a conda environment with `llvm-openmp`). **Windows is not supported yet**: the install succeeds
+    without `sparsegb`, so use `model_launcher=lightgbm` or `model_launcher=xgboost` there (or WSL). Without the library, `model_launcher=sparsegb` stops with an error before
     loading any data; choose `model_launcher=lightgbm` or `model_launcher=xgboost` instead.
 
     `sparsegb` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.

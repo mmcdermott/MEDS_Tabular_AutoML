@@ -120,6 +120,9 @@ void make_bins(std::vector<float>& vals, int max_bin, Feat* out) {
     k_neg = n_neg == 0 ? 0
                        : std::max(1, static_cast<int>(std::lround(avail * double(cnt_neg) /
                                                                   (cnt_neg + cnt_pos))));
+    // Positive values keep at least one bin, as negative values do; otherwise they would share the zero
+    // bin (when >= ~96% of the non-zeros are negative) and look absent.
+    if (n_pos > 0) k_neg = std::min(k_neg, avail - 1);
     k_neg = static_cast<int>(std::min<int64_t>(k_neg, n_neg));
     k_pos = static_cast<int>(std::min<int64_t>(avail - k_neg, n_pos));
     k_neg = static_cast<int>(std::min<int64_t>(avail - k_pos, n_neg));
@@ -397,7 +400,7 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
   const int refresh = std::max(1, static_cast<int>(params[12]));  // trees per feature sample
   const double goss_top = params[15],
                goss_other = params[16];  // GOSS row sampling (goss_top = 0: bagging)
-  const int n_layouts =
+  int n_layouts =
       std::max(0, static_cast<int>(params[14]));  // precomputed layouts (0 = sample per refresh)
   omp_set_num_threads(threads);
 
@@ -458,6 +461,11 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
       }
     }
   }
+  // With one usable column per slot (e.g. no slots given) every layout is the same: build only one
+  // instead of n_layouts identical copies of the data.
+  if (n_layouts > 1 && std::all_of(slots.begin(), slots.end(),
+                                   [](const std::vector<int>& s) { return s.size() == 1; }))
+    n_layouts = 1;
 
   // Boosting state.
   double pos = 0;

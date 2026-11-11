@@ -52,8 +52,9 @@ This repository consists of two key pieces:
 
 To use MEDS-Tab, install the dependencies following commands below:
 
-**Recommended: install from source** (Linux, with a C++17 compiler and OpenMP, e.g. GCC). This builds the
-`sparsegb` model launcher, the default and recommended model, and the native tabularization engine:
+**Recommended: install from source** with a C++17 compiler and OpenMP: GCC on Linux, or on macOS Apple clang
+after `brew install libomp`. Windows is not supported yet for `sparsegb` (use WSL, or the wheel below). This
+builds the `sparsegb` model launcher, the default and recommended model, and the native tabularization engine:
 
 ```console
 pip install --no-binary meds-tab meds-tab

@@ -44,8 +44,59 @@ import scipy.sparse as sp
 
 NOT_BUILT = (
     "sparsegb is not built. Install MEDS-Tab from source with a C++17 compiler and OpenMP "
-    "(e.g. `pip install --no-binary meds-tab meds-tab`)."
+    "(e.g. `pip install --no-binary meds-tab meds-tab`) on Linux or macOS; Windows is not supported yet."
 )
+
+
+def check_inputs(X_train, y_train, X_tuning, y_tuning) -> None:
+    """Raises ValueError unless the training and tuning data can be passed to the library.
+
+    The library trusts its inputs: mismatched lengths would make it read past the end of an array, NaN
+    values make its sorting undefined, and an empty tuning split gives a model with no trees.
+
+    Examples:
+        >>> X = sp.csc_matrix(np.array([[1.0, 0.0], [0.0, 2.0], [3.0, 0.0]], dtype=np.float32))
+        >>> y = np.array([0, 1, 1])
+        >>> check_inputs(X, y, X, y)
+        >>> check_inputs(X, y[:2], X, y)
+        Traceback (most recent call last):
+            ...
+        ValueError: y_train has 2 labels for 3 rows of X_train
+        >>> check_inputs(X, y, X[:, :1], y)
+        Traceback (most recent call last):
+            ...
+        ValueError: X_tuning has 1 columns, X_train 2
+        >>> check_inputs(X, y, X[:0], y[:0])
+        Traceback (most recent call last):
+            ...
+        ValueError: the tuning split is empty; sparsegb early-stops on it
+        >>> X_nan = X.copy()
+        >>> X_nan.data[0] = np.nan
+        >>> check_inputs(X_nan, y, X, y)
+        Traceback (most recent call last):
+            ...
+        ValueError: X_train has non-finite values (NaN or inf)
+        >>> check_inputs(X, np.array([0, 1, 2]), X, y)
+        Traceback (most recent call last):
+            ...
+        ValueError: y_train must hold binary labels (0/1 or booleans)
+    """
+    for name, X, y in (("train", X_train, y_train), ("tuning", X_tuning, y_tuning)):
+        if X.ndim != 2:
+            raise ValueError(f"X_{name} must be 2-dimensional, got shape {X.shape}")
+        y = np.asarray(y)
+        if y.shape != (X.shape[0],):
+            raise ValueError(f"y_{name} has {y.size} labels for {X.shape[0]} rows of X_{name}")
+        if X.shape[0] == 0:
+            hint = "; sparsegb early-stops on it" if name == "tuning" else ""
+            raise ValueError(f"the {name} split is empty{hint}")
+        values = X.data if sp.issparse(X) else np.asarray(X)
+        if not np.isfinite(values).all():
+            raise ValueError(f"X_{name} has non-finite values (NaN or inf)")
+        if not np.isin(y, (0, 1)).all():
+            raise ValueError(f"y_{name} must hold binary labels (0/1 or booleans)")
+    if X_tuning.shape[1] != X_train.shape[1]:
+        raise ValueError(f"X_tuning has {X_tuning.shape[1]} columns, X_train {X_train.shape[1]}")
 I64P, I32P, F32P, F64P = (ct.POINTER(t) for t in (ct.c_int64, ct.c_int32, ct.c_float, ct.c_double))
 
 
@@ -234,6 +285,7 @@ class SparseGB:
             slots: int array, one per column: columns sharing a slot are alternatives (one is used per
                 tree); -1 means always used. None: every column in its own slot (no column sampling).
         """
+        check_inputs(X_train, y_train, X_tuning, y_tuning)
         lib = library()
         X = sp.csc_matrix(X_train, dtype=np.float32)
         X.sort_indices()
