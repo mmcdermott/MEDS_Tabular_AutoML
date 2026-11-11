@@ -11,13 +11,22 @@
     MIMIC-IV MG1 task it trained in 10 s against 122 s for LightGBM, at equal held-out AUROC. A separate optional
     library (`csrc/sparsegb`, needs OpenMP), built when MEDS-Tab is installed from source.
 
-- `data_loading_params.cache_matrices` (off by default): each split's matrix with every tabularized column is
+- `data_loading_params.cache_matrices` (on by default; see Changed): each split's matrix with every tabularized column is
     cached under `cache_dir` on first load, and later loads (the trials of a sweep) apply their own code filter
     to it. On a MIMIC-IV task (455,555 columns at `min_code_inclusion_count=10`), loading the three splits takes
     6.5 s from the cache against about 30 s before this release; the data is identical.
 
 ### Changed
 
+- **`sparsegb` is the default model launcher** (it was `xgboost`), and a `sparsegb` hyperparameter sweep is the
+    recommended way to train. It needs the compiled library, built by a source install on Linux with GCC
+    (`pip install --no-binary meds-tab meds-tab`); the pure-Python wheel does not include it, so pass
+    `model_launcher=xgboost` (the previous default) or `model_launcher=lightgbm` there. Without the library,
+    `sparsegb` now stops with an error before loading any data.
+- **`data_loading_params.cache_matrices` is on by default.** It costs about one more copy of the task's
+    model-ready data on disk, under `<output_dir>/.cache/matrices`; set it to `false` to turn it off.
+- `sparsegb`'s `threads=0` now honors `OMP_NUM_THREADS` (set per worker by the joblib launcher) and the
+    process's CPU affinity, so parallel sweep trials no longer each start one thread per CPU of the machine.
 - Faster model-stage loading with identical data: code filtering selects the kept columns directly from each
     block instead of through scipy's boolean indexing, and column names are built once per aggregation. On the
     same task, loading the three splits drops from about 30 s to 17 s at `min_code_inclusion_count=10`, and from

@@ -9,7 +9,9 @@ model_launcher:
   # sparsegb (MEDS_tabular_automl.sparsegb): binary gradient-boosted trees for wide, sparse tabularized data.
   # Needs the compiled library (installed from source with a C++17 compiler and OpenMP).
   model:
-    # 0: every CPU. Under `--multirun`, set hydra.launcher.n_jobs=1 so trials do not share the CPUs.
+    # 0: OMP_NUM_THREADS if set (the joblib launcher sets it to the CPU count / hydra.launcher.n_jobs in each
+    # worker), else every available CPU. To run sweep trials one at a time on every CPU, set
+    # hydra.launcher.n_jobs=1 and hydra.sweeper.n_jobs=1.
     threads: 0
     max_bin: 15
     num_leaves: 127

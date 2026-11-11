@@ -56,6 +56,30 @@ def library_path() -> Path:
     return Path(spec.origin)
 
 
+def default_threads() -> int:
+    """Threads used for ``threads=0``: ``OMP_NUM_THREADS`` when set, else the CPUs this process may run on.
+
+    Hydra's joblib launcher starts each worker with ``OMP_NUM_THREADS`` set to the CPU count divided by
+    ``hydra.launcher.n_jobs``; honoring it keeps parallel sweep trials from each taking every CPU.
+
+    Examples:
+        >>> from unittest import mock
+        >>> with mock.patch.dict(os.environ, {"OMP_NUM_THREADS": "3"}):
+        ...     default_threads()
+        3
+        >>> with mock.patch.dict(os.environ, {"OMP_NUM_THREADS": "not a number"}):
+        ...     default_threads() >= 1
+        True
+    """
+    with contextlib.suppress(ValueError):
+        n = int(os.environ.get("OMP_NUM_THREADS", "").split(",")[0])
+        if n > 0:
+            return n
+    if hasattr(os, "sched_getaffinity"):
+        return max(1, len(os.sched_getaffinity(0)))
+    return os.cpu_count() or 1
+
+
 def is_available() -> bool:
     """Whether the sparsegb library is built."""
     try:
@@ -125,7 +149,7 @@ class SparseGB:
     """Binary gradient-boosted trees; see the module docstring.
 
     Args:
-        threads: worker threads (0: all CPUs).
+        threads: worker threads (0: ``OMP_NUM_THREADS`` if set, else every available CPU).
         max_bin: bins per feature (zero has its own bin), at most 255.
         num_leaves: leaves per tree (leaf-wise growth).
         min_child_samples: minimum rows in each child of a split.
@@ -159,7 +183,7 @@ class SparseGB:
         refresh: int = 1,
     ):
         self.params = {
-            "threads": threads or os.cpu_count() or 1,
+            "threads": threads or default_threads(),
             "max_bin": max_bin,
             "num_leaves": num_leaves,
             "min_child_samples": min_child_samples,

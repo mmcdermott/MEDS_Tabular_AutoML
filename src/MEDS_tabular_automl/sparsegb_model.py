@@ -8,6 +8,7 @@ import scipy.sparse as sp
 
 from .file_name import get_model_files
 from .gbdt_model import GradientBoostedTreesModel
+from . import sparsegb
 from .sparsegb import SparseGB
 from .tabular_dataset import TabularDataset
 
@@ -74,6 +75,11 @@ class SparseGBModel(GradientBoostedTreesModel):
 
     def _build(self):
         """Loads every split in memory and computes the column slots."""
+        if not sparsegb.is_available():  # fail before spending minutes loading the data
+            raise ImportError(
+                f"{sparsegb.NOT_BUILT} Or choose a launcher that needs no compiled library, e.g. "
+                "model_launcher=lightgbm."
+            )
         if not self.keep_data_in_memory:
             logger.warning("sparsegb loads the data in memory; ignoring keep_data_in_memory=False.")
         start = time.perf_counter()

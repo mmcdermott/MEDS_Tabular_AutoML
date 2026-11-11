@@ -46,23 +46,28 @@ ______________________________________________________________________
 This repository consists of two key pieces:
 
 1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backward in time from a given index date.
-2. Running a basic XGBoost AutoML pipeline over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
+2. Running a gradient-boosted-trees AutoML pipeline (by default `sparsegb`, MEDS-Tab's own booster for wide, sparse matrices; XGBoost, LightGBM and others are also available) over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
 
 ## Quick Start
 
 To use MEDS-Tab, install the dependencies following commands below:
 
-**Pip Install**
+**Recommended: install from source** (Linux, with a C++17 compiler and OpenMP, e.g. GCC). This builds the
+`sparsegb` model launcher, the default and recommended model, and the native tabularization engine:
+
+```console
+pip install --no-binary meds-tab meds-tab
+# or, from a clone of the git repo:
+pip install .
+```
+
+Check the build with `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
+
+**Pip wheel** (pure Python, any platform; no `sparsegb`, so pass e.g. `model_launcher=lightgbm` to
+`meds-tab-model`):
 
 ```console
 pip install meds-tab
-```
-
-**Local Install**
-
-```console
-# clone the git repo
-pip install .
 ```
 
 ## Scripts and Examples
@@ -119,7 +124,7 @@ Our feature engineering framework maintains flexibility while enforcing consiste
 
 ## Model Support and Normalization/Imputation Options
 
-The architecture includes robust support for multiple model types, with XGBoost as the primary implementation. Additional supported models include KNN Classifier, Logistic Regression, Random Forest Classifier, and SGD Classifier. An experimental AutoGluon integration provides automated model selection and tuning capabilities.
+The architecture includes robust support for multiple model types. The default and recommended one is `sparsegb`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data: on the MIMIC-IV MG tasks it trains about 10x faster than LightGBM at the same held-out AUROC, which makes large hyperparameter sweeps practical. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files. XGBoost and LightGBM are also supported, as are KNN Classifier, Logistic Regression, Random Forest Classifier, and SGD Classifier. An experimental AutoGluon integration provides automated model selection and tuning capabilities.
 
 Data processing options are designed to maintain efficiency while providing necessary transformations. Normalization options (standard scaler, max abs scaler) preserve sparsity, while imputation methods (mean, median, mode) are available when dense representations are required or beneficial.
 

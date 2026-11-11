@@ -1,5 +1,13 @@
 # Prediction Performance
 
+!!! note
+
+    The results on this page were produced with XGBoost (`model_launcher=xgboost`), the default model before
+    `sparsegb`. The default and recommended launcher is now `sparsegb`, which trains about 10x faster than
+    LightGBM at the same held-out AUROC on the MIMIC-IV MG tasks; see the
+    [usage guide](usage_guide.md). To reproduce these XGBoost numbers, keep
+    `model_launcher=xgboost` in the commands below.
+
 ## XGBoost Model Performance on MIMIC-IV Tasks
 
 Evaluating our tabularization approach for baseline models involved training XGBoost across a spectrum of binary clinical prediction tasks, using data from the MIMIC-IV database. These tasks encompassed diverse outcomes such as mortality predictions over different intervals, readmission predictions, and lengths of stay (LOS) in both ICU and hospital settings.
