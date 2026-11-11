@@ -430,7 +430,10 @@ void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t
   const double init = std::log(p0 / (1 - p0));
   std::vector<double> score(n, init), s_tun(n_tun, init), s_held(n_held, init);
   std::vector<double> best_tun(s_tun), best_held(s_held);
-  double best_loss = logloss(s_tun, y_tun);
+  // Early stopping keeps the best of trees 1, 2, ... as LightGBM does: the constant model is not a
+  // candidate (with aggressive settings on rare outcomes every tree can be worse than it on
+  // log-loss while still ranking well).
+  double best_loss = std::numeric_limits<double>::infinity();
   int best_iter = 0, trees = 0;
   std::vector<Tree> all_trees;
   std::mt19937_64 rng(seed);
