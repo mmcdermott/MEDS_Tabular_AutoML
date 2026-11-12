@@ -80,7 +80,7 @@ def with_launcher(argv: list[str], launcher: str) -> list[str]:
 def xgboost_main():
     """``meds-tab-xgboost``: ``meds-tab-model`` with XGBoost unless another launcher is given.
 
-    The default launcher of ``meds-tab-model`` is sparsegb; this command keeps training XGBoost, as its name
+    The default launcher of ``meds-tab-model`` is medsboost; this command keeps training XGBoost, as its name
     says.
     """
     sys.argv = with_launcher(sys.argv, "xgboost")

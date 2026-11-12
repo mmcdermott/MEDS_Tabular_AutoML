@@ -39,7 +39,7 @@ dependencies = [
 
 [tool.setuptools_scm]
 
-# Compiled wheels (native engine + sparsegb), built by the publish workflow. Platforms without one fall back
+# Compiled wheels (native engine + medsboost), built by the publish workflow. Platforms without one fall back
 # to the pure-Python wheel.
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-*"
