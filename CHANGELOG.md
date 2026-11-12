@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
+
+Upgrading from 0.4.0 changes no results: tabularization and the model are unchanged. The default model
+launcher is now called `medsboost` (it was `sparsegb`, which still works with a warning), and Windows gets the
+native engine and `medsboost`, with compiled wheels.
 
 ### Added
 
