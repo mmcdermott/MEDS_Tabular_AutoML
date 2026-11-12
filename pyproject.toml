@@ -51,13 +51,18 @@ test-command = "python {project}/.github/scripts/check_wheel.py"
 [tool.cibuildwheel.linux]
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
-before-all = "dnf install -y zlib-devel || yum install -y zlib-devel"
 environment-pass = ["SETUPTOOLS_SCM_PRETEND_VERSION"]
 
 [tool.cibuildwheel.macos]
 # Apple clang + Homebrew's libomp (setup.py finds it); delocate bundles libomp into the wheel.
 before-all = "brew install libomp"
 environment = { MACOSX_DEPLOYMENT_TARGET = "15.0" }
+
+[tool.cibuildwheel.windows]
+# MSVC with its OpenMP runtime; delvewheel bundles vcomp140.dll, which Python does not ship.
+archs = ["AMD64"]
+before-build = "pip install delvewheel"
+repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
 
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"

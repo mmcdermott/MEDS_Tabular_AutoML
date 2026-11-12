@@ -41,6 +41,16 @@
 #include <utility>
 #include <vector>
 
+// Software prefetch (a hint; no effect on results).
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <xmmintrin.h>
+#define SGB_PREFETCH(p) _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0)
+#elif defined(_MSC_VER)
+#define SGB_PREFETCH(p) ((void)(p))
+#else
+#define SGB_PREFETCH(p) __builtin_prefetch(p)
+#endif
+
 namespace {
 
 using Clock = std::chrono::steady_clock;
@@ -814,10 +824,10 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
         const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = 0; k < mr; ++k) {
           if (k + 16 < mr) {
-            __builtin_prefetch(rs + ord0[k + 16]);
-            __builtin_prefetch(re + ord0[k + 16]);
+            SGB_PREFETCH(rs + ord0[k + 16]);
+            SGB_PREFETCH(re + ord0[k + 16]);
           }
-          if (k + 8 < mr) __builtin_prefetch(sv.data() + rs[ord0[k + 8]]);
+          if (k + 8 < mr) SGB_PREFETCH(sv.data() + rs[ord0[k + 8]]);
           const int64_t i = ord0[k];
           const uint16_t* p = sv.data() + rs[i];
           const uint16_t* e = sv.data() + re[i];
@@ -909,10 +919,10 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
 #pragma omp parallel for schedule(static) if (par_search)
         for (int64_t k = 0; k < np; ++k) {
           if (k + 16 < np) {
-            __builtin_prefetch(rs + order[P.begin + k + 16]);
-            __builtin_prefetch(re + order[P.begin + k + 16]);
+            SGB_PREFETCH(rs + order[P.begin + k + 16]);
+            SGB_PREFETCH(re + order[P.begin + k + 16]);
           }
-          if (k + 8 < np) __builtin_prefetch(sv.data() + rs[order[P.begin + k + 8]]);
+          if (k + 8 < np) SGB_PREFETCH(sv.data() + rs[order[P.begin + k + 8]]);
           const int64_t i = order[P.begin + k];
           // Search only the row's slice of the feature's chunk.
           const uint16_t* a = sv.data() + rs[i];
@@ -1003,14 +1013,14 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
         const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = S.begin; k < S.end; ++k) {
           if (k + 16 < S.end) {
-            __builtin_prefetch(rs + ord[k + 16]);
-            __builtin_prefetch(re + ord[k + 16]);
+            SGB_PREFETCH(rs + ord[k + 16]);
+            SGB_PREFETCH(re + ord[k + 16]);
           }
           if (k + 8 < S.end) {
             const int64_t i8 = ord[k + 8];
-            __builtin_prefetch(sv.data() + rs[i8]);
-            __builtin_prefetch(sv.data() + rs[i8] + 32);
-            __builtin_prefetch(gh.data() + 2 * i8);
+            SGB_PREFETCH(sv.data() + rs[i8]);
+            SGB_PREFETCH(sv.data() + rs[i8] + 32);
+            SGB_PREFETCH(gh.data() + 2 * i8);
           }
           const int64_t i = ord[k];
           const uint16_t* p = sv.data() + rs[i];

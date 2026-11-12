@@ -96,5 +96,5 @@ def test_describe_codes_errors_when_subject_splits_file_is_missing(tmp_path):
     input_dir = tmp_path / "data"
     write_events(input_dir / "train" / "0.parquet", ["A"])
 
-    with pytest.raises(FileNotFoundError, match=r"metadata/subject_splits\.parquet"):
+    with pytest.raises(FileNotFoundError, match=r"metadata[/\\]subject_splits\.parquet"):
         run_describe(input_dir, tmp_path / "output")

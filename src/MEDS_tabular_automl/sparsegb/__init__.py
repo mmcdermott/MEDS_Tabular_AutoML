@@ -43,9 +43,9 @@ import numpy as np
 import scipy.sparse as sp
 
 NOT_BUILT = (
-    "sparsegb is not built. The compiled wheels (`pip install meds-tab` on Linux or Apple-silicon macOS 15+, "
-    "Python 3.11-3.13) include it; elsewhere install MEDS-Tab from source with a C++17 compiler and OpenMP "
-    "(`pip install --no-binary meds-tab meds-tab`). Windows is not supported yet."
+    "sparsegb is not built. The compiled wheels (`pip install meds-tab` on Linux, Windows or Apple-silicon "
+    "macOS 15+, Python 3.11-3.13) include it; elsewhere install MEDS-Tab from source with a C++17 compiler "
+    "and OpenMP (`pip install --no-binary meds-tab meds-tab`; MSVC on Windows)."
 )
 
 

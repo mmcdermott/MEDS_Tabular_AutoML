@@ -446,16 +446,16 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
     load (`data_loading_params.cache_matrices`, on by default), so later trials do not re-read the
     tabularized files, whatever code threshold they draw.
 
-    `sparsegb` is a compiled library. `pip install meds-tab` includes it on Linux (x86_64 and aarch64) and on
-    Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13. Check with
+    `sparsegb` is a compiled library. `pip install meds-tab` includes it on Linux (x86_64 and aarch64), on
+    Windows (x86_64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13. Check with
     `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
     Elsewhere, pip installs a pure-Python wheel without it. Build it there from source with a C++17 compiler
     and OpenMP, using `pip install --no-binary meds-tab meds-tab`, or `pip install .` from a clone. That works
-    on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`), and on macOS
+    on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`); on macOS
     with Apple clang once `libomp` is installed (`brew install libomp`; or set `LIBOMP_PREFIX`, e.g. to a
-    conda environment with `llvm-openmp`). **Windows is not supported yet**: use WSL, or
-    `model_launcher=lightgbm` or `model_launcher=xgboost`. Without the library, `model_launcher=sparsegb`
-    stops with an error before loading any data.
+    conda environment with `llvm-openmp`); and on Windows with Visual Studio's C++ build tools (MSVC). Without
+    the library, `model_launcher=sparsegb` stops with an error before loading any data; choose
+    `model_launcher=lightgbm` or `model_launcher=xgboost` instead.
 
     `sparsegb` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
 

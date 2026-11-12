@@ -221,7 +221,7 @@ def features(tmp_path_factory) -> dict[str, csr_array]:
     run_stage(tabularize_static, "tabularization", labelled)
     run_stage(tabularize_time_series, "tabularization", labelled)
     root = output_dir / "tabularize/train/0"
-    return {str(fp.relative_to(root)): csr_array(load_matrix(fp)) for fp in root.glob("**/*.npz")}
+    return {fp.relative_to(root).as_posix(): csr_array(load_matrix(fp)) for fp in root.glob("**/*.npz")}
 
 
 def test_every_block_has_one_row_per_label(features):

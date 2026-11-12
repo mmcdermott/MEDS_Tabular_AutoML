@@ -2,21 +2,30 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <io.h>
+#else
 #include <unistd.h>
-#include <zlib.h>
+#endif
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
 #include <vector>
 
+#if defined(__BYTE_ORDER__)
 static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "Blocks are stored little-endian.");
+#elif !defined(_WIN32)  // Windows only runs on little-endian machines.
+#error "Blocks are stored little-endian; cannot check this platform's byte order."
+#endif
 
 namespace meds_tab::npz {
 namespace {
@@ -125,15 +134,36 @@ void Put(std::string& out, std::uint64_t value, int bytes) {
   for (int i = 0; i < bytes; ++i) out.push_back(static_cast<char>((value >> (8 * i)) & 0xFF));
 }
 
-std::uint32_t Crc(std::uint32_t crc, const void* data, std::size_t size) {
-  const auto* bytes = static_cast<const Bytef*>(data);
-  while (size) {
-    const auto piece = static_cast<uInt>(std::min<std::size_t>(size, std::size_t{1} << 30));
-    crc = static_cast<std::uint32_t>(crc32(crc, bytes, piece));
-    bytes += piece;
-    size -= piece;
+// CRC-32 as zip and zlib's crc32() compute it (reflected polynomial 0xEDB88320), slicing by 8
+// bytes. Built in so that the engine needs no zlib, which Windows lacks.
+using CrcTables = std::array<std::array<std::uint32_t, 256>, 8>;
+
+CrcTables MakeCrcTables() {
+  CrcTables t{};
+  for (std::uint32_t i = 0; i < 256; ++i) {
+    std::uint32_t c = i;
+    for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+    t[0][i] = c;
   }
-  return crc;
+  for (std::uint32_t i = 0; i < 256; ++i)
+    for (int s = 1; s < 8; ++s) t[s][i] = (t[s - 1][i] >> 8) ^ t[0][t[s - 1][i] & 0xFF];
+  return t;
+}
+
+std::uint32_t Crc(std::uint32_t crc, const void* data, std::size_t size) {
+  static const CrcTables t = MakeCrcTables();
+  const auto* p = static_cast<const unsigned char*>(data);
+  std::uint32_t c = ~crc;
+  for (; size >= 8; size -= 8, p += 8) {
+    std::uint32_t lo, hi;
+    std::memcpy(&lo, p, 4);
+    std::memcpy(&hi, p + 4, 4);
+    lo ^= c;
+    c = t[7][lo & 0xFF] ^ t[6][(lo >> 8) & 0xFF] ^ t[5][(lo >> 16) & 0xFF] ^ t[4][lo >> 24] ^
+        t[3][hi & 0xFF] ^ t[2][(hi >> 8) & 0xFF] ^ t[1][(hi >> 16) & 0xFF] ^ t[0][hi >> 24];
+  }
+  for (; size; --size, ++p) c = t[0][(c ^ *p) & 0xFF] ^ (c >> 8);
+  return ~c;
 }
 
 // numpy.lib.format._write_array_header, version 1.0: the sorted header dict,
@@ -187,7 +217,11 @@ void CentralRecord(std::string& out, const char* name, std::uint32_t crc, std::u
   if (!extra.empty()) version = 45;
   out.append("PK\x01\x02", 4);
   Put(out, version, 1);  // Created by this version...
-  Put(out, 3, 1);        // ...on Unix.
+#ifdef _WIN32
+  Put(out, 0, 1);  // ...on MS-DOS: zipfile.ZipInfo.create_system on Windows.
+#else
+  Put(out, 3, 1);  // ...on Unix.
+#endif
   Put(out, version, 1);  // Version needed to extract.
   Put(out, 0, 1);
   Put(out, 0, 2);  // Flags.
@@ -215,25 +249,41 @@ void CentralRecord(std::string& out, const char* name, std::uint32_t crc, std::u
 
 class OutputFile {
  public:
+  // path is UTF-8 on Windows (os.fsencode) and raw bytes elsewhere.
   explicit OutputFile(const std::string& path) : path_(path) {
+#ifdef _WIN32
+    const std::filesystem::path fs_path = std::filesystem::u8path(path);
+#else
+    const std::filesystem::path fs_path(path);
+#endif
     // Create missing parent directories, as write_csr_block does.
-    for (auto slash = path.find('/', 1); slash != std::string::npos;
-         slash = path.find('/', slash + 1)) {
-      if (::mkdir(path.substr(0, slash).c_str(), 0777) != 0 && errno != EEXIST) Fail("mkdir");
+    if (fs_path.has_parent_path()) {
+      std::error_code error;
+      std::filesystem::create_directories(fs_path.parent_path(), error);
+      if (error) throw std::system_error(error, path_ + ": mkdir");
     }
+#ifdef _WIN32
+    fd_ = ::_wopen(fs_path.c_str(), _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY | _O_NOINHERIT,
+                   _S_IREAD | _S_IWRITE);
+#else
     fd_ = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+#endif
     if (fd_ < 0) Fail("open");
   }
   OutputFile(const OutputFile&) = delete;
   OutputFile& operator=(const OutputFile&) = delete;
   ~OutputFile() {
-    if (fd_ >= 0) ::close(fd_);
+    if (fd_ >= 0) CloseFd(fd_);
   }
 
   void Write(const void* data, std::size_t size) {
     const char* bytes = static_cast<const char*>(data);
     while (size) {
+#ifdef _WIN32
+      const int written = ::_write(fd_, bytes, static_cast<unsigned>(std::min(size, kChunkBytes)));
+#else
       const auto written = ::write(fd_, bytes, std::min(size, kChunkBytes));
+#endif
       if (written < 0) {
         if (errno == EINTR) continue;
         Fail("write");
@@ -244,26 +294,40 @@ class OutputFile {
   }
   void Write(const std::string& data) { Write(data.data(), data.size()); }
 
-  void WriteAt(const std::string& data, off_t offset) {
+  // Writes data at offset; the file position afterwards is unspecified (only used before Close).
+  void WriteAt(const std::string& data, std::int64_t offset) {
+#ifdef _WIN32
+    if (::_lseeki64(fd_, offset, SEEK_SET) < 0) Fail("seek");
+    Write(data);
+#else
     std::size_t done = 0;
     while (done < data.size()) {
-      const auto written =
-          ::pwrite(fd_, data.data() + done, data.size() - done, offset + static_cast<off_t>(done));
+      const auto written = ::pwrite(fd_, data.data() + done, data.size() - done,
+                                    static_cast<off_t>(offset) + static_cast<off_t>(done));
       if (written < 0) {
         if (errno == EINTR) continue;
         Fail("write");
       }
       done += static_cast<std::size_t>(written);
     }
+#endif
   }
 
   void Close() {
     const int fd = fd_;
     fd_ = -1;
-    if (::close(fd) != 0) Fail("close");
+    if (CloseFd(fd) != 0) Fail("close");
   }
 
  private:
+  static int CloseFd(int fd) {
+#ifdef _WIN32
+    return ::_close(fd);
+#else
+    return ::close(fd);
+#endif
+  }
+
   [[noreturn]] void Fail(const char* operation) {
     throw std::system_error(errno, std::generic_category(), path_ + ": " + operation);
   }

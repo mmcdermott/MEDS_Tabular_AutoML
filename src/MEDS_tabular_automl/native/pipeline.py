@@ -45,7 +45,9 @@ def shard_names(input_dir: Path) -> list[str]:
     deeper = list(Path(input_dir).glob("*/*/**/*.parquet"))
     if deeper:
         raise ValueError(f"Shards must be exactly <split>/<shard>.parquet; found {deeper[0]}.")
-    names = sorted(str(p.relative_to(input_dir).with_suffix("")) for p in Path(input_dir).glob("*/*.parquet"))
+    names = sorted(
+        p.relative_to(input_dir).with_suffix("").as_posix() for p in Path(input_dir).glob("*/*.parquet")
+    )
     if not names:
         raise FileNotFoundError(f"No <split>/<shard>.parquet files under {input_dir}.")
     return names
