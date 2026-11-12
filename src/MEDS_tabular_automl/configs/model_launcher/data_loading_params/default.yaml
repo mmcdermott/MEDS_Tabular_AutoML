@@ -1,2 +1,7 @@
 keep_data_in_memory: True
 binarize_task: True
+# Cache each split's matrix with every tabularized column under `cache_dir` (default: <output_dir>/.cache) the
+# first time it is loaded; later loads (e.g. the trials of a sweep) read the cache and apply their own code filter.
+# Same matrices as without the cache. Costs about one more copy of the task's tabularized data on disk. Not used
+# with an imputer or a normalizer. Set it to False to save the disk space.
+cache_matrices: True

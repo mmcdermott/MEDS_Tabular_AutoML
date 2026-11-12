@@ -187,8 +187,11 @@ def assert_same_blocks(python: Path, native: Path):
             assert np.array_equal(got.data.astype(np.float64), want.data.astype(np.float64)), name
 
 
-def loaded(output: Path, labels: Path, split: str):
-    """X and y of one split as the model launchers load them."""
+def loaded(
+    output: Path, labels: Path, split: str, threshold: int = 2, cache_dir: Path | None = None, raw=False
+):
+    """X and y of one split as the model launchers load them (through the matrix cache when cache_dir is
+    given; raw: X exactly as get_data returns it)."""
     with initialize(version_base=None, config_path=CONFIGS):
         tabularization = compose(
             config_name="tabularization",
@@ -196,7 +199,7 @@ def loaded(output: Path, labels: Path, split: str):
                 "input_dir=unused",
                 f"output_dir={output}",
                 f"input_label_dir={labels}",
-                "tabularization.min_code_inclusion_count=2",
+                f"tabularization.min_code_inclusion_count={threshold}",
                 f"tabularization.window_sizes={WINDOWS}",
             ],
         ).tabularization
@@ -206,13 +209,18 @@ def loaded(output: Path, labels: Path, split: str):
             "path": {
                 "input_label_dir": str(labels),
                 "input_tabularized_dir": str(output / "tabularize"),
+                "cache_dir": str(cache_dir),
             },
-            "data_loading_params": {"keep_data_in_memory": True, "binarize_task": True},
+            "data_loading_params": {
+                "keep_data_in_memory": True,
+                "binarize_task": True,
+                "cache_matrices": cache_dir is not None,
+            },
         }
     )
     dataset = TabularDataset(cfg, split)
     X, y = dataset.get_data()
-    return csr_array(X), np.asarray(y)
+    return (X if raw else csr_array(X)), np.asarray(y)
 
 
 @pytest.fixture(scope="module")
@@ -238,6 +246,38 @@ def test_blocks_and_loaded_data_match(meds, tmp_path):
         assert np.array_equal(yp, yn), split
         assert Xp.shape == Xn.shape, split
         assert abs(Xp - Xn).max() <= 1e-9 * max(abs(Xp).max(), 1), split
+
+
+def test_matrix_cache_gives_the_same_data(meds, tmp_path, monkeypatch):
+    """With data_loading_params.cache_matrices, every code threshold loads the same X and y as without it,
+    from one cache per split built on first use; changed inputs build a new cache."""
+    labels = tmp_path / "labels"
+    write_labels(meds, labels, duplicates=True)
+    tabularize(meds, tmp_path / "tab", labels, "python")
+    cache = tmp_path / "cache"
+    for threshold in (2, 3, 4):
+        for split in ("train", "tuning", "held_out"):
+            X, y = loaded(tmp_path / "tab", labels, split, threshold, raw=True)
+            Xc, yc = loaded(tmp_path / "tab", labels, split, threshold, cache, raw=True)
+            assert Xc.format == X.format == "csc" and Xc.dtype == X.dtype and Xc.shape == X.shape, split
+            assert np.array_equal(Xc.indptr, X.indptr) and np.array_equal(Xc.indices, X.indices), split
+            assert np.array_equal(Xc.data, X.data) and np.array_equal(yc, y), split
+    built = sorted(p.name for p in (cache / "matrices").iterdir())
+    assert len(built) == 3 and not any(p.startswith(".") for p in built)
+
+    # Reused, not rebuilt.
+    def no_rebuild(*args, **kwargs):
+        raise AssertionError("the matrix cache was rebuilt")
+
+    monkeypatch.setattr(TabularDataset, "_build_matrix_cache", no_rebuild)
+    loaded(tmp_path / "tab", labels, "train", 3, cache)
+    monkeypatch.undo()
+
+    # A changed block file gets a new cache.
+    block = next((tmp_path / "tab" / "tabularize" / "train").rglob("*.npz"))
+    block.touch()
+    loaded(tmp_path / "tab", labels, "train", 3, cache)
+    assert len(list((cache / "matrices").iterdir())) == 4
 
 
 def test_static_mean_is_the_mean_of_static_values(meds, tmp_path):
