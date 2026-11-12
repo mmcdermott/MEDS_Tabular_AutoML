@@ -63,7 +63,7 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "15.0" }
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
 meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"
 meds-tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_series:main"
-meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_model:main"
+meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_model:xgboost_main"
 meds-tab-model = "MEDS_tabular_automl.scripts.launch_model:main"
 meds-tab-autogluon = "MEDS_tabular_automl.scripts.launch_autogluon:main"
 generate-subsets = "MEDS_tabular_automl.scripts.generate_subsets:main"

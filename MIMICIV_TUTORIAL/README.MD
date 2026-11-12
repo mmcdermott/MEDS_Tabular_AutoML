@@ -29,7 +29,7 @@ rm meds_extract_0.0.7_data.zip
 ```console
 conda create -n meds_tab python=3.12
 conda activate meds_tab
-pip install "meds-tab>=0.3.0"
+pip install "meds-tab>=0.4.0"
 ```
 
 Next we need to get some labels for our tasks. We will use the `long_los` and `icu_mortality` tasks as examples.

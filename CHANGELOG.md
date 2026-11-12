@@ -1,52 +1,53 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+Tabularization is unchanged from 0.3.0, so its outputs can be reused. The default model changed: `meds-tab-model`
+without `model_launcher=` now trains `sparsegb` instead of XGBoost (pass `model_launcher=xgboost` to keep the
+previous behavior), and the model stage caches matrices on disk by default (see Changed).
 
 ### Added
 
-- `model_launcher=sparsegb`: gradient-boosted trees written for MEDS-Tab's wide, sparse matrices (binary tasks).
-    Same algorithm as the LightGBM launcher (Newton boosting, histograms, leaf-wise growth, bagging, early
-    stopping); absent entries are never stored or scanned, features that can no longer split in a node are
-    dropped from it, and each tree uses one window per (code, aggregation) from precomputed layouts. On the
-    MIMIC-IV MG1 task it trained in about 25 s against 306 s for LightGBM, at equal held-out AUROC. A separate
-    optional library (`csrc/sparsegb`, needs OpenMP), included in the compiled wheels and built when MEDS-Tab is
-    installed from source.
-
-- **Compiled wheels on PyPI**, with `sparsegb` and the native engine, for Linux (x86_64 and aarch64,
-    manylinux_2_28) and macOS 15+ on Apple silicon (libomp bundled), for CPython 3.11 to 3.13. The publish
-    workflow builds them with cibuildwheel and installs each one to check that both libraries load and
-    sparsegb's doctests pass. Other platforms and Python versions still get the pure-Python wheel.
-
-- `data_loading_params.cache_matrices` (on by default; see Changed): each split's matrix with every tabularized column is
-    cached under `cache_dir` on first load, and later loads (the trials of a sweep) apply their own code filter
-    to it. On a MIMIC-IV task (455,555 columns at `min_code_inclusion_count=10`), loading the three splits takes
-    6.5 s from the cache against about 30 s before this release; the data is identical.
+- `model_launcher=sparsegb` (#183): gradient-boosted trees written for MEDS-Tab's wide, sparse matrices
+    (binary tasks), now the default launcher. Same algorithm as the LightGBM launcher (Newton boosting,
+    histograms, leaf-wise growth, bagging, early stopping on the tuning log-loss keeping at least one tree);
+    absent entries are never stored or scanned, features that can no longer split in a node are dropped from
+    it, and each tree uses one window per (code, aggregation) from precomputed layouts.
+    - On the 10 MIMIC-IV MG tasks it trains 12.5× faster than LightGBM (geometric mean; MG1: about 25 s against
+        306 s) at equal held-out AUROC (mean difference −0.0002, every 95% CI covering 0).
+    - A separate optional library (`csrc/sparsegb`, needs OpenMP), included in the compiled wheels and built
+        when MEDS-Tab is installed from source on Linux (GCC, or clang + libomp) or macOS (Apple clang +
+        Homebrew `libomp`, or `LIBOMP_PREFIX`). Windows is not supported yet. Without the library,
+        `model_launcher=sparsegb` stops with an error before loading any data.
+    - `threads=0` uses `OMP_NUM_THREADS` (set per worker by the joblib launcher) or the process's CPU affinity.
+    - `fit` rejects mismatched label lengths or tuning columns, empty splits, NaN/inf values and non-binary
+        labels; a column layout with more than 2^32 − 1 non-zero training entries raises an error; training
+        errors raise a Python `RuntimeError` instead of aborting the process.
+- **Compiled wheels on PyPI** (#183), with `sparsegb` and the native engine, for Linux (x86_64 and aarch64,
+    manylinux_2_28) and macOS 15+ on Apple silicon (libomp bundled), for CPython 3.11 to 3.13, so
+    `pip install meds-tab` includes both there. The publish workflow builds them with cibuildwheel and
+    installs each one to check that both libraries load and sparsegb's doctests pass. Other platforms and
+    Python versions still get the pure-Python wheel; `pip install --no-binary meds-tab meds-tab` builds from
+    source.
+- `data_loading_params.cache_matrices` (#184, on by default; see Changed): each split's matrix with every
+    tabularized column is cached under `cache_dir` on first load, and later loads (the trials of a sweep) apply
+    their own code filter to it. On a MIMIC-IV task (455,555 columns at `min_code_inclusion_count=10`), loading
+    the three splits takes 6.5 s from the cache against about 30 s in 0.3.0; the data is identical.
 
 ### Changed
 
-- **`sparsegb` is the default model launcher** (it was `xgboost`), and a `sparsegb` hyperparameter sweep is the
-    recommended way to train. It needs the compiled library: `pip install meds-tab` includes it on Linux and
-    Apple-silicon macOS 15+ (Python 3.11 to 3.13). Elsewhere, build it from source on Linux (GCC, or clang +
-    libomp) or macOS (Apple clang + Homebrew `libomp`, or `LIBOMP_PREFIX`) with
-    `pip install --no-binary meds-tab meds-tab`. Windows is not supported yet: pass `model_launcher=xgboost`
-    (the previous default) or `model_launcher=lightgbm` there. Without the library, `sparsegb` now stops with
-    an error before loading any data.
-- **`data_loading_params.cache_matrices` is on by default.** It costs about one more copy of the task's
+- **`sparsegb` is the default model launcher** (#183; it was `xgboost`), and a `sparsegb` hyperparameter sweep
+    is the recommended way to train. On Windows, or wherever the library is not built, pass
+    `model_launcher=xgboost` or `model_launcher=lightgbm`. `meds-tab-xgboost` still trains XGBoost unless
+    given another `model_launcher`.
+- **`data_loading_params.cache_matrices` is on by default** (#183). It costs about one more copy of the task's
     model-ready data on disk, under `<output_dir>/.cache/matrices`; set it to `false` to turn it off.
-- `sparsegb` raises an error, instead of silently wrapping its 32-bit row offsets, when a column layout has
-    more than 2^32 - 1 non-zero training entries. Errors during training now raise a Python `RuntimeError` with
-    their message rather than aborting the process.
-- `sparsegb` fixes and checks: a column whose non-zeros are almost all negative now keeps a bin for its
-    positive values (they were binned as zero); `fit` rejects mismatched label lengths or tuning columns, an
-    empty split, NaN/inf values and non-binary labels instead of reading out of bounds or returning a 0-tree
-    model; without slots (every column its own slot), one column layout is built instead of `layouts`
-    identical copies.
-- `sparsegb`'s `threads=0` now honors `OMP_NUM_THREADS` (set per worker by the joblib launcher) and the
-    process's CPU affinity, so parallel sweep trials no longer each start one thread per CPU of the machine.
-- Faster model-stage loading with identical data: code filtering selects the kept columns directly from each
-    block instead of through scipy's boolean indexing, and column names are built once per aggregation. On the
-    same task, loading the three splits drops from about 30 s to 17 s at `min_code_inclusion_count=10`, and from
-    28 s to 8 s at 100,000.
+- Faster model-stage loading with identical data (#184): code filtering selects the kept columns directly from
+    each block instead of through scipy's boolean indexing, and column names are built once per aggregation. On
+    the same task, loading the three splits drops from about 30 s to 17 s at `min_code_inclusion_count=10`, and
+    from 28 s to 8 s at 100,000.
+- The usage guide leads with the recommended `sparsegb` sweep, and documents that a swept parameter given on the
+    command line (such as `tabularization.min_code_inclusion_count`) is fixed rather than searched (#184).
 
 ## 0.3.0
 

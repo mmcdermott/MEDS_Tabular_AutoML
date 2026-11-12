@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from pathlib import Path
 
 import hydra
@@ -60,3 +61,27 @@ def main(cfg: DictConfig) -> float:
 
     logger.debug(f"Model config and performance logged to {config_fp} and {model_performance_fp}")
     return auc
+
+
+def with_launcher(argv: list[str], launcher: str) -> list[str]:
+    """Adds ``model_launcher=<launcher>`` to command-line arguments that do not choose a launcher.
+
+    Examples:
+        >>> with_launcher(["meds-tab-xgboost", "--multirun", "task_name=x"], "xgboost")
+        ['meds-tab-xgboost', '--multirun', 'task_name=x', 'model_launcher=xgboost']
+        >>> with_launcher(["meds-tab-xgboost", "model_launcher=lightgbm"], "xgboost")
+        ['meds-tab-xgboost', 'model_launcher=lightgbm']
+    """
+    if any(arg.lstrip("+~").startswith("model_launcher=") for arg in argv[1:]):
+        return argv
+    return [*argv, f"model_launcher={launcher}"]
+
+
+def xgboost_main():
+    """``meds-tab-xgboost``: ``meds-tab-model`` with XGBoost unless another launcher is given.
+
+    The default launcher of ``meds-tab-model`` is sparsegb; this command keeps training XGBoost, as its name
+    says.
+    """
+    sys.argv = with_launcher(sys.argv, "xgboost")
+    return main()
