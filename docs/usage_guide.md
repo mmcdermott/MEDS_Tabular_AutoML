@@ -192,6 +192,10 @@ OUTPUT_DIR/
 
 Filters the codes by frequency and computes the static features of each label of the task: one row per label, in the order of the label files, holding its subject's static features.
 
+!!! info "Native backend by default"
+
+    Both tabularization stages run on MEDS-Tab's C++ engine whenever it is built and supports the configuration (`backend=auto`, the default), and on the Python implementation otherwise; both write the same files. The engine computes every block in `meds-tab-tabularize-static`, so `meds-tab-tabularize-time-series` then finds them done, and in a multirun over `worker` only worker 0 has work. Use `backend=python` to force the Python implementation described below. See the [native backend guide](native_backend.md).
+
 ```console
 meds-tab-tabularize-static \
     "input_dir=${MEDS_RESHARD_DIR}/data" \

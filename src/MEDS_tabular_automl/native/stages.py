@@ -28,29 +28,48 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-BACKENDS = ("python", "native")
+BACKENDS = ("auto", "python", "native")
 
 
-def use_native(cfg: DictConfig) -> bool:
-    """Whether cfg selects the native backend (``backend=native``; the default is ``python``).
+def native_unavailable(cfg: DictConfig) -> str | None:
+    """Why the native backend cannot run cfg, or None if it can.
 
-    Raises RuntimeError when the native backend is selected but cannot run: the engine is not built, or
-    the configuration uses something it does not implement.
+    It cannot when the engine is not built, the configuration uses something the engine does not implement (an
+    aggregation, a window size), or the tabularized output is not at its default location.
     """
-    choice = cfg.get("backend", "python")
-    if choice not in BACKENDS:
-        raise ValueError(f"backend must be one of {BACKENDS}, not {choice!r}.")
-    if choice == "python":
-        return False
     try:
         unsupported = sorted(set(cfg.tabularization.aggs) - set(SUPPORTED_AGGS))
         if unsupported:
             raise ValueError(f"The native backend does not implement the aggregations {unsupported}.")
         tabular_config(cfg)
+        if cfg.get("output_tabularized_dir") is not None:
+            _require_default(cfg, "output_tabularized_dir", Path(cfg.output_dir) / "tabularize")
         engine.library()
     except (ValueError, OSError, RuntimeError) as error:
-        raise RuntimeError(f"backend=native cannot run: {error} Use backend=python.") from error
-    return True
+        return str(error)
+    return None
+
+
+def use_native(cfg: DictConfig) -> bool:
+    """Whether to run the native backend for cfg's ``backend``: ``auto`` (the default), ``python`` or
+    ``native``.
+
+    ``auto`` runs the native backend whenever it can (see ``native_unavailable``) and the Python backend
+    otherwise, saying why; both write the same files. ``native`` raises RuntimeError when it cannot run;
+    ``python`` never runs it.
+    """
+    choice = cfg.get("backend", "auto")
+    if choice not in BACKENDS:
+        raise ValueError(f"backend must be one of {BACKENDS}, not {choice!r}.")
+    if choice == "python":
+        return False
+    reason = native_unavailable(cfg)
+    if reason is None:
+        return True
+    if choice == "native":
+        raise RuntimeError(f"backend=native cannot run: {reason} Use backend=python.")
+    logger.info(f"backend=auto: using the Python backend, since the native backend cannot run: {reason}")
+    return False
 
 
 def tabular_config(cfg: DictConfig) -> TabularConfig:
