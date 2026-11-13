@@ -20,7 +20,7 @@ MEDS-Tab turns longitudinal electronic health records in the [Medical Event Data
 ## Why MEDS-Tab?
 
 - **Fast:** the native C++ engine tabularizes a whole MIMIC-IV task in about a minute on a laptop, and `medsboost`, MEDS-Tab's own gradient-boosted trees for these matrices, trains in a few minutes.
-- **Strong baselines:** across 40 MIMIC-IV and NWICU tasks from a recent benchmark comparing 12 models ([arXiv:2609.18134](https://arxiv.org/abs/2609.18134)), a single `medsboost` model per task outperforms all other non-MEDS-Tab models on average (see [Results](#results)).
+- **Strong baselines:** across 40 MIMIC-IV and NWICU tasks from a recent benchmark comparing 12 models ([arXiv:2609.18134](https://arxiv.org/abs/2609.18134)), a single `medsboost` model per task outperforms all other non-MEDS-Tab models on average.
 - **Any MEDS dataset, any task:** tasks are defined by label files (for example from [ACES](https://github.com/justin13601/ACES) or [MEDS-DEV](https://github.com/Medical-Event-Data-Standard/MEDS-DEV)); features are computed at each label's prediction time.
 - **Runs anywhere:** compiled wheels for Linux, Windows and Apple-silicon macOS.
 
