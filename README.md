@@ -1,7 +1,7 @@
 # Scalable tabularization and tabular feature usage utilities over generic MEDS datasets
 
 <p align="center">
-  <a href="https://www.python.org/downloads/release/python-3100/"><img alt="Python" src="https://img.shields.io/badge/-Python_3.12+-blue?logo=python&logoColor=white"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/-Python_3.11+-blue?logo=python&logoColor=white"></a>
   <a href="https://pypi.org/project/meds-tab/"><img alt="PyPI" src="https://img.shields.io/pypi/v/meds-tab?color=orange"></a>
   <a href="https://hydra.cc/"><img alt="Hydra" src="https://img.shields.io/badge/Config-Hydra_1.3-89b8cd"></a>
   <a href="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML"><img alt="Codecov" src="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML/graph/badge.svg?token=6GD05EDQ39"></a>
@@ -15,44 +15,39 @@
 
 # Welcome!
 
-MEDS-Tab is a library designed for automated tabularization, data preparation with aggregations and time windowing. Check out below for an overview of MEDS-Tab and how it could be useful in your workflows!
+MEDS-Tab turns longitudinal electronic health records in the [Medical Event Data Standard (MEDS)](https://github.com/Medical-Event-Data-Standard/meds) into wide, sparse tabular features (counts, sums, minimums, maximums and more over several time windows), and trains strong baseline models on them for any binary prediction task.
 
 ## Why MEDS-Tab?
 
-MEDS-Tab is a tool for tabularization and associated modeling of complex medical time-series data. By leveraging sparse representations during tabularization and parallelism over shards, MEDS-Tab significantly reduces the computation required to generate high-quality baseline models for diverse supervised learning tasks.
-
-- Cost Efficiency: MEDS-Tab is dramatically more cost-effective compared to existing solutions
-- Strong Performance: MEDS-Tab provides robustness and high performance across various datasets compared with other frameworks.
+- **Fast:** the native C++ engine tabularizes a whole MIMIC-IV task in about a minute on a laptop, and `medsboost`, MEDS-Tab's own gradient-boosted trees for these matrices, trains in a few minutes.
+- **Strong baselines:** on 40 MIMIC-IV and NWICU tasks of a recent benchmark of 12 models ([arXiv 2609.18134](https://arxiv.org/abs/2609.18134)), one untuned `medsboost` model per task matches the benchmark's strongest model, MEDS-Tab-large, on average (see [Results](#results)).
+- **Any MEDS dataset, any task:** tasks are defined by label files (for example from [ACES](https://github.com/justin13601/ACES) or [MEDS-DEV](https://github.com/Medical-Event-Data-Standard/MEDS-DEV)); features are computed at each label's prediction time.
+- **Runs anywhere:** compiled wheels for Linux, Windows and Apple-silicon macOS; a pure-Python fallback elsewhere.
 
 ### I. Transform to MEDS
 
-MEDS-Tab leverages the recently developed, minimal, easy-to-use Medical Event Data Standard (MEDS) schema to standardize structured EHR data to a consistent schema from which baselines can be reliably produced across arbitrary tasks and settings. In order to use MEDS-Tab, you will first need to transform your raw EHR data to a MEDS format, which can be done using the following libraries:
+MEDS-Tab reads data in the MEDS format. To convert your raw EHR data, use:
 
-- [MEDS Transforms](https://github.com/mmcdermott/MEDS_transforms) for a set of functions and scripts for extraction to and transformation/pre-processing of MEDS-formatted data.
-- [MEDS ETL](https://github.com/Medical-Event-Data-Standard/meds_etl) for a collection of ETLs from common data formats to MEDS. The package library currently supports MIMIC-IV, OMOP v5, and MEDS FLAT (a flat version of MEDS).
+- [MEDS Transforms](https://github.com/mmcdermott/MEDS_transforms), functions and scripts to extract and pre-process MEDS data;
+- [MEDS ETL](https://github.com/Medical-Event-Data-Standard/meds_etl), ETLs from common formats (MIMIC-IV, OMOP v5, MEDS FLAT);
+- dataset-specific ETLs such as [MIMIC-IV MEDS](https://github.com/Medical-Event-Data-Standard/MIMIC_IV_MEDS).
 
 ### II. Run MEDS-Tab
 
-- Run the MEDS-Tab Command-Line Interface tool (`MEDS-Tab-cli`) to extract cohorts based on your task - check out the [Usage Guide](https://meds-tab.readthedocs.io/en/latest/usage_guide/) and the [MIMIC-IV tutorial](https://github.com/mmcdermott/MEDS_Tabular_AutoML/tree/main/MIMICIV_TUTORIAL)!
-
-- Painless Reproducibility: Use [MEDS-Tab](https://github.com/mmcdermott/MEDS_Tabular_AutoML/tree/main/MIMICIV_TUTORIAL) to obtain comparable, reproducible, and well-tuned XGBoost results tailored to your dataset-specific feature space!
-
-By following these steps, you can seamlessly transform your dataset, define necessary criteria, and leverage powerful machine learning tools within the MEDS-Tab ecosystem. This approach not only simplifies the process but also ensures high-quality, reproducible results for your machine learning tasks for health projects. It can reliably take no more than a week of full-time human effort to perform Steps I-V on new datasets in reasonable raw formulations!
+Describe the codes, tabularize a task, and train a model with four commands (see [Quick Start](#quick-start)), then read the [Usage Guide](https://meds-tab.readthedocs.io/en/latest/usage_guide/) and the [MIMIC-IV tutorial](https://github.com/mmcdermott/MEDS_Tabular_AutoML/tree/main/MIMICIV_TUTORIAL) for every option.
 
 ______________________________________________________________________
 
 # Usage
 
-This repository consists of two key pieces:
+This repository has two parts:
 
-1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing patient records in MEDS over arbitrary time windows (e.g. 1 year, 6 months, etc.), which go backward in time from a given index date.
-2. Running a gradient-boosted-trees AutoML pipeline (by default `medsboost`, MEDS-Tab's own booster for wide, sparse matrices, called `sparsegb` in 0.4.0; XGBoost, LightGBM and others are also available) over these tabular features to predict arbitrary binary classification or regression downstream tasks defined over these datasets. The "AutoML" part of this is not particularly advanced -- what is more advanced is the efficient construction, storage, and loading of tabular features for the candidate AutoML models, enabling a far more extensive search over a much larger total number of features than prior systems.
+1. Construction and efficient loading of tabular (flat, non-longitudinal) summary features describing each subject's record over time windows that end at a label's prediction time (e.g. the last day, 30 days, year, or the full history).
+2. An AutoML pipeline over these features for binary classification tasks: by default a hyperparameter sweep of `medsboost` (called `sparsegb` in 0.4.0), with XGBoost, LightGBM and scikit-learn models also available. The search itself is simple; what MEDS-Tab makes fast is building, storing and loading very wide feature sets, so far more features can be searched over than in prior systems.
 
 ## Quick Start
 
-To use MEDS-Tab, install the dependencies following commands below:
-
-**Pip Install**
+### Install
 
 ```console
 pip install meds-tab
@@ -63,84 +58,113 @@ On Linux (x86_64 and aarch64), Windows (x86_64) and Apple-silicon Macs with macO
 launcher, and the native tabularization engine. Check with
 `python -c "from MEDS_tabular_automl import medsboost; print(medsboost.is_available())"`.
 
-On other platforms or Python versions, pip installs a pure-Python wheel without them. To build them there,
-install from source with a C++17 compiler and OpenMP (GCC on Linux; Apple clang after `brew install libomp`
-on macOS; Visual Studio's C++ build tools on Windows):
+On other platforms or Python versions, pip installs a pure-Python wheel without them: tabularization then
+uses its Python implementation, and you pick another model with `model_launcher=lightgbm` or
+`model_launcher=xgboost`. To build them there, install from source with a C++17 compiler and OpenMP (GCC on
+Linux; Apple clang after `brew install libomp` on macOS; Visual Studio's C++ build tools on Windows):
 
 ```console
 pip install --no-binary meds-tab meds-tab
-```
-
-**Local Install**
-
-```console
-# clone the git repo
+# or, from a clone of this repository:
 pip install .
 ```
+
+### Run
+
+With MEDS data in `$MEDS_DIR/data` and a task's labels in `$LABELS_DIR` (`<split>/<shard>.parquet`, one file
+per data shard):
+
+```console
+meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR"
+meds-tab-tabularize-static "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
+meds-tab-tabularize-time-series "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
+meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
+    "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=100"
+```
+
+This uses the default windows (`1d`, `7d`, `30d`, `365d`, full history) and aggregations; set
+`tabularization.window_sizes` and `tabularization.aggs` to change them. Drop `--multirun` to train a single
+model with default hyperparameters. Models, predictions and tuning and held-out AUROCs are written under
+`$MODEL_DIR`.
 
 ## Scripts and Examples
 
 For an end-to-end example over MIMIC-IV, see the [MIMIC-IV tutorial](https://github.com/mmcdermott/MEDS_Tabular_AutoML/tree/main/MIMICIV_TUTORIAL).
 
-See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for a local example of the end-to-end pipeline being run on synthetic data. This script is a functional test that is also run with `pytest` to verify the correctness of the algorithm.
+See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for the whole pipeline run on synthetic data. It is a functional test, also run with `pytest`.
+
+## Results
+
+Held-out AUROC of one `medsboost` model per task, with default hyperparameters (no sweep), against the 12
+models of the benchmark in [arXiv 2609.18134](https://arxiv.org/abs/2609.18134) (Tables 9–12). Features:
+7 windows (2 hours to the full history) × all aggregations, codes seen at least 10 times. Run on a laptop with
+6 cores and 61 GB of memory.
+
+| Task suite              | Tasks | `medsboost`, mean AUROC | MEDS-Tab-large, mean AUROC | Tasks where `medsboost` ranks first of 13 |
+| ----------------------- | ----: | ----------------------: | -------------------------: | ----------------------------------------: |
+| MIMIC-IV clinical (MC)  |    10 |                   0.862 |                      0.860 |                                         8 |
+| MIMIC-IV generated (MG) |    10 |                   0.953 |                      0.951 |                                         6 |
+| NWICU clinical (NC)     |    10 |                   0.816 |                      0.818 |                                         3 |
+| NWICU generated (NG)    |    10 |                   0.845 |                      0.845 |                                         4 |
+
+Each MIMIC-IV task took about 1 minute to tabularize and 3 to 6 minutes to train, with a peak of 11 to 51 GB
+of memory during training; each NWICU task took about 30 seconds in total. These are single runs without
+confidence intervals, and the benchmark's own numbers are point estimates: read per-task differences below
+about 0.01 as noise.
 
 # The MEDS-Tab Architecture
 
-MEDS-Tab addresses two key challenges in healthcare machine learning: efficiently tabularizing large-scale electronic health record (EHR) data and training competitive baseline models on this tabularized data. This document outlines the architecture and implementation details of MEDS-Tab's pipeline.
+MEDS-Tab addresses two challenges in healthcare machine learning: efficiently tabularizing large-scale electronic health record (EHR) data, and training competitive baseline models on it. It scales to hundreds of millions of events and hundreds of thousands of feature columns through:
 
-MEDS-Tab is designed to scale to hundreds of millions of events and tens of thousands of unique medical codes. Performance optimization is achieved through:
-
-- Efficient parallel processing when appropriate
-- Strategic use of sparse data structures
-- Memory-aware data loading and processing
-- Configurable processing parameters for different hardware capabilities
+- sparse data structures throughout, from tabularization to model training;
+- sharding, so each piece of work fits in memory and runs independently;
+- a native C++ engine for tabularization and a gradient-boosting library written for these sparse matrices;
+- configurable processing parameters for different hardware.
 
 ## Overview
 
-The MEDS-Tab pipeline consists of five main stages, with the first being optional. The pipeline begins with an optional (1) data resharding stage that optimizes processing by restructuring input data into manageable chunks. This is followed by (2) data description, which computes some summary statistics over the features in the dataset. The core processing happens in the (3) static and (4) time-series tabularization stages, which compute task-specific features: one row per label of a prediction task, with every window ending at the label's prediction time. Finally, the (5) model training stage provides efficient training capabilities with support for multiple model types and hyperparameter optimization.
+The pipeline has five stages, the first optional:
+
+1. **Resharding** (optional) restructures the input data into manageable shards.
+2. **Data description** (`meds-tab-describe`) computes per-code statistics on the training subjects, used to select features.
+3. **Static** and
+4. **time-series tabularization** (`meds-tab-tabularize-static`, `meds-tab-tabularize-time-series`) compute task-specific features: one row per label of a prediction task, with every window ending at the label's prediction time.
+5. **Model training** (`meds-tab-model`) trains one model or runs a hyperparameter sweep, and evaluates the best model on the held-out split.
 
 Versions up to 0.2.0 could also tabularize every event time once and then cache each task's rows (`meds-tab-cache-task`); that workflow has been removed (see the [usage guide](https://meds-tab.readthedocs.io/en/latest/usage_guide/)).
 
 ## Memory Management Via Sparse Data Structures
 
-Memory management is a central consideration in MEDS-Tab's design. The system employs several key strategies to handle large-scale medical datasets efficiently:
-
-Sparse matrix operations form the foundation of our memory management approach. We utilize scipy.sparse for memory-efficient storage of sparse non-zero elements, which is particularly effective for medical data where most potential features are not present for any given patient at any given time.
-
-Data sharding complements our sparse matrix approach by breaking data into manageable chunks. This enables both memory-efficient processing and parallelization. Shards are processed independently, allowing us to handle datasets that would be impossible to process as a single unit.
-
-The system implements efficient aggregation using Polars for fast rolling window computations. This optimizes same-day event aggregation and maintains memory efficiency during temporal calculations.
-
-## Improved Computational Speed Via Parallel Processing
-
-Our processing strategy differentiates between sequential and parallel operations based on computational needs and data dependencies. The data description and static tabularization stages operate sequentially, as they have manageable computational requirements. In contrast, time-series tabularization and model training leverage parallel processing over independent workers (which may be spawned on different cores on a local machine or over a slurm cluster) to handle their more intensive computational demands.
-
-Data flow through the pipeline is optimized through caching and sharding. Each stage's output is structured to minimize memory requirements while maintaining accessibility for subsequent stages. The system preserves sparsity wherever possible and uses efficient shard management to increase processing speed and reduce total memory consumption.
+Most codes are absent for any given subject at any given time, so features are stored as sparse matrices (`scipy.sparse`, and `.npz` blocks on disk), one block per shard, window and aggregation. Shards are processed independently, which keeps memory bounded and lets work run in parallel. In our MIMIC-IV runs, tabularization needed about 2 GB of memory for every task; model training loads the task's matrices, so its memory grows with the number of labels and features.
 
 ## Native Backend
 
-Static and time-series tabularization can also run on an optional C++ engine, included in the compiled
-wheels on Linux and Apple-silicon macOS and compiled when MEDS-Tab is installed from source. Select it with `backend=native` (the default is `backend=python`). It
-writes the same files as the Python implementation, so `TabularDataset` and the model launchers are
-unchanged. See the [native backend guide](docs/native_backend.md).
+Static and time-series tabularization run on a C++ engine by default: the setting `backend=auto` uses it
+whenever it is built and supports the configuration, and otherwise uses the Python implementation, logging
+why. The engine is included in the compiled wheels (Linux, Windows and Apple-silicon macOS) and built by a
+source install. It writes the same files as the Python implementation, byte for byte, so `TabularDataset` and
+the model launchers are unchanged. It is much faster: on a 10% MIMIC-IV cohort it tabularizes in about
+12 seconds, against 26.5 minutes for the Python implementation with 16 workers. Force one implementation with
+`backend=native` or `backend=python`, or with the `MEDS_TAB_BACKEND` environment variable. See the
+[native backend guide](docs/native_backend.md).
 
 ## Feature Engineering Via Rolling Windows and Aggregation Functions
 
-MEDS-Tab implements a comprehensive feature engineering approach that handles both static and temporal data. For static features, we capture both presence and, for codes with static numeric values, the mean of the subject's values (`static/mean`). Time-series features are processed through various aggregation methods including counts, sums, minimums, and maximums. These aggregations can be computed over multiple time windows (1 day, 30 days, 365 days, or the full patient history), providing temporal context at different scales.
-
-Our feature engineering framework maintains flexibility while enforcing consistency. All aggregations preserve sparsity where possible, and the system includes configurable thresholds for feature inclusion based on frequency and relevance to the target task.
+Static features capture the presence of each code and, for codes with static numeric values, the mean of the subject's values (`static/mean`). Time-series features aggregate codes and numeric values (counts, sums, sums of squares, minimums and maximums) over windows such as 2 hours, 1 day, 30 days, 365 days or the full history, ending at each label's prediction time. Codes can be filtered by frequency in the training data (`tabularization.min_code_inclusion_count` and related options), and the model stage can treat these thresholds as hyperparameters.
 
 ## Model Support and Normalization/Imputation Options
 
-The architecture includes robust support for multiple model types. The default and recommended one is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data: on the MIMIC-IV MG tasks it trains about 10x faster than LightGBM at the same held-out AUROC, which makes large hyperparameter sweeps practical. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files. XGBoost and LightGBM are also supported, as are KNN Classifier, Logistic Regression, Random Forest Classifier, and SGD Classifier. An experimental AutoGluon integration provides automated model selection and tuning capabilities.
+The default and recommended model is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. It runs the same algorithm as LightGBM (Newton boosting, histograms, leaf-wise growth, bagging, early stopping), but never stores or scans absent entries, drops features that can no longer split, and samples one window per code and aggregation in each tree. On the 10 MIMIC-IV MG tasks it trains 12.5 times faster than LightGBM at the same held-out AUROC. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files.
 
-Data processing options are designed to maintain efficiency while providing necessary transformations. Normalization options (standard scaler, max abs scaler) preserve sparsity, while imputation methods (mean, median, mode) are available when dense representations are required or beneficial.
+XGBoost and LightGBM are also supported, as are KNN, logistic regression, random forest and SGD classifiers from scikit-learn. An experimental AutoGluon integration provides automated model selection.
+
+Normalization options (standard scaler, max-abs scaler) preserve sparsity, while imputation methods (mean, median, mode) are available when dense representations help other models.
 
 ## Additional Design Considerations
 
 **Extensibility and maintainability**: The pipeline's modular design allows for the addition of new feature types, aggregation methods, and model support. Contributions are welcome!
 
-**Highly Configurable**: This pipeline is highly configurable via parameters that allow users to adjust processing based on their specific needs and hardware constraints. See the usage guide for more details.
+**Highly Configurable**: Every stage is configured with Hydra; see the usage guide for the parameters.
 
 ## Roadmap
 
@@ -155,8 +179,8 @@ MEDS-Tab has several key limitations which we plan to address in future changes.
 ### Improvements to the modeling pipeline
 
 1. We should likely decorrelate the default aggregations and/or window sizes we use prior to passing them into the models as features: [#27](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/27)
-2. We need to do a detailed parameter study over the hyperparameter sweep options to find good defaults for these kinds of problems and models: [#33](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/33)
-3. We should support a more extensive set of pipeline operations and model architectures: [#37](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/37)
+2. We should support a more extensive set of pipeline operations and model architectures: [#37](https://github.com/mmcdermott/MEDS_Tabular_AutoML/issues/37)
+3. `medsboost` handles binary tasks only; multiclass and regression are not supported yet.
 
 ### Technical debt / code improvements
 

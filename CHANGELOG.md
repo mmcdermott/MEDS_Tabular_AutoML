@@ -2,9 +2,11 @@
 
 ## 0.4.1
 
-Upgrading from 0.4.0 changes no results: tabularization and the model are unchanged. The default model
-launcher is now called `medsboost` (it was `sparsegb`, which still works with a warning), and Windows gets the
-native engine and `medsboost`, with compiled wheels.
+Upgrading from 0.4.0 changes no results: tabularized features and the model are unchanged. Tabularization now
+runs on the native C++ engine by default whenever it can (`backend=auto`), which writes the same files much
+faster; `backend=python` restores the previous default. The default model launcher is now called `medsboost`
+(it was `sparsegb`, which still works with a warning), and Windows gets the native engine and `medsboost`,
+with compiled wheels.
 
 ### Added
 
@@ -14,6 +16,14 @@ native engine and `medsboost`, with compiled wheels.
 
 ### Changed
 
+- **The native backend is the default for tabularization**: the new default `backend=auto` runs
+    `meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` on the C++ engine whenever it is built
+    and supports the configuration, and on the Python implementation otherwise, logging why (engine not built,
+    an aggregation or window size it does not implement, or a non-default `output_tabularized_dir`). Both write
+    the same files. `backend=native` still fails instead of falling back, `backend=python` forces the Python
+    implementation, and `MEDS_TAB_BACKEND` still sets the default.
+- **README** brought up to date: install and a command-line quick start, benchmark results against arXiv
+    2609.18134, the native backend default, Windows, `medsboost`, and binary tasks only.
 - **`sparsegb` is renamed `medsboost`**: the model launcher (`model_launcher=medsboost`, the default), the Python
     module (`MEDS_tabular_automl.medsboost`, with `MedsBoost` and `MedsBoostModel`) and the C++ library
     (`csrc/medsboost`). The old names still work and warn: `model_launcher=sparsegb`,

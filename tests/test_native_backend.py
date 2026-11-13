@@ -367,17 +367,33 @@ def test_backend_selection(monkeypatch):
     monkeypatch.delenv("MEDS_TAB_BACKEND", raising=False)
     with initialize(version_base=None, config_path=CONFIGS):
         cfg = compose(config_name="tabularization", overrides=["input_dir=in", "output_dir=out"])
-    assert cfg.backend == "python" and not stages.use_native(cfg)
+    # auto (the default) runs the native backend when it can, and falls back to Python where native raises.
+    assert cfg.backend == "auto" and stages.use_native(cfg)
     cfg.backend = "native"
     assert stages.use_native(cfg)
-    cfg.tabularization.aggs = ["code/count", "value/has_values_count"]
-    with pytest.raises(RuntimeError, match="does not implement"):
-        stages.use_native(cfg)
-    cfg.tabularization.aggs = ["code/count"]
-    cfg.tabularization.window_sizes = ["1mo"]
-    with pytest.raises(RuntimeError, match="window size"):
-        stages.use_native(cfg)
-    cfg.tabularization.window_sizes = ["full"]
+    cfg.backend = "python"
+    assert not stages.use_native(cfg)
+
+    def cases():
+        cfg.tabularization.aggs = ["code/count", "value/has_values_count"]
+        yield "does not implement"
+        cfg.tabularization.aggs = ["code/count"]
+        cfg.tabularization.window_sizes = ["1mo"]
+        yield "window size"
+        cfg.tabularization.window_sizes = ["full"]
+        default_out = cfg.output_tabularized_dir
+        cfg.output_tabularized_dir = "elsewhere"
+        yield "default location"
+        cfg.output_tabularized_dir = default_out
+
+    for match in cases():
+        cfg.backend = "native"
+        with pytest.raises(RuntimeError, match=match):
+            stages.use_native(cfg)
+        cfg.backend = "auto"
+        assert not stages.use_native(cfg)
+    cfg.backend = "auto"
+    assert stages.use_native(cfg)
 
     def not_built():
         raise FileNotFoundError(engine.NOT_BUILT)
@@ -385,8 +401,11 @@ def test_backend_selection(monkeypatch):
     monkeypatch.setattr(engine, "library_path", not_built)
     engine.library.cache_clear()
     try:
+        cfg.backend = "native"
         with pytest.raises(RuntimeError, match="not built"):
             stages.use_native(cfg)
+        cfg.backend = "auto"
+        assert not stages.use_native(cfg)
         cfg.backend = "python"
         assert not stages.use_native(cfg)
     finally:
