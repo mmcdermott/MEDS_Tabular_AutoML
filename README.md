@@ -78,14 +78,21 @@ per data shard):
 meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR"
 meds-tab-tabularize-static "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
 meds-tab-tabularize-time-series "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
-meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
-    "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=100"
+meds-tab-model "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
+    "output_model_dir=$MODEL_DIR" "task_name=$TASK"
 ```
 
 This uses the default windows (`1d`, `7d`, `30d`, `365d`, full history) and aggregations; set
-`tabularization.window_sizes` and `tabularization.aggs` to change them. Drop `--multirun` to train a single
-model with default hyperparameters. Models, predictions and tuning and held-out AUROCs are written under
-`$MODEL_DIR`.
+`tabularization.window_sizes` and `tabularization.aggs` to change them. The last command trains a single
+model with default hyperparameters. To tune hyperparameters instead, run it as a multirun sweep (raise
+`hydra.sweeper.n_trials` for a more thorough search, at proportionally higher cost):
+
+```console
+meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
+    "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=5"
+```
+
+Models, predictions and tuning and held-out AUROCs are written under `$MODEL_DIR`.
 
 ## Scripts and Examples
 
