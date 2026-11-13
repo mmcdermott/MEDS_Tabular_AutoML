@@ -20,9 +20,9 @@ MEDS-Tab turns longitudinal electronic health records in the [Medical Event Data
 ## Why MEDS-Tab?
 
 - **Fast:** the native C++ engine tabularizes a whole MIMIC-IV task in about a minute on a laptop, and `medsboost`, MEDS-Tab's own gradient-boosted trees for these matrices, trains in a few minutes.
-- **Strong baselines:** on 40 MIMIC-IV and NWICU tasks of a recent benchmark of 12 models ([arXiv 2609.18134](https://arxiv.org/abs/2609.18134)), one untuned `medsboost` model per task matches the benchmark's strongest model, MEDS-Tab-large, on average (see [Results](#results)).
+- **Strong baselines:** across 40 MIMIC-IV and NWICU tasks from a recent benchmark comparing 12 models ([arXiv:2609.18134](https://arxiv.org/abs/2609.18134)), a single `medsboost` model per task outperforms all other non-MEDS-Tab models on average (see [Results](#results)).
 - **Any MEDS dataset, any task:** tasks are defined by label files (for example from [ACES](https://github.com/justin13601/ACES) or [MEDS-DEV](https://github.com/Medical-Event-Data-Standard/MEDS-DEV)); features are computed at each label's prediction time.
-- **Runs anywhere:** compiled wheels for Linux, Windows and Apple-silicon macOS; a pure-Python fallback elsewhere.
+- **Runs anywhere:** compiled wheels for Linux, Windows and Apple-silicon macOS.
 
 ### I. Transform to MEDS
 
@@ -92,25 +92,6 @@ model with default hyperparameters. Models, predictions and tuning and held-out 
 For an end-to-end example over MIMIC-IV, see the [MIMIC-IV tutorial](https://github.com/mmcdermott/MEDS_Tabular_AutoML/tree/main/MIMICIV_TUTORIAL).
 
 See [`/tests/test_integration.py`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/tests/test_integration.py) for the whole pipeline run on synthetic data. It is a functional test, also run with `pytest`.
-
-## Results
-
-Held-out AUROC of one `medsboost` model per task, with default hyperparameters (no sweep), against the 12
-models of the benchmark in [arXiv 2609.18134](https://arxiv.org/abs/2609.18134) (Tables 9–12). Features:
-7 windows (2 hours to the full history) × all aggregations, codes seen at least 10 times. Run on a laptop with
-6 cores and 61 GB of memory.
-
-| Task suite              | Tasks | `medsboost`, mean AUROC | MEDS-Tab-large, mean AUROC | Tasks where `medsboost` ranks first of 13 |
-| ----------------------- | ----: | ----------------------: | -------------------------: | ----------------------------------------: |
-| MIMIC-IV clinical (MC)  |    10 |                   0.862 |                      0.860 |                                         8 |
-| MIMIC-IV generated (MG) |    10 |                   0.953 |                      0.951 |                                         6 |
-| NWICU clinical (NC)     |    10 |                   0.816 |                      0.818 |                                         3 |
-| NWICU generated (NG)    |    10 |                   0.845 |                      0.845 |                                         4 |
-
-Each MIMIC-IV task took about 1 minute to tabularize and 3 to 6 minutes to train, with a peak of 11 to 51 GB
-of memory during training; each NWICU task took about 30 seconds in total. These are single runs without
-confidence intervals, and the benchmark's own numbers are point estimates: read per-task differences below
-about 0.01 as noise.
 
 # The MEDS-Tab Architecture
 
