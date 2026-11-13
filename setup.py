@@ -1,8 +1,8 @@
 """Builds the compiled libraries: the native engine (csrc/, MEDS_tabular_automl.native._engine) and
-sparsegb (csrc/sparsegb/, MEDS_tabular_automl.sparsegb._sparsegb).
+medsboost (csrc/medsboost/, MEDS_tabular_automl.medsboost._medsboost).
 
 Both are C shared libraries loaded with ctypes and declared as optional extension modules, so
-installing MEDS-Tab compiles them when a C++17 compiler (plus OpenMP for sparsegb) is available and
+installing MEDS-Tab compiles them when a C++17 compiler (plus OpenMP for medsboost) is available and
 installs the package without them otherwise: GCC or clang on Linux and macOS, MSVC on Windows. All
 other metadata is in pyproject.toml.
 
@@ -64,18 +64,18 @@ def libomp_prefix() -> Path | None:
     return None
 
 
-def sparsegb_extension() -> Extension | None:
-    """Builds sparsegb (model_launcher=sparsegb), a separate optional library since it needs OpenMP.
+def medsboost_extension() -> Extension | None:
+    """Builds medsboost (model_launcher=medsboost), a separate optional library since it needs OpenMP.
 
     Linux: GCC, or clang with LLVM's libomp. macOS: Apple clang with libomp (`brew install libomp`, or set
     LIBOMP_PREFIX, e.g. to a conda environment with llvm-openmp), or GCC (CC=gcc-14 ...). Windows: MSVC
     with its OpenMP runtime (vcomp140.dll, part of the Visual C++ redistributable).
     """
-    sources = sorted(str(path) for path in Path("csrc/sparsegb").glob("*.cc"))
-    exports = c_api(Path("csrc/sparsegb/sparsegb.cc"), "sgb_")
+    sources = sorted(str(path) for path in Path("csrc/medsboost").glob("*.cc"))
+    exports = c_api(Path("csrc/medsboost/medsboost.cc"), "medsboost_")
     if MSVC:
         return Extension(
-            "MEDS_tabular_automl.sparsegb._sparsegb",
+            "MEDS_tabular_automl.medsboost._medsboost",
             sources=sources,
             language="c++",
             extra_compile_args=["/std:c++17", "/O2", "/EHsc", "/openmp"],
@@ -88,7 +88,7 @@ def sparsegb_extension() -> Extension | None:
     if apple_clang:  # Apple clang's driver has no -fopenmp; hand it to the preprocessor and link libomp
         prefix = libomp_prefix()
         if prefix is None:
-            print("sparsegb: no libomp found (brew install libomp, or set LIBOMP_PREFIX); skipping it.")
+            print("medsboost: no libomp found (brew install libomp, or set LIBOMP_PREFIX); skipping it.")
             return None
         compile_args += ["-Xpreprocessor", "-fopenmp"]
         link_args += ["-lomp", f"-Wl,-rpath,{prefix / 'lib'}"]
@@ -97,7 +97,7 @@ def sparsegb_extension() -> Extension | None:
         compile_args.append("-fopenmp")
         link_args.append("-fopenmp")
     return Extension(
-        "MEDS_tabular_automl.sparsegb._sparsegb",
+        "MEDS_tabular_automl.medsboost._medsboost",
         sources=sources,
         language="c++",
         include_dirs=include_dirs,
@@ -112,5 +112,5 @@ def sparsegb_extension() -> Extension | None:
 if os.environ.get("MEDS_TAB_BUILD_ENGINE") == "0":
     ext_modules = []
 else:
-    ext_modules = [ext for ext in (engine, sparsegb_extension()) if ext is not None]
+    ext_modules = [ext for ext in (engine, medsboost_extension()) if ext is not None]
 setup(ext_modules=ext_modules)

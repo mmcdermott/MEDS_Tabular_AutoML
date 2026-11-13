@@ -3,7 +3,7 @@
 !!! note
 
     The results on this page were produced with XGBoost (`model_launcher=xgboost`), the default model before
-    `sparsegb`. The default and recommended launcher is now `sparsegb`, which trains about 10x faster than
+    `medsboost`. The default and recommended launcher is now `medsboost`, which trains about 10x faster than
     LightGBM at the same held-out AUROC on the MIMIC-IV MG tasks; see the
     [usage guide](usage_guide.md). To reproduce these XGBoost numbers, keep
     `model_launcher=xgboost` in the commands below.

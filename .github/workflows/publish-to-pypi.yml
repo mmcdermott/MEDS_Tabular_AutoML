@@ -25,7 +25,7 @@ jobs:
           name: dist-pure
           path: dist/
 
-  # Compiled wheels with the native engine and sparsegb. pip prefers them over the pure-Python wheel, which
+  # Compiled wheels with the native engine and medsboost. pip prefers them over the pure-Python wheel, which
   # stays as the fallback for other platforms (e.g. Intel macOS) and Python versions.
   build-wheels:
     name: Build compiled wheels on ${{ matrix.os }}

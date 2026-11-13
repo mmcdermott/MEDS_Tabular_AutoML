@@ -1,7 +1,7 @@
 defaults:
   - default
   - tabularization: default
-  - model_launcher: sparsegb
+  - model_launcher: medsboost
   - override hydra/sweeper: optuna
   - override hydra/callbacks: evaluation_callback
   - override hydra/launcher: joblib

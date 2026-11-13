@@ -4,12 +4,17 @@
 
 ### Added
 
-- **Windows support** for the native engine and `sparsegb`: both build with MSVC (Visual Studio's C++ build
+- **Windows support** for the native engine and `medsboost`: both build with MSVC (Visual Studio's C++ build
     tools), and PyPI gets compiled Windows wheels (x86_64, CPython 3.11 to 3.13) with MSVC's OpenMP runtime
     bundled by delvewheel. CI runs the test suite on Windows with both backends.
 
 ### Changed
 
+- **`sparsegb` is renamed `medsboost`**: the model launcher (`model_launcher=medsboost`, the default), the Python
+    module (`MEDS_tabular_automl.medsboost`, with `MedsBoost` and `MedsBoostModel`) and the C++ library
+    (`csrc/medsboost`). The old names still work and warn: `model_launcher=sparsegb`,
+    `MEDS_tabular_automl.sparsegb` (`SparseGB`) and `MEDS_tabular_automl.sparsegb_model` (`SparseGBModel`).
+    Saved models are written with a `medsboost` header and models saved by 0.4.0 still load.
 - The native engine no longer needs zlib: it computes the zip CRC-32 itself (identical values; about 2.7 GB/s,
     against 5 GB/s for zlib, a negligible part of a block write). Its file writes, directory creation and
     bit scans are portable, and on Windows it opens UTF-8 paths and writes files over 2 GB.
@@ -18,8 +23,8 @@
 ### Fixed
 
 - Windows paths: shard names (`get_shard_prefix`, the native pipeline's shards) and the column names that
-    `sparsegb` groups into slots are built with `/` on every platform, as `train/0` and `1d/code/count`; on
-    Windows they had backslashes, so lookups failed and `sparsegb` could not train. The native writer
+    `medsboost` groups into slots are built with `/` on every platform, as `train/0` and `1d/code/count`; on
+    Windows they had backslashes, so lookups failed and `medsboost` could not train. The native writer
     records the same zip "made by" system as Python's `zipfile` on Windows, so its files stay byte-identical
     to the Python writer's.
 

@@ -1,4 +1,4 @@
-// sparsegb: histogram gradient boosting (binary log-loss) for wide, sparse, mostly-zero tabular
+// medsboost: histogram gradient boosting (binary log-loss) for wide, sparse, mostly-zero tabular
 // data.
 //
 // Same algorithm as LightGBM in MEDS-Tab's configuration: Newton boosting from the log-odds of the
@@ -21,8 +21,8 @@
 //  * root histograms by streaming rows; partitions through a per-row bin array of the split
 //    feature, kept for later splits on it; software prefetching.
 //
-// C ABI (ctypes, MEDS_tabular_automl/sparsegb): sgb_train / sgb_predict / sgb_save / sgb_load /
-// sgb_free.
+// C ABI (ctypes, MEDS_tabular_automl/medsboost): medsboost_train / medsboost_predict /
+// medsboost_save / medsboost_load / medsboost_free.
 #include <omp.h>
 
 #include <algorithm>
@@ -44,11 +44,11 @@
 // Software prefetch (a hint; no effect on results).
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
 #include <xmmintrin.h>
-#define SGB_PREFETCH(p) _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0)
+#define MEDSBOOST_PREFETCH(p) _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0)
 #elif defined(_MSC_VER)
-#define SGB_PREFETCH(p) ((void)(p))
+#define MEDSBOOST_PREFETCH(p) ((void)(p))
 #else
-#define SGB_PREFETCH(p) __builtin_prefetch(p)
+#define MEDSBOOST_PREFETCH(p) __builtin_prefetch(p)
 #endif
 
 namespace {
@@ -149,7 +149,7 @@ void make_bins(std::vector<float>& vals, int max_bin, Feat* out) {
   out->ub.back() = std::numeric_limits<float>::infinity();
 }
 
-#ifdef SGB_F32
+#ifdef MEDSBOOST_F32
 struct HB {  // histogram bin (single precision: 12 bytes)
   float g, h;
   int32_t c;
@@ -349,13 +349,13 @@ double predict_row(const Model& m, const int32_t* idx, const float* val, int64_t
 }  // namespace
 
 namespace {
-thread_local std::string last_error;  // message of the last failed sgb_train on this thread
+thread_local std::string last_error;  // message of the last failed medsboost_train on this thread
 }  // namespace
 
 extern "C" {
 
-// Message of the last sgb_train that returned null on this thread ("" if none).
-const char* sgb_last_error() { return last_error.c_str(); }
+// Message of the last medsboost_train that returned null on this thread ("" if none).
+const char* medsboost_last_error() { return last_error.c_str(); }
 
 static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
                         const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
@@ -364,14 +364,14 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
                         const float* held_val, const int32_t* slot_of, const double* params,
                         double* out_tun, double* out_held, double* info);
 
-// Trains a model; returns null (message in sgb_last_error) instead of letting a C++ exception cross
-// the C ABI. Exceptions are only thrown outside OpenMP regions.
-void* sgb_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
-                const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
-                const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
-                const int64_t* held_ptr, const int32_t* held_idx, const float* held_val,
-                const int32_t* slot_of, const double* params, double* out_tun, double* out_held,
-                double* info) {
+// Trains a model; returns null (message in medsboost_last_error) instead of letting a C++ exception
+// cross the C ABI. Exceptions are only thrown outside OpenMP regions.
+void* medsboost_train(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
+                      const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
+                      const int32_t* tun_idx, const float* tun_val, const float* y_tun,
+                      int64_t n_held, const int64_t* held_ptr, const int32_t* held_idx,
+                      const float* held_val, const int32_t* slot_of, const double* params,
+                      double* out_tun, double* out_held, double* info) {
   last_error.clear();
   try {
     return train_impl(n, m_cols, csc_ptr, csc_idx, csc_val, y, n_tun, tun_ptr, tun_idx, tun_val,
@@ -595,7 +595,8 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
     // rco holds 32-bit offsets into sv; refuse layouts they cannot address instead of wrapping.
     if (sp[n] > static_cast<int64_t>(std::numeric_limits<uint32_t>::max()))
       throw std::length_error(
-          "sparsegb supports at most 4294967295 non-zero training entries per column layout, got " +
+          "medsboost supports at most 4294967295 non-zero training entries per column layout, "
+          "got " +
           std::to_string(sp[n]) +
           "; raise tabularization.min_code_inclusion_count, use fewer windows or aggregations, or "
           "train on fewer rows");
@@ -824,10 +825,10 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
         const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = 0; k < mr; ++k) {
           if (k + 16 < mr) {
-            SGB_PREFETCH(rs + ord0[k + 16]);
-            SGB_PREFETCH(re + ord0[k + 16]);
+            MEDSBOOST_PREFETCH(rs + ord0[k + 16]);
+            MEDSBOOST_PREFETCH(re + ord0[k + 16]);
           }
-          if (k + 8 < mr) SGB_PREFETCH(sv.data() + rs[ord0[k + 8]]);
+          if (k + 8 < mr) MEDSBOOST_PREFETCH(sv.data() + rs[ord0[k + 8]]);
           const int64_t i = ord0[k];
           const uint16_t* p = sv.data() + rs[i];
           const uint16_t* e = sv.data() + re[i];
@@ -919,10 +920,10 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
 #pragma omp parallel for schedule(static) if (par_search)
         for (int64_t k = 0; k < np; ++k) {
           if (k + 16 < np) {
-            SGB_PREFETCH(rs + order[P.begin + k + 16]);
-            SGB_PREFETCH(re + order[P.begin + k + 16]);
+            MEDSBOOST_PREFETCH(rs + order[P.begin + k + 16]);
+            MEDSBOOST_PREFETCH(re + order[P.begin + k + 16]);
           }
-          if (k + 8 < np) SGB_PREFETCH(sv.data() + rs[order[P.begin + k + 8]]);
+          if (k + 8 < np) MEDSBOOST_PREFETCH(sv.data() + rs[order[P.begin + k + 8]]);
           const int64_t i = order[P.begin + k];
           // Search only the row's slice of the feature's chunk.
           const uint16_t* a = sv.data() + rs[i];
@@ -1013,14 +1014,14 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
         const uint32_t* re = rs + n;                                   // row ends
         for (int64_t k = S.begin; k < S.end; ++k) {
           if (k + 16 < S.end) {
-            SGB_PREFETCH(rs + ord[k + 16]);
-            SGB_PREFETCH(re + ord[k + 16]);
+            MEDSBOOST_PREFETCH(rs + ord[k + 16]);
+            MEDSBOOST_PREFETCH(re + ord[k + 16]);
           }
           if (k + 8 < S.end) {
             const int64_t i8 = ord[k + 8];
-            SGB_PREFETCH(sv.data() + rs[i8]);
-            SGB_PREFETCH(sv.data() + rs[i8] + 32);
-            SGB_PREFETCH(gh.data() + 2 * i8);
+            MEDSBOOST_PREFETCH(sv.data() + rs[i8]);
+            MEDSBOOST_PREFETCH(sv.data() + rs[i8] + 32);
+            MEDSBOOST_PREFETCH(gh.data() + 2 * i8);
           }
           const int64_t i = ord[k];
           const uint16_t* p = sv.data() + rs[i];
@@ -1179,22 +1180,22 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
 }
 
 // Benchmark entry point: train, write tuning / held-out raw scores, free the model.
-int sgb_fit(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
-            const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
-            const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
-            const int64_t* held_ptr, const int32_t* held_idx, const float* held_val,
-            const int32_t* slot_of, const double* params, double* out_tun, double* out_held,
-            double* info) {
-  void* m =
-      sgb_train(n, m_cols, csc_ptr, csc_idx, csc_val, y, n_tun, tun_ptr, tun_idx, tun_val, y_tun,
-                n_held, held_ptr, held_idx, held_val, slot_of, params, out_tun, out_held, info);
+int medsboost_fit(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const int32_t* csc_idx,
+                  const float* csc_val, const float* y, int64_t n_tun, const int64_t* tun_ptr,
+                  const int32_t* tun_idx, const float* tun_val, const float* y_tun, int64_t n_held,
+                  const int64_t* held_ptr, const int32_t* held_idx, const float* held_val,
+                  const int32_t* slot_of, const double* params, double* out_tun, double* out_held,
+                  double* info) {
+  void* m = medsboost_train(n, m_cols, csc_ptr, csc_idx, csc_val, y, n_tun, tun_ptr, tun_idx,
+                            tun_val, y_tun, n_held, held_ptr, held_idx, held_val, slot_of, params,
+                            out_tun, out_held, info);
   delete static_cast<Model*>(m);
   return 0;
 }
 
 // Raw scores (log-odds) for a CSR matrix with sorted column indices and the training column layout.
-int sgb_predict(const void* model, int64_t n, const int64_t* ptr, const int32_t* idx,
-                const float* val, int threads, double* out) {
+int medsboost_predict(const void* model, int64_t n, const int64_t* ptr, const int32_t* idx,
+                      const float* val, int threads, double* out) {
   const Model& m = *static_cast<const Model*>(model);
 #pragma omp parallel for schedule(dynamic, 256) num_threads(threads)
   for (int64_t r = 0; r < n; ++r)
@@ -1202,22 +1203,24 @@ int sgb_predict(const void* model, int64_t n, const int64_t* ptr, const int32_t*
   return 0;
 }
 
-int64_t sgb_num_trees(const void* model) {
+int64_t medsboost_num_trees(const void* model) {
   return static_cast<int64_t>(static_cast<const Model*>(model)->trees.size());
 }
 
-int64_t sgb_num_features(const void* model) { return static_cast<const Model*>(model)->m_cols; }
+int64_t medsboost_num_features(const void* model) {
+  return static_cast<const Model*>(model)->m_cols;
+}
 
-void sgb_free(void* model) { delete static_cast<Model*>(model); }
+void medsboost_free(void* model) { delete static_cast<Model*>(model); }
 
 // Text format: header, init score, features (id, nbin, zero bin, upper bounds), trees (nodes, then
 // leaf values).
-int sgb_save(const void* model, const char* path) {
+int medsboost_save(const void* model, const char* path) {
   const Model& m = *static_cast<const Model*>(model);
   std::ofstream out(path);
   if (!out) return 1;
   out.precision(17);
-  out << "sparsegb 1\n" << "num_columns " << m.m_cols << "\n" << "init " << m.init << "\n";
+  out << "medsboost 1\n" << "num_columns " << m.m_cols << "\n" << "init " << m.init << "\n";
   out << "features " << m.fids.size() << "\n";
   for (size_t i = 0; i < m.fids.size(); ++i) {
     const Feat& f = m.fs[i];
@@ -1241,14 +1244,16 @@ int sgb_save(const void* model, const char* path) {
   return out.good() ? 0 : 1;
 }
 
-void* sgb_load(const char* path) {
+void* medsboost_load(const char* path) {
   std::ifstream in(path);
   if (!in) return nullptr;
   std::string tag;
   int version = 0;
   Model* m = new Model();
   size_t nf = 0, nt = 0;
-  if (!(in >> tag >> version) || tag != "sparsegb" || version != 1) {
+  // "sparsegb" is the header of models saved before the rename (MEDS-Tab 0.4.0); the format is the
+  // same.
+  if (!(in >> tag >> version) || (tag != "medsboost" && tag != "sparsegb") || version != 1) {
     delete m;
     return nullptr;
   }
