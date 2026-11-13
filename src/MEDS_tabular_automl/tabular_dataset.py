@@ -590,7 +590,7 @@ class TabularDataset(TimeableMixin):
         files = get_model_files(self.cfg, self.split, self._data_shards[0])
 
         def extract_name(test_file):
-            return str(Path(test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
+            return "/".join((test_file.parent.parent.stem, test_file.parent.stem, test_file.stem))
 
         agg_wind_combos = [extract_name(test_file) for test_file in files]
 

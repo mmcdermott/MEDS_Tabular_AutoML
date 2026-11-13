@@ -326,7 +326,7 @@ def write_df(
         ...     write_df(df_coo_array, fp, do_overwrite=False)
         Traceback (most recent call last):
             ...
-        FileExistsError: /tmp/tmp.../test.parquet exists and do_overwrite is False!
+        FileExistsError: ...test.parquet exists and do_overwrite is False!
     """
     if fp.is_file() and not do_overwrite:
         raise FileExistsError(f"{fp} exists and do_overwrite is {do_overwrite}!")
@@ -440,4 +440,4 @@ def get_shard_prefix(base_path: Path, fp: Path) -> str:
     relative_parent = relative_path.parent
     file_name = relative_path.name.split(".")[0]
 
-    return str(relative_parent / file_name)
+    return (relative_parent / file_name).as_posix()

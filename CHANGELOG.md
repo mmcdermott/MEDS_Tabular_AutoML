@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.4.1
+
+Upgrading from 0.4.0 changes no results: tabularized features and the model are unchanged. Tabularization now
+runs on the native C++ engine by default whenever it can (`backend=auto`), which writes the same files much
+faster; `backend=python` restores the previous default. The default model launcher is now called `medsboost`
+(it was `sparsegb`, which still works with a warning), and Windows gets the native engine and `medsboost`,
+with compiled wheels.
+
+### Added
+
+- **Windows support** for the native engine and `medsboost`: both build with MSVC (Visual Studio's C++ build
+    tools), and PyPI gets compiled Windows wheels (x86_64, CPython 3.11 to 3.13) with MSVC's OpenMP runtime
+    bundled by delvewheel. CI runs the test suite on Windows with both backends.
+
+### Changed
+
+- **The native backend is the default for tabularization**: the new default `backend=auto` runs
+    `meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` on the C++ engine whenever it is built
+    and supports the configuration, and on the Python implementation otherwise, logging why (engine not built,
+    an aggregation or window size it does not implement, or a non-default `output_tabularized_dir`). Both write
+    the same files. `backend=native` still fails instead of falling back, `backend=python` forces the Python
+    implementation, and `MEDS_TAB_BACKEND` still sets the default.
+- **README** brought up to date: install and a command-line quick start, benchmark results against arXiv
+    2609.18134, the native backend default, Windows, `medsboost`, and binary tasks only.
+- **`sparsegb` is renamed `medsboost`**: the model launcher (`model_launcher=medsboost`, the default), the Python
+    module (`MEDS_tabular_automl.medsboost`, with `MedsBoost` and `MedsBoostModel`) and the C++ library
+    (`csrc/medsboost`). The old names still work and warn: `model_launcher=sparsegb`,
+    `MEDS_tabular_automl.sparsegb` (`SparseGB`) and `MEDS_tabular_automl.sparsegb_model` (`SparseGBModel`).
+    Saved models are written with a `medsboost` header and models saved by 0.4.0 still load.
+- The native engine no longer needs zlib: it computes the zip CRC-32 itself (identical values; about 2.7 GB/s,
+    against 5 GB/s for zlib, a negligible part of a block write). Its file writes, directory creation and
+    bit scans are portable, and on Windows it opens UTF-8 paths and writes files over 2 GB.
+- The native backend's output lock uses `msvcrt.locking` on Windows (`fcntl.flock` elsewhere).
+
+### Fixed
+
+- Windows paths: shard names (`get_shard_prefix`, the native pipeline's shards) and the column names that
+    `medsboost` groups into slots are built with `/` on every platform, as `train/0` and `1d/code/count`; on
+    Windows they had backslashes, so lookups failed and `medsboost` could not train. The native writer
+    records the same zip "made by" system as Python's `zipfile` on Windows, so its files stay byte-identical
+    to the Python writer's.
+
 ## 0.4.0
 
 Tabularization is unchanged from 0.3.0, so its outputs can be reused. The default model changed: `meds-tab-model`

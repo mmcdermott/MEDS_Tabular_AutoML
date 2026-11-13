@@ -32,17 +32,13 @@ def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
         >>> (root / "subdir_2" / "4.csv").touch()
         >>> (root / "subdir_1" / "A" / "5.csv").touch()
         >>> (root / "subdir_1" / "A" / "15.csv.gz").touch()
-        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "csv")]
-        [PosixPath('1.csv'),
-         PosixPath('2.csv'),
-         PosixPath('subdir_1/3.csv'),
-         PosixPath('subdir_1/A/5.csv'),
-         PosixPath('subdir_2/4.csv')]
-        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "parquet")]
-        [PosixPath('foo.parquet')]
-        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "csv.gz")]
-        [PosixPath('subdir_1/A/15.csv.gz')]
-        >>> [fp.relative_to(root) for fp in list_subdir_files(root, "json")]
+        >>> [fp.relative_to(root).as_posix() for fp in list_subdir_files(root, "csv")]
+        ['1.csv', '2.csv', 'subdir_1/3.csv', 'subdir_1/A/5.csv', 'subdir_2/4.csv']
+        >>> [fp.relative_to(root).as_posix() for fp in list_subdir_files(root, "parquet")]
+        ['foo.parquet']
+        >>> [fp.relative_to(root).as_posix() for fp in list_subdir_files(root, "csv.gz")]
+        ['subdir_1/A/15.csv.gz']
+        >>> [fp.relative_to(root).as_posix() for fp in list_subdir_files(root, "json")]
         []
         >>> list_subdir_files(root / "nonexistent", "csv")
         []
@@ -79,18 +75,18 @@ def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
         ...         "aggs": ["code/count", "value/sum", "static/present"],
         ...     }
         ... })
-        >>> get_model_files(cfg, "train", "0")
-        [PosixPath('data/train/0/1d/code/count.npz'),
-         PosixPath('data/train/0/1d/value/sum.npz'),
-         PosixPath('data/train/0/7d/code/count.npz'),
-         PosixPath('data/train/0/7d/value/sum.npz'),
-         PosixPath('data/train/0/none/static/present.npz')]
-        >>> get_model_files(cfg, "test/IID", "3/0")
-        [PosixPath('data/test/IID/3/0/1d/code/count.npz'),
-         PosixPath('data/test/IID/3/0/1d/value/sum.npz'),
-         PosixPath('data/test/IID/3/0/7d/code/count.npz'),
-         PosixPath('data/test/IID/3/0/7d/value/sum.npz'),
-         PosixPath('data/test/IID/3/0/none/static/present.npz')]
+        >>> [fp.as_posix() for fp in get_model_files(cfg, "train", "0")]
+        ['data/train/0/1d/code/count.npz',
+         'data/train/0/1d/value/sum.npz',
+         'data/train/0/7d/code/count.npz',
+         'data/train/0/7d/value/sum.npz',
+         'data/train/0/none/static/present.npz']
+        >>> [fp.as_posix() for fp in get_model_files(cfg, "test/IID", "3/0")]
+        ['data/test/IID/3/0/1d/code/count.npz',
+         'data/test/IID/3/0/1d/value/sum.npz',
+         'data/test/IID/3/0/7d/code/count.npz',
+         'data/test/IID/3/0/7d/value/sum.npz',
+         'data/test/IID/3/0/none/static/present.npz']
     """
     window_sizes = cfg.tabularization.window_sizes
     aggs = cfg.tabularization.aggs

@@ -192,6 +192,10 @@ OUTPUT_DIR/
 
 Filters the codes by frequency and computes the static features of each label of the task: one row per label, in the order of the label files, holding its subject's static features.
 
+!!! info "Native backend by default"
+
+    Both tabularization stages run on MEDS-Tab's C++ engine whenever it is built and supports the configuration (`backend=auto`, the default), and on the Python implementation otherwise; both write the same files. The engine computes every block in `meds-tab-tabularize-static`, so `meds-tab-tabularize-time-series` then finds them done, and in a multirun over `worker` only worker 0 has work. Use `backend=python` to force the Python implementation described below. See the [native backend guide](native_backend.md).
+
 ```console
 meds-tab-tabularize-static \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
@@ -438,26 +442,27 @@ OUTPUT_DIR/tabularize/
 
 Trains a tabular model on the task's tabularized data (read from `${output_dir}/tabularize`) and its labels (`input_label_dir`). The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
 
-!!! tip "Recommended: `sparsegb` with a hyperparameter sweep"
+!!! tip "Recommended: `medsboost` with a hyperparameter sweep"
 
-    The default model launcher is `sparsegb`, MEDS-Tab's own gradient-boosted trees for wide, sparse
+    The default model launcher is `medsboost` (called `sparsegb` in MEDS-Tab 0.4.0; that name still works but
+    is deprecated), MEDS-Tab's own gradient-boosted trees for wide, sparse
     tabularized data. On the MIMIC-IV MG tasks it trains about 10x faster than LightGBM at the same held-out
     AUROC. Run it as a hyperparameter sweep (below). The data loader caches each split's matrix on its first
     load (`data_loading_params.cache_matrices`, on by default), so later trials do not re-read the
     tabularized files, whatever code threshold they draw.
 
-    `sparsegb` is a compiled library. `pip install meds-tab` includes it on Linux (x86_64 and aarch64) and on
-    Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13. Check with
-    `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
+    `medsboost` is a compiled library. `pip install meds-tab` includes it on Linux (x86_64 and aarch64), on
+    Windows (x86_64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13. Check with
+    `python -c "from MEDS_tabular_automl import medsboost; print(medsboost.is_available())"`.
     Elsewhere, pip installs a pure-Python wheel without it. Build it there from source with a C++17 compiler
     and OpenMP, using `pip install --no-binary meds-tab meds-tab`, or `pip install .` from a clone. That works
-    on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`), and on macOS
+    on Linux with GCC, or with clang when LLVM's OpenMP runtime is installed (e.g. `libomp-dev`); on macOS
     with Apple clang once `libomp` is installed (`brew install libomp`; or set `LIBOMP_PREFIX`, e.g. to a
-    conda environment with `llvm-openmp`). **Windows is not supported yet**: use WSL, or
-    `model_launcher=lightgbm` or `model_launcher=xgboost`. Without the library, `model_launcher=sparsegb`
-    stops with an error before loading any data.
+    conda environment with `llvm-openmp`); and on Windows with Visual Studio's C++ build tools (MSVC). Without
+    the library, `model_launcher=medsboost` stops with an error before loading any data; choose
+    `model_launcher=lightgbm` or `model_launcher=xgboost` instead.
 
-    `sparsegb` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
+    `medsboost` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
 
 ### Hyperparameter Optimization (recommended)
 
@@ -475,9 +480,9 @@ meds-tab-model \
     tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
-This sweeps `sparsegb`'s learning rate, tree size, `min_child_samples`, bagging fraction and L2 penalty, as well
+This sweeps `medsboost`'s learning rate, tree size, `min_child_samples`, bagging fraction and L2 penalty, as well
 as `tabularization.min_code_inclusion_count` (see
-[`configs/model_launcher/sparsegb.yaml`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/model_launcher/sparsegb.yaml)).
+[`configs/model_launcher/medsboost.yaml`](https://github.com/mmcdermott/MEDS_Tabular_AutoML/blob/main/src/MEDS_tabular_automl/configs/model_launcher/medsboost.yaml)).
 Do not pass `tabularization.min_code_inclusion_count` on the command line here: a swept parameter given a value
 is fixed at that value. Each of the `N_PARALLEL_WORKERS` parallel trials uses its share of the CPUs; to run the
 trials one at a time on every CPU instead, set `hydra.sweeper.n_jobs=1 hydra.launcher.n_jobs=1`.
@@ -496,21 +501,21 @@ meds-tab-model \
     tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
-Both commands use `sparsegb`; add `model_launcher=lightgbm`, `model_launcher=xgboost` or another launcher
+Both commands use `medsboost`; add `model_launcher=lightgbm`, `model_launcher=xgboost` or another launcher
 below to train a different model.
 
 ??? note "Args Description for Model Stage"
 
-    - `model_launcher`: `sparsegb` (default), or one of `lightgbm`, `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
+    - `model_launcher`: `medsboost` (default), or one of `lightgbm`, `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
     - `input_dir`: The directory containing the MEDS data
     - `output_dir`: The directory storing the task's tabularized data
     - `input_label_dir`: The directory containing the task's labels, as given to tabularization
     - `output_model_dir`: Where to save model outputs
     - `hydra.sweeper.n_trials`: Number of trials for hyperparameter optimization
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
-    - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of sparsegb (with its default `model_launcher.model.threads=0`), XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`; for XGBoost and LightGBM, also set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
+    - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of medsboost (with its default `model_launcher.model.threads=0`), XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`; for XGBoost and LightGBM, also set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
     - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
-    - `sparsegb` (the default launcher): MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP; see the tip above) and handles binary tasks. Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`).
+    - `medsboost` (the default launcher): MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP; see the tip above) and handles binary tasks. Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`).
     - A swept parameter given a value on the command line is fixed at that value. Every model launcher's sweep space includes `tabularization.min_code_inclusion_count`; leave it off the command line, as in the recommended command above, to let the sweep search it.
     - `data_loading_params.cache_matrices` (on by default): caches each split's matrix, with every tabularized column, under `cache_dir` (default `<output_dir>/.cache`) the first time it is loaded. Later loads, such as the other trials of a sweep, read the cache and apply their own code filter instead of reading and stacking every block again. The data is the same as without it. It costs about one more copy of the task's tabularized data on disk (3.8 GB for MIMIC-IV MG1), is rebuilt when the tabularized files or labels change, and is not used with an imputer or a normalizer. Set `data_loading_params.cache_matrices=false` to save the disk space; delete `<output_dir>/.cache/matrices` to reclaim it.
 
@@ -573,14 +578,14 @@ OUTPUT_MODEL_DIR/
     ├── best_trial/
     │   ├── config.log
     │   ├── performance.log
-    │   └── sparsegb.txt
+    │   └── medsboost.txt
     ├── hydra/
     │   └── optimization_results.yaml
     └── sweep_results/
         └── TRIAL_*/
             ├── config.log
             ├── performance.log
-            └── sparsegb.txt
+            └── medsboost.txt
 ```
 
 ### Complete Directory Structure
@@ -607,7 +612,7 @@ OUTPUT_MODEL_DIR/
 
                 - 📄 config.log
                 - 📄 performance.log
-                - 📄 sparsegb.txt
+                - 📄 medsboost.txt
 
             ??? folder "hydra"
 
@@ -619,7 +624,7 @@ OUTPUT_MODEL_DIR/
 
                     - 📄 config.log
                     - 📄 performance.log
-                    - 📄 sparsegb.txt
+                    - 📄 medsboost.txt
 
                 ??? folder "TRIAL_2_ID"
 

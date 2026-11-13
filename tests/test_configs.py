@@ -5,8 +5,8 @@ from hydra import compose, initialize
 from omegaconf import DictConfig
 
 from MEDS_tabular_automl.lightgbm_model import LightGBMModel
+from MEDS_tabular_automl.medsboost_model import MedsBoostModel
 from MEDS_tabular_automl.sklearn_model import SklearnModel
-from MEDS_tabular_automl.sparsegb_model import SparseGBModel
 from MEDS_tabular_automl.xgboost_model import XGBoostModel
 from tests.test_integration import run_command
 
@@ -16,7 +16,8 @@ from tests.test_integration import run_command
     [
         "xgboost",
         "lightgbm",
-        "sparsegb",
+        "medsboost",
+        "sparsegb",  # deprecated alias of medsboost
         "sgd_classifier",
         "knn_classifier",
         "logistic_regression",
@@ -28,7 +29,7 @@ from tests.test_integration import run_command
 @pytest.mark.parametrize("normalization", ["standard_scaler", "max_abs_scaler"])
 def test_model_config(model_launcher_override, imputer, normalization, tmp_path):
     input_dir = "/foo/"
-    code_metadata_fp = f"/{tmp_path!s}/codes.parquet"
+    code_metadata_fp = str(tmp_path / "codes.parquet")
     model_launcher_config_kwargs = {
         "input_dir": input_dir,
         "output_dir": "/bar/",
@@ -54,10 +55,15 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
             assert isinstance(model_launcher, XGBoostModel), (
                 "model_launcher should be an instance of XGBoostModel"
             )
-        case "sparsegb":
-            assert isinstance(model_launcher, SparseGBModel), (
-                "model_launcher should be an instance of SparseGBModel"
+        case "medsboost":
+            assert isinstance(model_launcher, MedsBoostModel), (
+                "model_launcher should be an instance of MedsBoostModel"
             )
+        case "sparsegb":
+            assert isinstance(model_launcher, MedsBoostModel), (
+                "the deprecated sparsegb launcher should still build a MedsBoostModel"
+            )
+            assert type(model_launcher).__name__ == "SparseGBModel"
         case "lightgbm":
             assert isinstance(model_launcher, LightGBMModel), (
                 "model_launcher should be an instance of LightGBMModel"

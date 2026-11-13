@@ -126,10 +126,25 @@ def write_labels(meds: Path, root: Path, seed: int = 1, duplicates: bool = False
         labels.sample(fraction=1.0, shuffle=True, seed=seed).write_parquet(target)
 
 
+def override(key: str, value) -> str:
+    """A Hydra override; paths are quoted with forward slashes, as Windows paths can hold characters Hydra's
+    override grammar rejects unquoted (e.g. the ``~`` of 8.3 short names such as ``RUNNER~1``).
+
+    Examples:
+        >>> override("input_dir", r"C:\\Users\\RUNNER~1\\meds")
+        "input_dir='C:/Users/RUNNER~1/meds'"
+        >>> override("tabularization.window_sizes", "[1d,full]")
+        'tabularization.window_sizes=[1d,full]'
+    """
+    if isinstance(value, str) and ("/" in value or "\\" in value) and not value.startswith("["):
+        value = "'" + value.replace("\\", "/") + "'"
+    return f"{key}={value}"
+
+
 def run(script: str, config: str, values: dict):
     module = importlib.import_module(f"MEDS_tabular_automl.scripts.{script}")
     with initialize(version_base=None, config_path=CONFIGS):
-        cfg = compose(config_name=config, overrides=[f"{k}={v}" for k, v in values.items()])
+        cfg = compose(config_name=config, overrides=[override(k, v) for k, v in values.items()])
     module.main(cfg)
 
 
@@ -197,8 +212,8 @@ def loaded(
             config_name="tabularization",
             overrides=[
                 "input_dir=unused",
-                f"output_dir={output}",
-                f"input_label_dir={labels}",
+                override("output_dir", str(output)),
+                override("input_label_dir", str(labels)),
                 f"tabularization.min_code_inclusion_count={threshold}",
                 f"tabularization.window_sizes={WINDOWS}",
             ],
@@ -352,17 +367,33 @@ def test_backend_selection(monkeypatch):
     monkeypatch.delenv("MEDS_TAB_BACKEND", raising=False)
     with initialize(version_base=None, config_path=CONFIGS):
         cfg = compose(config_name="tabularization", overrides=["input_dir=in", "output_dir=out"])
-    assert cfg.backend == "python" and not stages.use_native(cfg)
+    # auto (the default) runs the native backend when it can, and falls back to Python where native raises.
+    assert cfg.backend == "auto" and stages.use_native(cfg)
     cfg.backend = "native"
     assert stages.use_native(cfg)
-    cfg.tabularization.aggs = ["code/count", "value/has_values_count"]
-    with pytest.raises(RuntimeError, match="does not implement"):
-        stages.use_native(cfg)
-    cfg.tabularization.aggs = ["code/count"]
-    cfg.tabularization.window_sizes = ["1mo"]
-    with pytest.raises(RuntimeError, match="window size"):
-        stages.use_native(cfg)
-    cfg.tabularization.window_sizes = ["full"]
+    cfg.backend = "python"
+    assert not stages.use_native(cfg)
+
+    def cases():
+        cfg.tabularization.aggs = ["code/count", "value/has_values_count"]
+        yield "does not implement"
+        cfg.tabularization.aggs = ["code/count"]
+        cfg.tabularization.window_sizes = ["1mo"]
+        yield "window size"
+        cfg.tabularization.window_sizes = ["full"]
+        default_out = cfg.output_tabularized_dir
+        cfg.output_tabularized_dir = "elsewhere"
+        yield "default location"
+        cfg.output_tabularized_dir = default_out
+
+    for match in cases():
+        cfg.backend = "native"
+        with pytest.raises(RuntimeError, match=match):
+            stages.use_native(cfg)
+        cfg.backend = "auto"
+        assert not stages.use_native(cfg)
+    cfg.backend = "auto"
+    assert stages.use_native(cfg)
 
     def not_built():
         raise FileNotFoundError(engine.NOT_BUILT)
@@ -370,8 +401,11 @@ def test_backend_selection(monkeypatch):
     monkeypatch.setattr(engine, "library_path", not_built)
     engine.library.cache_clear()
     try:
+        cfg.backend = "native"
         with pytest.raises(RuntimeError, match="not built"):
             stages.use_native(cfg)
+        cfg.backend = "auto"
+        assert not stages.use_native(cfg)
         cfg.backend = "python"
         assert not stages.use_native(cfg)
     finally:

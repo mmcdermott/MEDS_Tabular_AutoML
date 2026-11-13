@@ -1,35 +1,40 @@
 # Native Backend
 
-`meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` can run on a C++ engine instead of
-the Python implementation. The commands, their configuration and the files they
-write are unchanged: `TabularDataset` and the model launchers read the native backend's output exactly as
-they read the Python backend's. `meds-tab-describe` and model training are not affected.
+`meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` run on a C++ engine by default, and on
+the Python implementation where the engine can't run. The commands, their configuration and the files they
+write are the same either way: `TabularDataset` and the model launchers read the native backend's output
+exactly as they read the Python backend's. `meds-tab-describe` and model training are not affected.
 
 ## Using it
 
-The engine is included in the compiled wheels that `pip install meds-tab` installs on Linux and on
-Apple-silicon Macs, and is compiled when MEDS-Tab is installed from source with a C++17 compiler and the zlib
-headers available (see below). It is used only when selected:
+The engine is included in the compiled wheels that `pip install meds-tab` installs on Linux, Windows and
+Apple-silicon Macs, and is compiled when MEDS-Tab is installed from source with a C++17 compiler (see below).
+With the default `backend=auto`, the tabularization commands use it whenever they can:
 
 ```bash
 meds-tab-describe input_dir=... output_dir=...
-meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
-meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... backend=native "tabularization.window_sizes=[1d,30d,365d,full]"
+meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
+meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
 ```
 
-| Setting          | Default            | Meaning                                                                            |
-| ---------------- | ------------------ | ---------------------------------------------------------------------------------- |
-| `backend`        | `python`           | `python` or `native`; the `MEDS_TAB_BACKEND` environment variable sets the default |
-| `native.threads` | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)    |
+| Setting          | Default            | Meaning                                                                                    |
+| ---------------- | ------------------ | ------------------------------------------------------------------------------------------ |
+| `backend`        | `auto`             | `auto`, `native` or `python`; the `MEDS_TAB_BACKEND` environment variable sets the default |
+| `native.threads` | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)            |
 
-With `backend=native`, a command fails with an explanation if the engine is not built or the
-configuration uses something it does not implement. To check that the engine is built, run
-`python -c "from MEDS_tabular_automl.native import engine; engine.library()"`.
+- `backend=auto` runs the native backend when it can, and otherwise the Python backend, logging why: the
+    engine is not built, the configuration uses something it does not implement (an aggregation or window
+    size), or `output_tabularized_dir` is not at its default. Both stages decide the same way, since they
+    see the same configuration.
+- `backend=native` fails with that explanation instead of falling back.
+- `backend=python` always uses the Python backend (MEDS-Tab 0.4.0 and earlier defaulted to it).
 
-PyPI has compiled wheels, which contain the engine, for Linux (x86_64 and aarch64, manylinux_2_28) and for
-macOS 15+ on Apple silicon, for Python 3.11 to 3.13; `pip install meds-tab` picks them there. Other platforms
-and Python versions get a pure-Python wheel without the engine; building it there takes a source install,
-with a C++17 compiler and the zlib headers available:
+To check that the engine is built, run `python -c "from MEDS_tabular_automl.native import engine; engine.library()"`.
+
+PyPI has compiled wheels, which contain the engine, for Linux (x86_64 and aarch64, manylinux_2_28), Windows
+(x86_64) and macOS 15+ on Apple silicon, for Python 3.11 to 3.13; `pip install meds-tab` picks them there.
+Other platforms and Python versions get a pure-Python wheel without the engine; building it there takes a
+source install with a C++17 compiler (GCC or clang; MSVC from Visual Studio's C++ build tools on Windows):
 
 - From PyPI: `pip install --no-binary meds-tab meds-tab`.
 - To rebuild an existing installation (installed from the wheel, or built before a compiler was available):
