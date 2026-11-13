@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import shutil
+import time
 import uuid
 import zipfile
 from contextlib import contextmanager
@@ -144,19 +145,58 @@ def output_lock(output_dir: Path):
 
     Holding the lock also means no other run is staging, so leftovers of crashed runs are removed.
     """
-    import fcntl  # POSIX only; imported here so that importing this module never needs it.
-
     internal = output_dir / INTERNAL_DIR
     internal.mkdir(parents=True, exist_ok=True)
     with open(internal / "lock", "a") as handle:
+        _lock_exclusive(handle, f"Waiting for another native run on {output_dir} to finish.")
         try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            logger.info(f"Waiting for another native run on {output_dir} to finish.")
-            fcntl.flock(handle, fcntl.LOCK_EX)
-        for leftovers in ("staging", "trash"):
-            shutil.rmtree(internal / leftovers, ignore_errors=True)
-        yield
+            for leftovers in ("staging", "trash"):
+                shutil.rmtree(internal / leftovers, ignore_errors=True)
+            yield
+        finally:
+            _unlock(handle)
+
+
+def _lock_exclusive(handle, waiting_message: str) -> None:
+    """Takes an exclusive lock on an open file, waiting (and logging once) if another process holds it.
+
+    POSIX: flock on the whole file. Windows: msvcrt.locking on its first byte, retried every second (its
+    blocking mode gives up after 10 s).
+    """
+    if os.name == "nt":
+        import msvcrt  # Windows only; imported here so that importing this module never needs it.
+
+        handle.seek(0)
+        logged = False
+        while True:
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if not logged:
+                    logger.info(waiting_message)
+                    logged = True
+                time.sleep(1)
+    import fcntl  # POSIX only; imported here so that importing this module never needs it.
+
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        logger.info(waiting_message)
+        fcntl.flock(handle, fcntl.LOCK_EX)
+
+
+def _unlock(handle) -> None:
+    """Releases a lock taken by _lock_exclusive (Windows releases a closed file's locks only eventually)."""
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 @dataclass

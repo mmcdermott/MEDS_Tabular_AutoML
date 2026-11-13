@@ -7,9 +7,9 @@ they read the Python backend's. `meds-tab-describe` and model training are not a
 
 ## Using it
 
-The engine is included in the compiled wheels that `pip install meds-tab` installs on Linux and on
-Apple-silicon Macs, and is compiled when MEDS-Tab is installed from source with a C++17 compiler and the zlib
-headers available (see below). It is used only when selected:
+The engine is included in the compiled wheels that `pip install meds-tab` installs on Linux, Windows and
+Apple-silicon Macs, and is compiled when MEDS-Tab is installed from source with a C++17 compiler (see below).
+It is used only when selected:
 
 ```bash
 meds-tab-describe input_dir=... output_dir=...
@@ -26,10 +26,10 @@ With `backend=native`, a command fails with an explanation if the engine is not 
 configuration uses something it does not implement. To check that the engine is built, run
 `python -c "from MEDS_tabular_automl.native import engine; engine.library()"`.
 
-PyPI has compiled wheels, which contain the engine, for Linux (x86_64 and aarch64, manylinux_2_28) and for
-macOS 15+ on Apple silicon, for Python 3.11 to 3.13; `pip install meds-tab` picks them there. Other platforms
-and Python versions get a pure-Python wheel without the engine; building it there takes a source install,
-with a C++17 compiler and the zlib headers available:
+PyPI has compiled wheels, which contain the engine, for Linux (x86_64 and aarch64, manylinux_2_28), Windows
+(x86_64) and macOS 15+ on Apple silicon, for Python 3.11 to 3.13; `pip install meds-tab` picks them there.
+Other platforms and Python versions get a pure-Python wheel without the engine; building it there takes a
+source install with a C++17 compiler (GCC or clang; MSVC from Visual Studio's C++ build tools on Windows):
 
 - From PyPI: `pip install --no-binary meds-tab meds-tab`.
 - To rebuild an existing installation (installed from the wheel, or built before a compiler was available):

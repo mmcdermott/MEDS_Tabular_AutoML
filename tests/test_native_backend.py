@@ -126,10 +126,25 @@ def write_labels(meds: Path, root: Path, seed: int = 1, duplicates: bool = False
         labels.sample(fraction=1.0, shuffle=True, seed=seed).write_parquet(target)
 
 
+def override(key: str, value) -> str:
+    """A Hydra override; paths are quoted with forward slashes, as Windows paths can hold characters Hydra's
+    override grammar rejects unquoted (e.g. the ``~`` of 8.3 short names such as ``RUNNER~1``).
+
+    Examples:
+        >>> override("input_dir", r"C:\\Users\\RUNNER~1\\meds")
+        "input_dir='C:/Users/RUNNER~1/meds'"
+        >>> override("tabularization.window_sizes", "[1d,full]")
+        'tabularization.window_sizes=[1d,full]'
+    """
+    if isinstance(value, str) and ("/" in value or "\\" in value) and not value.startswith("["):
+        value = "'" + value.replace("\\", "/") + "'"
+    return f"{key}={value}"
+
+
 def run(script: str, config: str, values: dict):
     module = importlib.import_module(f"MEDS_tabular_automl.scripts.{script}")
     with initialize(version_base=None, config_path=CONFIGS):
-        cfg = compose(config_name=config, overrides=[f"{k}={v}" for k, v in values.items()])
+        cfg = compose(config_name=config, overrides=[override(k, v) for k, v in values.items()])
     module.main(cfg)
 
 
@@ -197,8 +212,8 @@ def loaded(
             config_name="tabularization",
             overrides=[
                 "input_dir=unused",
-                f"output_dir={output}",
-                f"input_label_dir={labels}",
+                override("output_dir", str(output)),
+                override("input_label_dir", str(labels)),
                 f"tabularization.min_code_inclusion_count={threshold}",
                 f"tabularization.window_sizes={WINDOWS}",
             ],

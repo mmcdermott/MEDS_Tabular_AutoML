@@ -58,21 +58,18 @@ To use MEDS-Tab, install the dependencies following commands below:
 pip install meds-tab
 ```
 
-On Linux (x86_64 and aarch64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13, this
-installs a compiled wheel that includes `sparsegb`, the default and recommended model launcher, and the native
-tabularization engine. Check with
+On Linux (x86_64 and aarch64), Windows (x86_64) and Apple-silicon Macs with macOS 15 or later, for Python
+3.11 to 3.13, this installs a compiled wheel that includes `sparsegb`, the default and recommended model
+launcher, and the native tabularization engine. Check with
 `python -c "from MEDS_tabular_automl import sparsegb; print(sparsegb.is_available())"`.
 
 On other platforms or Python versions, pip installs a pure-Python wheel without them. To build them there,
 install from source with a C++17 compiler and OpenMP (GCC on Linux; Apple clang after `brew install libomp`
-on macOS):
+on macOS; Visual Studio's C++ build tools on Windows):
 
 ```console
 pip install --no-binary meds-tab meds-tab
 ```
-
-Windows is not supported yet for `sparsegb` (use WSL), so pass e.g. `model_launcher=lightgbm` to
-`meds-tab-model` there.
 
 **Local Install**
 

@@ -9,8 +9,23 @@
 
 #include "parallel.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 namespace meds_tab {
 namespace {
+
+// Index of the lowest set bit of a non-zero word.
+inline int LowestBit(std::uint64_t bits) {
+#ifdef _MSC_VER
+  unsigned long index;
+  _BitScanForward64(&index, bits);
+  return static_cast<int>(index);
+#else
+  return __builtin_ctzll(bits);
+#endif
+}
 
 // Whether rows at `time` drop events at or before time - width. False for full
 // history, and when the cutoff would overflow.
@@ -503,7 +518,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
         auto position = code_outer[w * stride + row];
         for (std::size_t word = 0; word < words; ++word) {
           for (auto bits = s.active[word]; bits; bits &= bits - 1) {
-            const auto code = static_cast<std::int32_t>(word * 64 + __builtin_ctzll(bits));
+            const auto code = static_cast<std::int32_t>(word * 64 + LowestBit(bits));
             code_inner[w][position] = vocab[code];
             code_values[w][position++] = static_cast<double>(s.records[code]);
           }
@@ -514,7 +529,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
       auto position = row_start;
       for (std::size_t word = 0; word < words; ++word) {
         for (auto bits = s.valued[word]; bits; bits &= bits - 1) {
-          const auto code = static_cast<std::int32_t>(word * 64 + __builtin_ctzll(bits));
+          const auto code = static_cast<std::int32_t>(word * 64 + LowestBit(bits));
           std::int64_t column = vocab[code];
           if (value_columns) {
             column = value_columns[column];
