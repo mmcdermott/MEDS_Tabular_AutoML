@@ -82,7 +82,8 @@ meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "i
     "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=100"
 ```
 
-This uses the default windows (`1d`, `7d`, `30d`, `365d`, full history) and aggregations; set
+This uses the default windows (`2h`, `12h`, `1d`, `7d`, `30d`, full history) and aggregations (`static/present`,
+`code/count`, `code/recency`, `value/sum`, `value/min`, `value/max`); set
 `tabularization.window_sizes` and `tabularization.aggs` to change them. Drop `--multirun` to train a single
 model with default hyperparameters. Models, predictions and tuning and held-out AUROCs are written under
 `$MODEL_DIR`.

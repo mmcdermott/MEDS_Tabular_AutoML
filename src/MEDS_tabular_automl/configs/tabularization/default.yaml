@@ -7,19 +7,21 @@ min_correlation: null
 max_by_correlation: null
 max_included_codes: null
 do_compress: False
+# Short windows carry much of the signal (dropping 2h and 12h costs AUROC), while 365d adds little between 30d
+# and full. The other supported aggregations (static/mean, value/count, value/sum_sqd) can be added back; they
+# did not change held-out AUROC in the feature ablations but cost training time.
 window_sizes:
+  - "2h"
+  - "12h"
   - "1d"
   - "7d"
   - "30d"
-  - "365d"
   - "full"
 aggs:
   - "static/present"
-  - "static/mean"
   - "code/count"
-  - "value/count"
+  - "code/recency" # 1 / (1 + days since the code's last record); computed over the full history only
   - "value/sum"
-  - "value/sum_sqd"
   - "value/min"
   - "value/max"
 

@@ -15,9 +15,14 @@ from .tabular_dataset import TabularDataset
 logger = logging.getLogger(__name__)
 
 
+# Aggregations that share another's slot: a code's recency is one more alternative to its windowed counts.
+SLOT_OF_AGG = {"code/recency": "code/count"}
+
+
 def column_slots(it: TabularDataset) -> np.ndarray:
     """One slot per (code, aggregation): all windows of a code's aggregation are alternatives; static columns
-    -1.
+    -1. A code's code/recency column joins its code/count slot (see SLOT_OF_AGG), so each tree uses either one
+    of its windowed counts or its recency.
 
     The column order is the loader's: model files in `get_model_files` order, each filtered by its code mask.
     """
@@ -32,7 +37,7 @@ def column_slots(it: TabularDataset) -> np.ndarray:
                 if is_static:
                     slot_of.append(-1)
                 else:
-                    key = (name.rsplit("/", 3)[0], agg)
+                    key = (name.rsplit("/", 3)[0], SLOT_OF_AGG.get(agg, agg))
                     slot_of.append(keys.setdefault(key, len(keys)))
         pos += len(mask)
     return np.asarray(slot_of, dtype=np.int32)
@@ -90,7 +95,34 @@ class MedsBoostModel(GradientBoostedTreesModel):
             self.iheld_out.get_data(),
             slots=column_slots(self.itrain),
         )
+        self._drop_rare_columns(int(self.cfg.get("min_column_nnz") or 0))
         logger.info(f"medsboost: loaded train/tuning/held_out in {time.perf_counter() - start:.1f}s")
+
+    def _drop_rare_columns(self, min_nnz: int):
+        """Drops the columns with fewer than min_nnz nonzero training rows from every split (and their slots).
+
+        Such columns are rarely split on, yet each tree scans them; dropping them speeds training up.
+
+        Examples:
+            >>> X = sp.csc_matrix(np.array([[1, 0, 2], [1, 0, 0], [1, 3, 0]], dtype=np.float32))
+            >>> cfg = OmegaConf.create({"data_loading_params": {"keep_data_in_memory": True}})
+            >>> model = MedsBoostModel(cfg)
+            >>> model._set_data((X, [0, 1, 0]), (X, [0, 1, 0]), (X, [0, 1, 0]), slots=np.array([0, 1, 1]))
+            >>> model._drop_rare_columns(2)
+            >>> model.dtrain[0].toarray().tolist(), model.slots.tolist()
+            ([[1.0], [1.0], [1.0]], [0])
+        """
+        if min_nnz <= 1:
+            return
+        keep = np.flatnonzero(np.diff(self.dtrain[0].indptr) >= min_nnz)
+        logger.info(
+            f"medsboost: keeping {len(keep)} of {self.dtrain[0].shape[1]} columns (min_column_nnz={min_nnz})"
+        )
+        self.dtrain = (self.dtrain[0][:, keep], self.dtrain[1])
+        self.dtuning = (self.dtuning[0][:, keep], self.dtuning[1])
+        self.dheld_out = (self.dheld_out[0][:, keep], self.dheld_out[1])
+        if self.slots is not None:
+            self.slots = np.asarray(self.slots)[keep]
 
     def _set_data(self, train, tuning, held_out, slots):
         def as_float(X):

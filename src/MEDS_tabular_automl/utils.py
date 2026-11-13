@@ -15,7 +15,26 @@ STATIC_VALUE_AGGREGATION = "static/mean"
 
 CODE_AGGREGATIONS = [
     "code/count",
+    "code/recency",
 ]
+
+# Aggregations computed once over the full history up to each row, whatever the window sizes; their files are
+# written under the "full" window. Recency over a shorter window w is a threshold of the full-history value
+# (the code occurred within w exactly when its recency is at least 1 / (1 + w in days)), so it is redundant.
+FULL_HISTORY_AGGREGATIONS = ["code/recency"]
+
+
+def agg_windows(agg: str, window_sizes) -> list[str]:
+    """The windows an aggregation is computed for.
+
+    Examples:
+        >>> agg_windows("code/count", ["1d", "7d"])
+        ['1d', '7d']
+        >>> agg_windows("code/recency", ["1d", "7d"])
+        ['full']
+    """
+    return ["full"] if agg in FULL_HISTORY_AGGREGATIONS else list(window_sizes)
+
 
 VALUE_AGGREGATIONS = [
     "value/count",

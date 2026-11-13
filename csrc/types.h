@@ -25,9 +25,19 @@ struct Rows {
   std::int64_t size;
 };
 
-// Statistics in output order. kCodeCount counts records; the others summarize
-// non-missing values.
-enum Statistic { kCodeCount, kValueCount, kSum, kSumSquared, kMin, kMax, kStatisticCount };
+// Statistics in output order. kCodeCount counts records; kValueCount to kMax
+// summarize non-missing values; kRecency is 1 / (1 + days since the code's last
+// record in the window), over the same entries as kCodeCount.
+enum Statistic {
+  kCodeCount,
+  kValueCount,
+  kSum,
+  kSumSquared,
+  kMin,
+  kMax,
+  kRecency,
+  kStatisticCount
+};
 
 // A CSR matrix that owns its buffers: rows + 1 row offsets (zeroed until filled),
 // then nnz columns (ascending within each row) and values. Resize leaves columns
