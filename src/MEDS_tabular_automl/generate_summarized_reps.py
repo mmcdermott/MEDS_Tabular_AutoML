@@ -449,6 +449,95 @@ def compute_agg(
     return matrix
 
 
+MICROSECONDS_PER_DAY = 86_400_000_000
+
+
+def _window_max(windows: pl.DataFrame, matrix: sparray, num_features: int) -> csr_array:
+    """Per window [min_index, max_index), the maximum stored value of each column, as float64.
+
+    Example:
+        >>> windows = pl.DataFrame({"min_index": [0, 0, 2], "max_index": [2, 3, 2]})
+        >>> matrix = csr_array(([1.0, 2.0, 3.0], ([0, 1, 2], [0, 0, 1])), shape=(3, 2))
+        >>> _window_max(windows, matrix, 2).toarray()
+        array([[2., 0.],
+               [2., 3.],
+               [0., 0.]])
+    """
+    matrix = csr_array(matrix)
+    data, row, col = [], [], []
+    for i, window in enumerate(windows.iter_rows(named=True)):
+        if window["min_index"] == window["max_index"]:
+            continue
+        agg = sparse_aggregate(matrix[window["min_index"] : window["max_index"], :], "max")
+        col.append(agg.col)
+        data.append(agg.data.astype(np.float64))
+        row.append(np.full(len(agg.col), i, dtype=np.int64))
+    if not row:
+        return csr_array((windows.shape[0], num_features), dtype=np.float64)
+    return csr_array(
+        (np.concatenate(data), (np.concatenate(row), np.concatenate(col))),
+        shape=(windows.shape[0], num_features),
+    )
+
+
+def compute_recency(
+    index_df: pl.LazyFrame,
+    matrix: sparray,
+    window_size: str,
+    num_features: int,
+    label_df: pl.LazyFrame | None = None,
+) -> csr_array:
+    """Code/recency: 1 / (1 + days from each code's last record in the window to the window's end).
+
+    Rows are as in `compute_agg`: one per label if label_df is given, else one per (subject_id, time). A code
+    without a record in the window has no entry; a record at the window's end gives 1.
+
+    Example:
+        >>> index_df = pl.DataFrame({
+        ...     "subject_id": [1, 1, 1, 2],
+        ...     "time": pl.Series(["2021-01-01", "2021-01-01", "2021-01-03", "2021-01-02"]).str.strptime(
+        ...         pl.Datetime("us")),
+        ... }).lazy()
+        >>> matrix = csr_array(([1, 1, 1, 1], ([0, 1, 2, 3], [0, 1, 0, 1])), shape=(4, 2))
+        >>> compute_recency(index_df, matrix, "full", 2).toarray().round(4).tolist()
+        [[1.0, 1.0], [1.0, 0.3333], [0.0, 1.0]]
+        >>> label_df = pl.DataFrame({
+        ...     "subject_id": [1, 2],
+        ...     "prediction_time": pl.Series(["2021-01-05", "2021-01-02"]).str.strptime(pl.Datetime("us")),
+        ... }).lazy()
+        >>> compute_recency(index_df, matrix, "full", 2, label_df).toarray().round(4).tolist()
+        [[0.3333, 0.2], [0.0, 1.0]]
+        >>> compute_recency(index_df, matrix, "3d", 2, label_df).toarray().round(4).tolist()
+        [[0.3333, 0.0], [0.0, 1.0]]
+    """
+    group_df = (
+        index_df.with_row_index("index")
+        .group_by(["subject_id", "time"], maintain_order=True)
+        .agg([pl.col("index").min().alias("min_index"), pl.col("index").max().alias("max_index")])
+        .collect()
+    )
+    times = group_df["time"].cast(pl.Datetime("us")).cast(pl.Int64).to_numpy()
+    origin = int(times.min()) if len(times) else 0
+
+    def days(us: np.ndarray) -> np.ndarray:  # Days after the shard's first time, plus 1 so they are nonzero.
+        return (us - origin) / MICROSECONDS_PER_DAY + 1.0
+
+    # One row per timestamp holding each recorded code, with the timestamp (in days) as its value.
+    stamped = _window_max(group_df.select("min_index", pl.col("max_index") + 1), matrix, num_features)
+    stamped.data = days(times)[np.repeat(np.arange(stamped.shape[0]), np.diff(stamped.indptr))]
+    windows = get_rolling_window_indicies(group_df.lazy().select("subject_id", "time"), window_size, label_df)
+    last = _window_max(windows, stamped, num_features)  # Each code's last record in the window, in days.
+    if label_df is None:
+        ends = times
+    else:
+        labels = label_df.collect()
+        column = "time" if "time" in labels.columns else "prediction_time"
+        ends = labels[column].cast(pl.Datetime("us")).cast(pl.Int64).to_numpy()
+    rows = np.repeat(np.arange(last.shape[0]), np.diff(last.indptr))
+    last.data = 1.0 / (1.0 + days(ends)[rows] - last.data)
+    return last
+
+
 def generate_summary(
     feature_columns: list[str],
     index_df: pl.LazyFrame,
@@ -493,5 +582,7 @@ def generate_summary(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
 
+    if agg == "code/recency":
+        return compute_recency(index_df, matrix, window_size, len(ts_columns), label_df)
     out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), label_df, use_tqdm=use_tqdm)
     return out_matrix

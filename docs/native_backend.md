@@ -108,8 +108,8 @@ How the work is scheduled also differs:
     raises an error otherwise.
 - Manifests and staging directories live in `<output_dir>/.meds_tab_native/`.
 
-The native engine implements the aggregations `static/present`, `static/mean`, `code/count` and
-`value/{count,sum,sum_sqd,min,max}`, and window sizes `full` and `<n><us|ms|s|m|h|d|w>`.
+The native engine implements the aggregations `static/present`, `static/mean`, `code/count`, `code/recency`
+and `value/{count,sum,sum_sqd,min,max}`, and window sizes `full` and `<n><us|ms|s|m|h|d|w>`.
 
 ## Performance
 
