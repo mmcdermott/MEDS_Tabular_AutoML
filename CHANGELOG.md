@@ -17,6 +17,12 @@ defaults gives different features.
     the code's windowed counts or its recency, which keeps training time down.
 - `model_launcher.min_column_nnz` (`medsboost`): drops the columns with fewer nonzero training rows before
     training. Off (0) by default.
+- Opt-in code-group roll-ups, `code/group_count` and `code/group_recency`: a code's group is the code without
+    its last `//` segment, and every group of at least two described codes becomes a feature `<group>/group`
+    whose records include those of codes too rare to be features. They count a group's records per window and
+    give the recency of its latest one; `medsboost` puts both in one slot per group. Not in the default
+    aggregations: they added about 0.0015 to 0.0025 held-out AUROC in the ablations but 20–40% training time on
+    large cohorts.
 
 ### Changed
 

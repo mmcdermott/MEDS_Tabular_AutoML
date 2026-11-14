@@ -8,6 +8,7 @@ from scipy.sparse import coo_array, csc_array, csr_array, sparray
 from MEDS_tabular_automl.generate_ts_features import get_feature_names
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
+    GROUP_AGGREGATIONS,
     VALUE_AGGREGATIONS,
     get_min_dtype,
     load_tqdm,
@@ -564,25 +565,31 @@ def generate_summary(
     Raises:
         ValueError: If the aggregation type is not supported.
     """
-    if agg not in CODE_AGGREGATIONS + VALUE_AGGREGATIONS:
-        raise ValueError(
-            f"Invalid aggregation: {agg}. Valid options are: {CODE_AGGREGATIONS + VALUE_AGGREGATIONS}"
-        )
+    valid = CODE_AGGREGATIONS + GROUP_AGGREGATIONS + VALUE_AGGREGATIONS
+    if agg not in valid:
+        raise ValueError(f"Invalid aggregation: {agg}. Valid options are: {valid}")
     if not len(feature_columns):
         raise ValueError("No feature columns provided -- feature_columns must be a non-empty list.")
 
     ts_columns = get_feature_names(agg, feature_columns)
     # Generate summaries for each window size and aggregation
-    code_type, _ = agg.split("/")  # code or value like in code/count
-    # only iterate through code_types that exist in the dataframe columns
-    if not any(c.endswith(code_type) for c in ts_columns):
-        raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {ts_columns}.")
+    if not ts_columns:
+        if agg in GROUP_AGGREGATIONS:  # No code groups (no code has a "//" segment): an empty block.
+            rows = (
+                label_df.select(pl.len()).collect().item()
+                if label_df is not None
+                else index_df.select("subject_id", "time").unique().select(pl.len()).collect().item()
+            )
+            return csr_array((rows, 0), dtype=np.float64)
+        raise ValueError(f"No columns found for aggregation {agg} in feature_columns: {feature_columns}.")
 
     logger.info(
         f"Generating aggregation {agg} for window_size {window_size}, with {len(ts_columns)} columns."
     )
 
-    if agg == "code/recency":
+    if agg in ("code/recency", "code/group_recency"):
         return compute_recency(index_df, matrix, window_size, len(ts_columns), label_df)
+    if agg == "code/group_count":  # A group's records, counted as code/count counts a code's.
+        agg = "code/count"
     out_matrix = compute_agg(index_df, matrix, window_size, agg, len(ts_columns), label_df, use_tqdm=use_tqdm)
     return out_matrix
