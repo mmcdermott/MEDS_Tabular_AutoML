@@ -19,7 +19,7 @@ def test_recency_joins_the_code_count_slot():
             },
         }
     )
-    codes, values, statics = ["A/code", "B/code"], ["A/value"], ["S/static/present"]
+    codes, values, static_names = ["A/code", "B/code"], ["A/value"], ["S/static/present"]
     # Column names in get_model_files order (sorted paths): 1d/code/count, 1d/value/max, full/code/count,
     # full/code/recency, full/value/max, none/static/present.
     names = (
@@ -28,7 +28,7 @@ def test_recency_joins_the_code_count_slot():
         + [f"{c}/count/full" for c in codes]
         + [f"{c}/recency/full" for c in codes]
         + [f"{v}/max/full" for v in values]
-        + [f"{s}/none" for s in statics]
+        + [f"{s}/none" for s in static_names]
     )
     dataset = SimpleNamespace(
         cfg=cfg,
