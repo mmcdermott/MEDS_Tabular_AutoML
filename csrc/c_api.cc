@@ -25,7 +25,8 @@ static_assert(MEDS_TAB_CODE_COUNT == 1u << meds_tab::kCodeCount &&
                   MEDS_TAB_VALUE_SUM == 1u << meds_tab::kSum &&
                   MEDS_TAB_VALUE_SUM_SQD == 1u << meds_tab::kSumSquared &&
                   MEDS_TAB_VALUE_MIN == 1u << meds_tab::kMin &&
-                  MEDS_TAB_VALUE_MAX == 1u << meds_tab::kMax,
+                  MEDS_TAB_VALUE_MAX == 1u << meds_tab::kMax &&
+                  MEDS_TAB_CODE_RECENCY == 1u << meds_tab::kRecency,
               "Statistic bits must follow the Statistic enum.");
 
 namespace {

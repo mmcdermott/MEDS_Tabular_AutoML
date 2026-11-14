@@ -15,17 +15,26 @@ from dataclasses import asdict, dataclass
 SEMANTICS_VERSION = 2
 
 STATIC_AGGS = ("static/present", "static/mean")
-CODE_AGGS = ("code/count",)
+CODE_AGGS = ("code/count", "code/recency")
 VALUE_AGGS = ("value/count", "value/sum", "value/sum_sqd", "value/min", "value/max")
-DYNAMIC_AGGS = CODE_AGGS + VALUE_AGGS
-DEFAULT_WINDOWS = ("1d", "7d", "30d", "365d", "full")
-SUPPORTED_AGGS = STATIC_AGGS + DYNAMIC_AGGS
+# The engine's statistics, in its bit (and output) order.
+DYNAMIC_AGGS = ("code/count", *VALUE_AGGS, "code/recency")
+# Code-group roll-ups (opt-in), computed by the engine over each record's group instead of its code.
+GROUP_AGGS = ("code/group_count", "code/group_recency")
+# The engine statistic computing each group aggregation.
+GROUP_STATISTIC = {"code/group_count": "code/count", "code/group_recency": "code/recency"}
+# Computed once over the full history (written under the "full" window), whatever the window sizes.
+FULL_HISTORY_AGGS = ("code/recency", "code/group_recency")
+DEFAULT_WINDOWS = ("2h", "12h", "1d", "7d", "30d", "full")
+DEFAULT_AGGS = ("static/present", "code/count", "code/recency", "value/sum", "value/min", "value/max")
+SUPPORTED_AGGS = STATIC_AGGS + CODE_AGGS + VALUE_AGGS + GROUP_AGGS
 # Feature-name suffix in metadata/codes.parquet of each aggregation.
 SUFFIXES = {
     "static/present": "/static/present",
     "static/mean": "/static/mean",
-    "code/count": "/code",
+    **dict.fromkeys(CODE_AGGS, "/code"),
     **dict.fromkeys(VALUE_AGGS, "/value"),
+    **dict.fromkeys(GROUP_AGGS, "/group"),
 }
 
 _UNITS = {
@@ -61,7 +70,7 @@ class TabularConfig:
     tabularization config."""
 
     window_sizes: tuple[str, ...] = DEFAULT_WINDOWS
-    aggs: tuple[str, ...] = SUPPORTED_AGGS
+    aggs: tuple[str, ...] = DEFAULT_AGGS
     allowed_codes: tuple[str, ...] | None = None
     min_code_inclusion_count: int | None = 10
     min_code_inclusion_frequency: float | None = None
@@ -82,7 +91,7 @@ class TabularConfig:
         unknown = set(self.aggs) - set(SUPPORTED_AGGS)
         if unknown:
             raise ValueError(f"The native backend does not implement the aggregations {sorted(unknown)}.")
-        if any(agg in DYNAMIC_AGGS for agg in self.aggs):
+        if any(agg in DYNAMIC_AGGS + GROUP_AGGS for agg in self.aggs):
             if not self.window_sizes or len(set(self.window_sizes)) != len(self.window_sizes):
                 raise ValueError("window_sizes must be distinct and nonempty.")
             for window in self.window_sizes:
@@ -98,6 +107,10 @@ class TabularConfig:
     @property
     def dynamic_aggs(self) -> tuple[str, ...]:
         return tuple(agg for agg in DYNAMIC_AGGS if agg in self.aggs)
+
+    @property
+    def group_aggs(self) -> tuple[str, ...]:
+        return tuple(agg for agg in GROUP_AGGS if agg in self.aggs)
 
     @property
     def static_aggs(self) -> tuple[str, ...]:

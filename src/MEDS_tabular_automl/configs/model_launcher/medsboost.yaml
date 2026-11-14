@@ -6,6 +6,9 @@ defaults:
 model_launcher:
   _target_: MEDS_tabular_automl.medsboost_model.MedsBoostModel.initialize
 
+  # Drop the columns with fewer than this many nonzero training rows before training (0 or 1 keeps them all).
+  min_column_nnz: 0
+
   # medsboost (MEDS_tabular_automl.medsboost): binary gradient-boosted trees for wide, sparse tabularized data.
   # Needs the compiled library (installed from source with a C++17 compiler and OpenMP).
   model:

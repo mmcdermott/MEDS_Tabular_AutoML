@@ -142,6 +142,9 @@ EXPECTED_STATIC_FILES = [
     "tuning/0/none/static/present.npz",
 ]
 
+# The aggregations these tests check (the defaults before code/recency and the leaner default set).
+AGGS = "[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+
 
 def test_tabularize(tmp_path):
     input_dir = Path(tmp_path) / "input_dir"
@@ -230,6 +233,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "input_label_dir": str(input_label_dir.resolve()),
     }
 
@@ -321,6 +325,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 100_000_000,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "output_model_dir": str(output_model_dir.resolve()),
     }
@@ -335,6 +340,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "output_model_dir": str(output_model_dir.resolve()),
     }
@@ -371,6 +377,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "path.model_file_stem": "xgboost_oom_test",
         "output_model_dir": str(output_model_dir.resolve()),
@@ -396,6 +403,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "output_model_dir": str(output_model_dir.resolve()),
     }
@@ -415,6 +423,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "output_model_dir": str(output_model_dir.resolve()),
         "data_loading_params.keep_data_in_memory": False,
@@ -432,6 +441,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "data_loading_params.keep_data_in_memory": False,
         "task_name": "test_task",
         "output_model_dir": str(output_model_dir.resolve()),
@@ -461,6 +471,7 @@ def test_tabularize(tmp_path):
             **shared_config,
             "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
+            "tabularization.aggs": AGGS,
             "task_name": "test_task",
             "output_model_dir": str(output_model_dir.resolve()),
         }

@@ -7,6 +7,7 @@ from scipy.sparse import csr_array
 
 from MEDS_tabular_automl.utils import (
     CODE_AGGREGATIONS,
+    GROUP_AGGREGATIONS,
     VALUE_AGGREGATIONS,
     get_events_df,
     get_feature_names,
@@ -124,7 +125,7 @@ def summarize_dynamic_measurements(
         raise ValueError("data frame must be sorted by subject_id and time")
 
     # Generate sparse matrix
-    if agg in CODE_AGGREGATIONS:
+    if agg in CODE_AGGREGATIONS or agg in GROUP_AGGREGATIONS:
         code_df = df.drop(*([*id_cols, "numeric_value"]))
         data, (rows, cols) = get_long_code_df(code_df, ts_columns)
     elif agg in VALUE_AGGREGATIONS:

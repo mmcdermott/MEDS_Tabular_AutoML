@@ -32,6 +32,9 @@ from tests.test_tabularize import (
     VALUE_COLS,
 )
 
+# The aggregations these tests check (the defaults before code/recency and the leaner default set).
+AGGS = "[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+
 
 def run_command(script: str, args: list[str], hydra_kwargs: dict[str, str], test_name: str):
     command_parts = [script] + args + [f"{k}={v}" for k, v in hydra_kwargs.items()]
@@ -138,6 +141,7 @@ def test_integration(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
     }
     stderr, stdout = run_command(
         "meds-tab-tabularize-static",
@@ -186,6 +190,7 @@ def test_integration(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
     }
 
     stderr, stdout = run_command(
@@ -258,6 +263,7 @@ def test_integration(tmp_path):
             **shared_config,
             "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
+            "tabularization.aggs": AGGS,
             "task_name": "test_task",
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
@@ -300,6 +306,7 @@ def test_integration(tmp_path):
             **shared_config,
             "tabularization.min_code_inclusion_count": 1,
             "tabularization.window_sizes": "[30d,365d,full]",
+            "tabularization.aggs": AGGS,
             "task_name": "test_task",
             "output_model_dir": str(output_model_dir.resolve()),
             "model_launcher": model,
