@@ -6,11 +6,13 @@
 
 - **medsboost feature importance**: `MedsBoost.feature_importance("split" | "gain")`, like LightGBM's
     `Booster.feature_importance`: per column, the number of splits on it or their total gain.
-- **`save_gain`** (`model_launcher.model.save_gain=true`, or `MedsBoost(save_gain=True)` /
-    `MedsBoost.save(path, save_gain=True)`): the saved model also records each split's gain (format version
-    2), so gain importance works after reloading it. Off by default, and then the saved model is byte-for-byte
-    the version 1 format, which every release reads; version 2 files load from this release on. Training is
-    unchanged: the gains were already computed to choose the splits.
+- **`save_stats`** (`model_launcher.model.save_stats=true`, or `MedsBoost(save_stats=True)` /
+    `MedsBoost.save(path, save_stats=True)`): the saved model also records node statistics (format version
+    2): each split's gain, and every node's and leaf's hessian sum and row count (cover). Gain importance then
+    works after reloading it, and the file holds what exact TreeSHAP needs. Off by default, and then the saved
+    model is byte-for-byte the version 1 format, which every release reads; version 2 files load from this
+    release on. Training is unchanged: these statistics were already computed to choose the splits and the
+    leaf values.
 
 ## 0.4.1
 

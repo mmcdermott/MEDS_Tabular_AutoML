@@ -196,13 +196,17 @@ struct Node {  // tree node; leaves are encoded as ~leaf_index in children
   int feat;    // global feature id
   int thr;
   int left, right;
-  double gain = 0;  // split gain: G_L^2/(H_L+lambda) + G_R^2/(H_R+lambda) - G^2/(H+lambda), on the
-                    // tree's (bagged) training rows; the same convention as LightGBM's split gain
+  // Statistics of the tree's (bagged) training rows, as LightGBM reports them:
+  double gain = 0;    // split gain: G_L^2/(H_L+lambda) + G_R^2/(H_R+lambda) - G^2/(H+lambda)
+  double hess = 0;    // cover: hessian sum of the rows reaching the node
+  int64_t count = 0;  // rows reaching the node
 };
 
 struct Tree {
   std::vector<Node> nodes;
   std::vector<double> leaf_value;
+  std::vector<double> leaf_hess;    // per leaf, as Node::hess
+  std::vector<int64_t> leaf_count;  // per leaf, as Node::count
 };
 
 // Evaluation set (tuning / held-out) as column-major non-zero-bin entries (rows ascending within
@@ -318,7 +322,7 @@ double logloss(const std::vector<double>& s, const float* y) {
 struct Model {
   int64_t m_cols = 0;
   double init = 0;
-  bool has_gain = true;  // false for a model loaded from a file saved without split gains
+  bool has_stats = true;  // false for a model loaded from a file saved without node statistics
   std::vector<Tree> trees;
   std::vector<int> fpos;  // global feature -> index in fs (-1 if unused)
   std::vector<Feat> fs;   // bins of used features
@@ -964,7 +968,7 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
       std::copy(tmp.begin(), tmp.begin() + nr, order.begin() + P.begin + nl);
       // Record the split in the tree.
       const int node_id = static_cast<int>(tree.nodes.size());
-      tree.nodes.push_back(Node{used[l], s.thr, 0, 0, s.gain});
+      tree.nodes.push_back(Node{used[l], s.thr, 0, 0, s.gain, P.H, P.C});
       if (P.parent_node >= 0) {
         if (P.is_left)
           tree.nodes[P.parent_node].left = node_id;
@@ -1067,9 +1071,13 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
     // Leaf values, leaf pointers.
     const int n_leaves = static_cast<int>(leaves.size());
     tree.leaf_value.resize(n_leaves);
+    tree.leaf_hess.resize(n_leaves);
+    tree.leaf_count.resize(n_leaves);
     for (int i = 0; i < n_leaves; ++i) {
       Leaf& Lf = leaves[i];
       tree.leaf_value[i] = -lr * Lf.G / (Lf.H + lambda);
+      tree.leaf_hess[i] = Lf.H;
+      tree.leaf_count[i] = Lf.C;
       if (Lf.parent_node >= 0) {
         if (Lf.is_left)
           tree.nodes[Lf.parent_node].left = ~i;
@@ -1078,8 +1086,10 @@ static void* train_impl(int64_t n, int64_t m_cols, const int64_t* csc_ptr, const
       }
     }
     if (tree.nodes.empty()) {  // no valid split: single-leaf tree
-      tree.nodes.push_back(Node{0, 0, ~0, ~0});
+      tree.nodes.push_back(Node{0, 0, ~0, ~0, 0.0, leaves[0].H, leaves[0].C});
       tree.leaf_value.assign(1, -lr * leaves[0].G / (leaves[0].H + lambda));
+      tree.leaf_hess.assign(1, leaves[0].H);
+      tree.leaf_count.assign(1, leaves[0].C);
     }
     for (auto& Lf : leaves)
       if (!Lf.hist.empty()) pool.push_back(std::move(Lf.hist));
@@ -1218,16 +1228,17 @@ int64_t medsboost_num_features(const void* model) {
 void medsboost_free(void* model) { delete static_cast<Model*>(model); }
 
 // Text format: header, init score, features (id, nbin, zero bin, upper bounds), trees (nodes, then
-// leaf values). Version 1 nodes are "feature threshold left right"; with save_gain, the header says
-// version 2 and each node line ends with its split gain. Without save_gain the file is exactly what
-// medsboost_save always wrote, so older readers still load it.
-int medsboost_save_ex(const void* model, const char* path, int save_gain) {
+// leaf values). Version 1 nodes are "feature threshold left right". With save_stats the header says
+// version 2, each node line ends with "gain hess count" (Node), and each tree's leaf values line is
+// followed by a line of leaf hessian sums and a line of leaf row counts. Without save_stats the
+// file is exactly what medsboost_save always wrote, so older readers still load it.
+int medsboost_save_ex(const void* model, const char* path, int save_stats) {
   const Model& m = *static_cast<const Model*>(model);
-  if (save_gain && !m.has_gain) return 2;  // loaded from a file without gains: nothing to write
+  if (save_stats && !m.has_stats) return 2;  // loaded from a file without them: nothing to write
   std::ofstream out(path);
   if (!out) return 1;
   out.precision(17);
-  out << "medsboost " << (save_gain ? 2 : 1) << "\n"
+  out << "medsboost " << (save_stats ? 2 : 1) << "\n"
       << "num_columns " << m.m_cols << "\n"
       << "init " << m.init << "\n";
   out << "features " << m.fids.size() << "\n";
@@ -1247,11 +1258,17 @@ int medsboost_save_ex(const void* model, const char* path, int save_gain) {
     out << "tree " << t.nodes.size() << " " << t.leaf_value.size() << "\n";
     for (const Node& tn : t.nodes) {
       out << tn.feat << " " << tn.thr << " " << tn.left << " " << tn.right;
-      if (save_gain) out << " " << tn.gain;
+      if (save_stats) out << " " << tn.gain << " " << tn.hess << " " << tn.count;
       out << "\n";
     }
     for (size_t i = 0; i < t.leaf_value.size(); ++i) out << (i ? " " : "") << t.leaf_value[i];
     out << "\n";
+    if (save_stats) {
+      for (size_t i = 0; i < t.leaf_hess.size(); ++i) out << (i ? " " : "") << t.leaf_hess[i];
+      out << "\n";
+      for (size_t i = 0; i < t.leaf_count.size(); ++i) out << (i ? " " : "") << t.leaf_count[i];
+      out << "\n";
+    }
   }
   return out.good() ? 0 : 1;
 }
@@ -1266,7 +1283,7 @@ int medsboost_save(const void* model, const char* path) {
 int medsboost_feature_importance(const void* model, int kind, double* out) {
   const Model& m = *static_cast<const Model*>(model);
   if (kind != 0 && kind != 1) return 1;
-  if (kind == 1 && !m.has_gain) return 2;
+  if (kind == 1 && !m.has_stats) return 2;
   std::fill(out, out + m.m_cols, 0.0);
   for (const Tree& t : m.trees) {
     if (t.leaf_value.size() == 1) continue;
@@ -1283,13 +1300,13 @@ void* medsboost_load(const char* path) {
   Model* m = new Model();
   size_t nf = 0, nt = 0;
   // "sparsegb" is the header of models saved before the rename (MEDS-Tab 0.4.0); the format is the
-  // same. Version 2 adds each split's gain to its node line (medsboost_save_ex with save_gain).
+  // same. Version 2 adds node and leaf statistics (medsboost_save_ex with save_stats).
   if (!(in >> tag >> version) || (tag != "medsboost" && tag != "sparsegb") ||
       (version != 1 && version != 2)) {
     delete m;
     return nullptr;
   }
-  m->has_gain = version == 2;
+  m->has_stats = version == 2;
   in >> tag >> m->m_cols >> tag >> m->init >> tag >> nf;
   m->fids.resize(nf);
   m->fs.resize(nf);
@@ -1311,10 +1328,16 @@ void* medsboost_load(const char* path) {
     t.nodes.resize(nn);
     for (Node& tn : t.nodes) {
       in >> tn.feat >> tn.thr >> tn.left >> tn.right;
-      if (m->has_gain) in >> tn.gain;
+      if (m->has_stats) in >> tn.gain >> tn.hess >> tn.count;
     }
     t.leaf_value.resize(nl);
     for (double& v : t.leaf_value) in >> v;
+    if (m->has_stats) {
+      t.leaf_hess.resize(nl);
+      for (double& v : t.leaf_hess) in >> v;
+      t.leaf_count.resize(nl);
+      for (int64_t& v : t.leaf_count) in >> v;
+    }
   }
   if (!in) {
     delete m;
