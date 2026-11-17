@@ -15,27 +15,38 @@ from .tabular_dataset import TabularDataset
 logger = logging.getLogger(__name__)
 
 
-def column_slots(it: TabularDataset) -> np.ndarray:
-    """One slot per (code, aggregation): all windows of a code's aggregation are alternatives; static columns
-    -1.
-
-    The column order is the loader's: model files in `get_model_files` order, each filtered by its code mask.
-    """
+def _matrix_columns(it: TabularDataset):
+    """(name, aggregation, is_static) of each column of the loaded matrix, in its order: the loader's, model
+    files in `get_model_files` order, each filtered by its code mask."""
     names = it.get_all_column_names()  # f"{feature}/{agg}/{window}", before the code masks
-    slot_of, keys, pos = [], {}, 0
+    pos = 0
     for f in get_model_files(it.cfg, it.split, it._data_shards[0]):
         is_static = f.stem in ("mean", "present")
         agg = f"static/{f.stem}" if is_static else f"{f.parent.stem}/{f.stem}"
         mask = np.asarray(it.code_masks[agg])
         for name, keep in zip(names[pos : pos + len(mask)], mask, strict=True):
             if keep:
-                if is_static:
-                    slot_of.append(-1)
-                else:
-                    key = (name.rsplit("/", 3)[0], agg)
-                    slot_of.append(keys.setdefault(key, len(keys)))
+                yield name, agg, is_static
         pos += len(mask)
+
+
+def column_slots(it: TabularDataset) -> np.ndarray:
+    """One slot per (code, aggregation): all windows of a code's aggregation are alternatives; static columns
+    -1."""
+    slot_of, keys = [], {}
+    for name, agg, is_static in _matrix_columns(it):
+        if is_static:
+            slot_of.append(-1)
+        else:
+            slot_of.append(keys.setdefault((name.rsplit("/", 3)[0], agg), len(keys)))
     return np.asarray(slot_of, dtype=np.int32)
+
+
+def matrix_column_names(it: TabularDataset) -> list[str]:
+    """The name (``f"{feature}/{agg}/{window}"``) of each column of the matrix a model is trained on, in its
+    order, which is the order of ``MedsBoost.feature_importance``. Unlike ``it.get_all_column_names()``, it
+    leaves out the columns the code masks (``tabularization.min_code_inclusion_count`` etc.) drop."""
+    return [name for name, _, _ in _matrix_columns(it)]
 
 
 class MedsBoostModel(GradientBoostedTreesModel):

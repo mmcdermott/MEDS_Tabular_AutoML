@@ -13,6 +13,9 @@
     model is byte-for-byte the version 1 format, which every release reads; version 2 files load from this
     release on. Training is unchanged: these statistics were already computed to choose the splits and the
     leaf values.
+- **`matrix_column_names(dataset)`** (`MEDS_tabular_automl.medsboost_model`): the name of each column of a
+    model's training matrix, after code filtering, in the order of its feature importances. The usage guide
+    shows how to rank a trained model's features with it.
 
 ## 0.4.1
 

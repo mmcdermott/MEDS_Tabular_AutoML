@@ -18,6 +18,7 @@ from meds import SubjectSplitSchema, subject_splits_filepath
 from omegaconf import OmegaConf
 from scipy.sparse import csr_array
 
+from MEDS_tabular_automl.medsboost_model import column_slots, matrix_column_names
 from MEDS_tabular_automl.native import engine
 from MEDS_tabular_automl.tabular_dataset import TabularDataset
 from MEDS_tabular_automl.utils import load_matrix
@@ -207,6 +208,14 @@ def loaded(
 ):
     """X and y of one split as the model launchers load them (through the matrix cache when cache_dir is
     given; raw: X exactly as get_data returns it)."""
+    X, y = dataset(output, labels, split, threshold, cache_dir).get_data()
+    return (X if raw else csr_array(X)), np.asarray(y)
+
+
+def dataset(
+    output: Path, labels: Path, split: str, threshold: int = 2, cache_dir: Path | None = None
+) -> TabularDataset:
+    """The loader of one split, configured as the model launchers configure it."""
     with initialize(version_base=None, config_path=CONFIGS):
         tabularization = compose(
             config_name="tabularization",
@@ -233,9 +242,7 @@ def loaded(
             },
         }
     )
-    dataset = TabularDataset(cfg, split)
-    X, y = dataset.get_data()
-    return (X if raw else csr_array(X)), np.asarray(y)
+    return TabularDataset(cfg, split)
 
 
 @pytest.fixture(scope="module")
@@ -293,6 +300,29 @@ def test_matrix_cache_gives_the_same_data(meds, tmp_path, monkeypatch):
     block.touch()
     loaded(tmp_path / "tab", labels, "train", 3, cache)
     assert len(list((cache / "matrices").iterdir())) == 4
+
+
+def test_matrix_column_names_name_the_loaded_columns(meds, tmp_path):
+    """matrix_column_names has one name per column of the loaded matrix (what feature importances refer to),
+    for every code threshold: the code masks drop the same columns from both, and each column_slots slot holds
+    the windows of one feature and aggregation."""
+    labels = tmp_path / "labels"
+    write_labels(meds, labels)
+    tabularize(meds, tmp_path / "tab", labels, "native")
+    widths = []
+    for threshold in (1, 16, 64):  # all 292 columns kept, then 242, then 180
+        train = dataset(tmp_path / "tab", labels, "train", threshold)
+        X, _ = train.get_data()
+        names, slots = matrix_column_names(train), column_slots(train)
+        assert len(names) == X.shape[1] == len(slots), threshold
+        assert len(set(names)) == len(names), threshold
+        for slot in set(slots.tolist()) - {-1}:
+            members = {names[i].rsplit("/", 1)[0] for i in np.flatnonzero(slots == slot)}
+            assert len(members) == 1, (threshold, members)  # one feature/aggregation, several windows
+        assert np.array_equal(slots == -1, np.array(["/static/" in name for name in names])), threshold
+        widths.append(len(names))
+    assert widths[0] > widths[-1]  # a higher threshold masks columns out
+    assert widths[-1] < len(train.get_all_column_names())
 
 
 def test_static_mean_is_the_mean_of_static_values(meds, tmp_path):
