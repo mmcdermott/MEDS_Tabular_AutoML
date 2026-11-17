@@ -43,6 +43,11 @@ SPLITS = {
     "held_out/1": range(36, 38),  # Only static records: a shard without timed events.
 }
 WINDOWS = "[1d,7d,30d,full]"
+# Every supported aggregation, so both backends are compared on all of them (not only the defaults).
+AGGS = (
+    "[static/present,static/mean,code/count,code/recency,value/count,value/sum,value/sum_sqd,value/min,"
+    "value/max,code/group_count,code/group_recency]"
+)
 UNIT_ROUNDOFF = 2.0**-53
 START_US = 1_577_836_800_000_000  # 2020-01-01T00:00:00 in microseconds.
 HOUR_US = 3_600_000_000
@@ -157,6 +162,7 @@ def shared(meds: Path, output: Path, backend: str, **extra) -> dict:
         "native.threads": 3,
         "tabularization.min_code_inclusion_count": 2,
         "tabularization.window_sizes": WINDOWS,
+        "tabularization.aggs": AGGS,
         **extra,
     }
 
@@ -199,6 +205,9 @@ def assert_same_blocks(python: Path, native: Path):
             squares = expected[f"{window}/value/sum_sqd.npz"].toarray()[rows, got.indices]
             spread = np.sqrt(n * squares) if statistic == "sum" else squares
             assert np.all(np.abs(got.data - want.data) <= 4 * n * UNIT_ROUNDOFF * spread), name
+        elif statistic in ("recency", "group_recency"):
+            # 1 / (1 + days): the backends compute the days from different time origins.
+            assert np.allclose(got.data, want.data, rtol=1e-12, atol=0), name
         else:
             assert np.array_equal(got.data.astype(np.float64), want.data.astype(np.float64)), name
 
@@ -225,6 +234,7 @@ def dataset(
                 override("input_label_dir", str(labels)),
                 f"tabularization.min_code_inclusion_count={threshold}",
                 f"tabularization.window_sizes={WINDOWS}",
+                f"tabularization.aggs={AGGS}",
             ],
         ).tabularization
     cfg = OmegaConf.create(
@@ -263,6 +273,13 @@ def test_blocks_and_loaded_data_match(meds, tmp_path):
     for name, matrix in blocks(tmp_path / "native/tabularize").items():
         shard = "/".join(name.split("/")[:2])
         assert matrix.shape[0] == len(pl.read_parquet(labels / f"{shard}.parquet")), name
+    # Code groups: LAB (LAB//0-9) and RARE, whose members RARE//0 and RARE//1 are each too rare to be features
+    # but count toward their group.
+    group_blocks = [
+        m for n, m in blocks(tmp_path / "native/tabularize").items() if n.endswith("group_count.npz")
+    ]
+    assert group_blocks and all(m.shape[1] == 2 for m in group_blocks)
+    assert sum(np.diff(m.tocsc().indptr)[1] for m in group_blocks) > 0, "RARE has no records."
     for split in ("train", "tuning", "held_out"):
         (Xp, yp), (Xn, yn) = (loaded(tmp_path / backend, labels, split) for backend in ("python", "native"))
         assert np.array_equal(yp, yn), split
@@ -317,10 +334,17 @@ def test_matrix_column_names_name_the_loaded_columns(meds, tmp_path):
         assert len(names) == X.shape[1] == len(slots), threshold
         assert len(set(names)) == len(names), threshold
         for slot in set(slots.tolist()) - {-1}:
-            members = {names[i].rsplit("/", 1)[0] for i in np.flatnonzero(slots == slot)}
-            assert len(members) == 1, (threshold, members)  # one feature/aggregation, several windows
+            # Names are <feature column>/<aggregation>/<window>; a slot holds one code's windows (and
+            # its recency).
+            members = {names[i].rsplit("/", 3)[0] for i in np.flatnonzero(slots == slot)}
+            assert len(members) == 1, (threshold, members)
         assert np.array_equal(slots == -1, np.array(["/static/" in name for name in names])), threshold
         widths.append(len(names))
+        # With min_column_nnz, the columns medsboost keeps (MedsBoostModel._drop_rare_columns), in order.
+        nnz = np.diff(X.tocsc().indptr)
+        rare_dropped = matrix_column_names(train, 3)
+        assert rare_dropped == [name for name, n in zip(names, nnz, strict=True) if n >= 3], threshold
+        assert len(rare_dropped) < len(names), threshold
     assert widths[0] > widths[-1]  # a higher threshold masks columns out
     assert widths[-1] < len(train.get_all_column_names())
 

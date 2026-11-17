@@ -2,8 +2,27 @@
 
 ## Unreleased
 
+New default features, chosen from feature ablations on 10 generated MIMIC-IV tasks and checked on 11 MIMIC-IV
+clinical cohorts with `medsboost`: a `code/recency` aggregation, and a leaner default set of windows and
+aggregations. Tabularized outputs and models from earlier versions are not affected, but rerunning with the
+defaults gives different features.
+
 ### Added
 
+- `code/recency`: 1 / (1 + days since the code's last occurrence at or before the prediction time), absent for
+    a code the subject never had. It is computed once over the full history whatever the window sizes (written
+    as `full/code/recency.npz`), since recency over a shorter window would only threshold it. Both the Python
+    backend and the native engine implement it.
+- `medsboost` puts a code's `code/recency` column in its `code/count` slot, so each tree uses either one of
+    the code's windowed counts or its recency, which keeps training time down.
+- `model_launcher.min_column_nnz` (`medsboost`): drops the columns with fewer nonzero training rows before
+    training. Off (0) by default.
+- Opt-in code-group roll-ups, `code/group_count` and `code/group_recency`: a code's group is the code without
+    its last `//` segment, and every group of at least two described codes becomes a feature `<group>/group`
+    whose records include those of codes too rare to be features. They count a group's records per window and
+    give the recency of its latest one; `medsboost` puts both in one slot per group. Not in the default
+    aggregations: they added about 0.0015 to 0.0025 held-out AUROC in the ablations but 20–40% training time on
+    large cohorts.
 - **medsboost feature importance**: `MedsBoost.feature_importance("split" | "gain")`, like LightGBM's
     `Booster.feature_importance`: per column, the number of splits on it or their total gain.
 - **`save_stats`** (`model_launcher.model.save_stats=true`, or `MedsBoost(save_stats=True)` /
@@ -14,8 +33,16 @@
     release on. Training is unchanged: these statistics were already computed to choose the splits and the
     leaf values.
 - **`matrix_column_names(dataset)`** (`MEDS_tabular_automl.medsboost_model`): the name of each column of a
-    model's training matrix, after code filtering, in the order of its feature importances. The usage guide
-    shows how to rank a trained model's features with it.
+    model's training matrix, after code filtering (and `min_column_nnz`), in the order of its feature
+    importances. The usage guide shows how to rank a trained model's features with it.
+
+### Changed
+
+- Default windows: `[2h, 12h, 1d, 7d, 30d, full]` (were `[1d, 7d, 30d, 365d, full]`). Short windows carry
+    much of the signal, while `365d` added little between `30d` and the full history.
+- Default aggregations: `[static/present, code/count, code/recency, value/sum, value/min, value/max]`.
+    `static/mean`, `value/count` and `value/sum_sqd` left held-out AUROC unchanged in the ablations but cost
+    training time; they remain available.
 
 ## 0.4.1
 

@@ -15,7 +15,114 @@ STATIC_VALUE_AGGREGATION = "static/mean"
 
 CODE_AGGREGATIONS = [
     "code/count",
+    "code/recency",
 ]
+
+# Code-group roll-ups (opt-in): a code's group is the code without its last "//" segment (MEDS codes are
+# "//"-separated paths, e.g. MEDICATION//Insulin//Administered -> MEDICATION//Insulin); a group of at least
+# two described codes is a feature "<group>/group". code/group_count counts its members' records per window
+# and code/group_recency is the recency of its latest member record, as code/count and code/recency do for a
+# code.
+GROUP_AGGREGATIONS = [
+    "code/group_count",
+    "code/group_recency",
+]
+GROUP_SUFFIX = "/group"
+
+# Aggregations computed once over the full history up to each row, whatever the window sizes; their files are
+# written under the "full" window. Recency over a shorter window w is a threshold of the full-history value
+# (the code occurred within w exactly when its recency is at least 1 / (1 + w in days)), so it is redundant.
+FULL_HISTORY_AGGREGATIONS = ["code/recency", "code/group_recency"]
+
+
+def code_group(code: str) -> str | None:
+    """The group of a code: the code without its last "//" segment, or None for a code without one.
+
+    Examples:
+        >>> code_group("MEDICATION//Insulin//Administered")
+        'MEDICATION//Insulin'
+        >>> code_group("LAB//RESULT//50822//mEq/L")
+        'LAB//RESULT//50822'
+        >>> code_group("MEDS_DEATH") is None
+        True
+    """
+    head, sep, _ = code.rpartition("//")
+    return head if sep else None
+
+
+def with_groups(freqs: dict[str, int]) -> dict[str, int]:
+    """Adds the "<group>/group" features to described feature counts: every group of at least two described
+    codes ("<code>/code" features), counted as the sum of its members' counts. Counts that already list groups
+    are returned as they are.
+
+    Examples:
+        >>> with_groups({"A//x/code": 3, "A//y/code": 2, "A//y/value": 2, "B//z/code": 5, "C/code": 1})
+        {'A//x/code': 3, 'A//y/code': 2, 'A//y/value': 2, 'B//z/code': 5, 'C/code': 1, 'A/group': 5}
+    """
+    if any(feature.endswith(GROUP_SUFFIX) for feature in freqs):
+        return dict(freqs)
+    members: dict[str, list[int]] = {}
+    for feature, count in freqs.items():
+        if feature.endswith("/code"):
+            group = code_group(feature[: -len("/code")])
+            if group is not None:
+                members.setdefault(group, []).append(count)
+    groups = {f"{g}{GROUP_SUFFIX}": sum(counts) for g, counts in members.items() if len(counts) >= 2}
+    return {**freqs, **groups}
+
+
+def select_feature_counts(
+    counts: dict[str, int],
+    allowed_codes,
+    min_code_inclusion_count: int | None,
+    min_code_inclusion_frequency: float | None,
+    max_included_codes: int | None,
+) -> list[str]:
+    """The features kept by the code filters, sorted. Groups ("<group>/group") follow allowed_codes and the
+    count and frequency thresholds, with frequencies relative to the other features' total, but take no place
+    under max_included_codes, so they leave the other features' selection unchanged.
+
+    Examples:
+        >>> counts = {"A//x/code": 3, "A//y/code": 2, "B/code": 4, "A/group": 5}
+        >>> select_feature_counts(counts, None, 3, None, None)
+        ['A//x/code', 'A/group', 'B/code']
+        >>> select_feature_counts(counts, None, None, None, 1)
+        ['A/group', 'B/code']
+        >>> select_feature_counts(counts, None, None, 0.4, None)
+        ['A/group', 'B/code']
+    """
+    items = dict(counts)
+    if allowed_codes is not None:
+        allowed = set(allowed_codes)
+        items = {k: v for k, v in items.items() if k in allowed}
+    if min_code_inclusion_frequency is not None:
+        if min_code_inclusion_frequency < 0 or min_code_inclusion_frequency > 1:
+            raise ValueError("min_code_inclusion_frequency must be between 0 and 1.")
+        total = sum(v for k, v in items.items() if not k.endswith(GROUP_SUFFIX))
+        items = {k: v for k, v in items.items() if v / total >= min_code_inclusion_frequency}
+    if min_code_inclusion_count is not None:
+        items = {k: v for k, v in items.items() if v >= min_code_inclusion_count}
+    if max_included_codes is not None:
+        # Break ties by code, so that the codes kept at the cutoff do not depend on the row order.
+        ranked = sorted(
+            ((k, v) for k, v in items.items() if not k.endswith(GROUP_SUFFIX)), key=lambda kv: (-kv[1], kv[0])
+        )
+        groups = {k: v for k, v in items.items() if k.endswith(GROUP_SUFFIX)}
+        items = {**dict(ranked[:max_included_codes]), **groups}
+    return sorted(items)
+
+
+def agg_windows(agg: str, window_sizes) -> list[str]:
+    """The windows an aggregation is computed for.
+
+    Examples:
+        >>> agg_windows("code/count", ["1d", "7d"])
+        ['1d', '7d']
+        >>> agg_windows("code/recency", ["1d", "7d"])
+        ['full']
+    """
+    return ["full"] if agg in FULL_HISTORY_AGGREGATIONS else list(window_sizes)
+
 
 VALUE_AGGREGATIONS = [
     "value/count",
@@ -74,35 +181,22 @@ def filter_to_codes(
         ValueError: Code filtering criteria ...
         ...
     """
-    feature_freqs = pl.read_parquet(code_metadata_fp)
+    frame = pl.read_parquet(code_metadata_fp, columns=["code", "count"])
+    counts = with_groups(dict(zip(frame["code"].to_list(), frame["count"].to_list(), strict=True)))
+    selected = select_feature_counts(
+        counts, allowed_codes, min_code_inclusion_count, min_code_inclusion_frequency, max_include_codes
+    )
 
-    if allowed_codes is not None:
-        feature_freqs = feature_freqs.filter(pl.col("code").is_in(allowed_codes))
-
-    if min_code_inclusion_frequency is not None:
-        if min_code_inclusion_frequency < 0 or min_code_inclusion_frequency > 1:
-            raise ValueError("min_code_inclusion_frequency must be between 0 and 1.")
-        dataset_size = feature_freqs["count"].sum()
-        feature_freqs = feature_freqs.filter((pl.col("count") / dataset_size) >= min_code_inclusion_frequency)
-
-    if min_code_inclusion_count is not None:
-        feature_freqs = feature_freqs.filter(pl.col("count") >= min_code_inclusion_count)
-
-    if max_include_codes is not None:
-        # Break ties by code, so that the codes kept at the cutoff do not depend on the row order.
-        feature_freqs = feature_freqs.sort(["count", "code"], descending=[True, False])
-        feature_freqs = feature_freqs.head(max_include_codes)
-
-    if len(feature_freqs["code"]) == 0:
+    if not selected:
         raise ValueError(
-            f"Code filtering criteria leaves only 0 codes. Note that {feature_freqs.shape[0]} "
+            f"Code filtering criteria leaves only 0 codes. Note that {len(counts)} "
             "codes are read in, try modifying the following kwargs:"
             f"\n- tabularization.allowed_codes: {allowed_codes}"
             f"\n- tabularization.min_code_inclusion_count: {min_code_inclusion_count}"
             f"\n- tabularization.min_code_inclusion_frequency: {min_code_inclusion_frequency}"
             f"\n- tabularization.max_include_codes: {max_include_codes}"
         )
-    return ListConfig(sorted(feature_freqs["code"].to_list()))
+    return ListConfig(selected)
 
 
 def load_tqdm(use_tqdm: bool):
@@ -398,6 +492,8 @@ def get_feature_names(agg: str, feature_columns: list[str]) -> str:
         return [c for c in feature_columns if c.endswith(agg)]
     elif agg in CODE_AGGREGATIONS:
         return [c for c in feature_columns if c.endswith("/code")]
+    elif agg in GROUP_AGGREGATIONS:
+        return [c for c in feature_columns if c.endswith(GROUP_SUFFIX)]
     elif agg in VALUE_AGGREGATIONS:
         return [c for c in feature_columns if c.endswith("/value")]
     else:

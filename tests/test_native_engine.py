@@ -134,10 +134,35 @@ def test_invalid_shard_arguments_are_rejected(change):
         engine.Shard(*change(events()), 2, 1)
 
 
+DAY = 86_400_000_000  # Microseconds.
+
+
+def test_code_recency():
+    """Code/recency is 1 / (1 + days since the code's last record in the window), over code/count's entries,
+    alone or alongside the other statistics (after them, in bit order)."""
+    subjects = np.array([1, 1, 1, 2], dtype=np.int64)
+    times = np.array([0, 2 * DAY, 3 * DAY, 0], dtype=np.int64)
+    codes = np.array([0, 1, 0, 1], dtype=np.int32)
+    values = np.array([1.0, np.nan, 2.0, 5.0])
+    shard = engine.Shard(subjects, times, codes, values, 2, 2)
+    rows = (np.array([1, 1, 2], dtype=np.int64), np.array([3 * DAY, 5 * DAY, DAY], dtype=np.int64))
+    recency = 1 << 6
+    (full,) = shard.aggregate(*rows, [-1], recency, IDENTITY, 2, 2)
+    np.testing.assert_allclose(full.toarray(), [[1.0, 1 / 2], [1 / 3, 1 / 4], [0.0, 1 / 2]])
+    (short,) = shard.aggregate(*rows, [2 * DAY + 1], recency, IDENTITY, 2, 2)  # (t - 2d - 1us, t]
+    np.testing.assert_allclose(short.toarray(), [[1.0, 1 / 2], [1 / 3, 0.0], [0.0, 1 / 2]])
+    count, value_max, recency_too = shard.aggregate(*rows, [-1], 1 | (1 << 5) | recency, IDENTITY, 2, 2)
+    np.testing.assert_array_equal(count.toarray(), [[2, 1], [2, 1], [0, 1]])
+    np.testing.assert_array_equal(value_max.toarray(), [[2.0, 0.0], [2.0, 0.0], [0.0, 5.0]])
+    np.testing.assert_allclose(recency_too.toarray(), full.toarray())
+    np.testing.assert_array_equal(recency_too.indices, count.indices)
+    shard.close()
+
+
 def test_invalid_aggregation_arguments_are_rejected():
     shard = engine.Shard(*events(), 2, 1)
     rows = (np.array([1], dtype=np.int64), np.array([1], dtype=np.int64))
-    for mask in (0, 64):
+    for mask in (0, 128):
         with pytest.raises(ValueError, match="mask"):
             shard.aggregate(*rows, [-1], mask, IDENTITY, 2, 1)
     with pytest.raises(ValueError, match="Window"):

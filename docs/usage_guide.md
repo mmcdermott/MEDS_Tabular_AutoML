@@ -558,11 +558,12 @@ below to train a different model.
 
     This affects the value aggregations (`value/sum`, `value/sum_sqd`, `value/min`, `value/max`) and
     `static/mean`, where an observed 0 means something other than no measurement. It does not affect
-    `code/count`, `value/count` or `static/present`, which are 0 exactly when nothing was observed.
+    `code/count`, `code/recency`, `value/count` or `static/present`, which are 0 exactly when nothing was
+    observed.
 
-    When `value/count` is among the aggregations, as in the default configurations, LightGBM can recover the
-    distinction from it: a code's `value/count` is positive whenever a value, 0 included, was observed in the
-    window. On synthetic data where the label depends only on observed-0 vs. absent, LightGBM reached an AUROC
+    When a count is among the aggregations (`code/count` in the default configuration, or `value/count`), the
+    trees can recover the distinction from it: a code's `value/count` is positive whenever a value, 0 included,
+    was observed in the window, and its `code/count` whenever the code was recorded. On synthetic data where the label depends only on observed-0 vs. absent, LightGBM reached an AUROC
     of 0.64 from the value column alone and 0.78 once the count column was added; XGBoost reached 0.77 from
     the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
     prefer XGBoost or add an observation indicator if the distinction matters for your task.
@@ -590,13 +591,14 @@ from MEDS_tabular_automl.tabular_dataset import TabularDataset
 
 best = Path("OUTPUT_MODEL_DIR/TASK/YYYY-MM-DD_HH-MM-SS/best_trial")
 model = MedsBoost.load(best / "medsboost.txt")
-names = matrix_column_names(TabularDataset(OmegaConf.load(best / "config.log"), "train"))
+cfg = OmegaConf.load(best / "config.log")  # the trial's configuration
+names = matrix_column_names(TabularDataset(cfg, "train"), cfg.model_launcher.get("min_column_nnz", 0))
 gain = model.feature_importance("gain")
 for value, name in sorted(zip(gain, names), reverse=True)[:20]:
     print(f"{value:12.1f}  {name}")  # e.g. "<code>/value/mean/30d"
 ```
 
-`matrix_column_names` names the columns the trial actually trained on (after its code filtering, e.g. `tabularization.min_code_inclusion_count`), in the order of the importances. Each name is `<feature>/<aggregation>/<window>`; add up the windows and aggregations of a code to rank codes. Gains are computed on the training rows of each tree (bagged), as in LightGBM.
+`matrix_column_names` names the columns the trial actually trained on (after its code filtering, e.g. `tabularization.min_code_inclusion_count`, and the rare columns `model_launcher.min_column_nnz` drops), in the order of the importances. Each name is `<feature>/<aggregation>/<window>`; add up the windows and aggregations of a code to rank codes. Gains are computed on the training rows of each tree (bagged), as in LightGBM.
 
 ### Input/Output Data Structure
 
