@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **medsboost feature importance**: `MedsBoost.feature_importance("split" | "gain")`, like LightGBM's
+    `Booster.feature_importance`: per column, the number of splits on it or their total gain.
+- **`save_gain`** (`model_launcher.model.save_gain=true`, or `MedsBoost(save_gain=True)` /
+    `MedsBoost.save(path, save_gain=True)`): the saved model also records each split's gain (format version
+    2), so gain importance works after reloading it. Off by default, and then the saved model is byte-for-byte
+    the version 1 format, which every release reads; version 2 files load from this release on. Training is
+    unchanged: the gains were already computed to choose the splits.
+
 ## 0.4.1
 
 Upgrading from 0.4.0 changes no results: tabularized features and the model are unchanged. Tabularization now

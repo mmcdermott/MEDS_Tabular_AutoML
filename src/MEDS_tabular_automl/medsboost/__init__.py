@@ -39,6 +39,43 @@ Models saved under the name medsboost had before MEDS-Tab 0.4.1, sparsegb, still
     ...     old = MedsBoost.load(Path(d) / "old.txt")
     >>> text.startswith("medsboost 1"), bool(np.allclose(old.predict_proba(X[500:]), p))
     (True, True)
+
+Feature importance, like LightGBM's: how often each column is split on, or the total gain of those splits.
+The informative columns 0 and 1 come first:
+
+    >>> gain = model.feature_importance("gain")
+    >>> splits = model.feature_importance("split")
+    >>> gain.shape, splits.dtype, int(splits.sum()) > 0
+    ((40,), dtype('int64'), True)
+    >>> sorted(np.argsort(-gain)[:2].tolist())
+    [0, 1]
+
+Split counts survive any save; gains only a save with ``save_gain`` (format version 2, which predictions
+ignore), so a default save is unchanged:
+
+    >>> with tempfile.TemporaryDirectory() as d:
+    ...     model.save(Path(d) / "v1.txt")
+    ...     model.save(Path(d) / "v2.txt", save_gain=True)
+    ...     v1_text = (Path(d) / "v1.txt").read_text()
+    ...     v2_text = (Path(d) / "v2.txt").read_text()
+    ...     v1 = MedsBoost.load(Path(d) / "v1.txt")
+    ...     v2 = MedsBoost.load(Path(d) / "v2.txt")
+    >>> v1_text == text, v2_text.startswith("medsboost 2")
+    (True, True)
+    >>> bool(np.array_equal(v1.feature_importance("split"), splits))
+    True
+    >>> bool(np.allclose(v2.feature_importance("gain"), gain))
+    True
+    >>> bool(np.allclose(v2.predict_proba(X[500:]), p))
+    True
+    >>> v1.feature_importance("gain")
+    Traceback (most recent call last):
+        ...
+    ValueError: this model was loaded from a file saved without split gains; save it with save_gain=True
+    >>> model.feature_importance("cover")
+    Traceback (most recent call last):
+        ...
+    ValueError: importance_type must be one of ['gain', 'split'], got 'cover'
 """
 
 from __future__ import annotations
@@ -186,6 +223,10 @@ def library() -> ct.CDLL:
     lib.medsboost_predict.argtypes = [ct.c_void_p, ct.c_int64, I64P, I32P, F32P, ct.c_int, F64P]
     lib.medsboost_save.restype = ct.c_int
     lib.medsboost_save.argtypes = [ct.c_void_p, ct.c_char_p]
+    lib.medsboost_save_ex.restype = ct.c_int
+    lib.medsboost_save_ex.argtypes = [ct.c_void_p, ct.c_char_p, ct.c_int]
+    lib.medsboost_feature_importance.restype = ct.c_int
+    lib.medsboost_feature_importance.argtypes = [ct.c_void_p, ct.c_int, F64P]
     lib.medsboost_load.restype = ct.c_void_p
     lib.medsboost_load.argtypes = [ct.c_char_p]
     lib.medsboost_free.restype = None
@@ -231,6 +272,9 @@ class MedsBoost:
         layouts: number of precomputed column layouts (multiple of 7); 0 draws a fresh column sample every
             `refresh` trees instead. Only matters when slots are given.
         refresh: trees per column sample (or per layout draw).
+        save_gain: also write each split's gain when saving (format version 2), so that
+            ``feature_importance("gain")`` works on the reloaded model. Off by default: the saved file is then
+            the version 1 format that every MEDS-Tab release reads. Does not affect training.
     """
 
     def __init__(
@@ -248,6 +292,7 @@ class MedsBoost:
         min_sum_hessian: float = 1e-3,
         layouts: int = 14,
         refresh: int = 1,
+        save_gain: bool = False,
     ):
         self.params = {
             "threads": threads or default_threads(),
@@ -264,6 +309,7 @@ class MedsBoost:
             "layouts": layouts,
             "refresh": refresh,
         }
+        self.save_gain = bool(save_gain)  # an output option, not a training parameter
         self._handle = None
         self.info: dict = {}
 
@@ -381,10 +427,50 @@ class MedsBoost:
     def num_trees(self) -> int:
         return int(library().medsboost_num_trees(self._handle)) if self._handle is not None else 0
 
-    def save(self, path) -> None:
-        """Writes the model in medsboost's text format."""
-        if self._handle is None or library().medsboost_save(self._handle, str(path).encode()) != 0:
+    def save(self, path, save_gain: bool | None = None) -> None:
+        """Writes the model in medsboost's text format.
+
+        Args:
+            save_gain: write each split's gain (format version 2); None uses the ``save_gain`` the model was
+                created with.
+
+        Raises:
+            ValueError: gains were requested for a model loaded from a file saved without them.
+            OSError: the file could not be written.
+        """
+        if self._handle is None:
+            raise OSError(f"could not save the model to {path}: it is not trained or loaded")
+        gain = self.save_gain if save_gain is None else bool(save_gain)
+        status = library().medsboost_save_ex(self._handle, str(path).encode(), int(gain))
+        if status == 2:
+            raise ValueError("this model was loaded from a file saved without split gains")
+        if status != 0:
             raise OSError(f"could not save the model to {path}")
+
+    def feature_importance(self, importance_type: str = "split") -> np.ndarray:
+        """Importance of each column, like LightGBM's ``Booster.feature_importance``.
+
+        Args:
+            importance_type: "split" (int array: how many splits use the column) or "gain" (float array: the
+                total gain of those splits).
+
+        Raises:
+            ValueError: an unknown importance type, or "gain" for a model loaded from a file saved without
+                gains (see ``save_gain``).
+        """
+        kinds = {"split": 0, "gain": 1}
+        if importance_type not in kinds:
+            raise ValueError(f"importance_type must be one of {sorted(kinds)}, got {importance_type!r}")
+        if self._handle is None:
+            raise RuntimeError("model is not trained or loaded")
+        lib = library()
+        out = np.zeros(int(lib.medsboost_num_features(self._handle)))
+        status = lib.medsboost_feature_importance(self._handle, kinds[importance_type], _ptr(out, F64P))
+        if status == 2:
+            raise ValueError(
+                "this model was loaded from a file saved without split gains; save it with save_gain=True"
+            )
+        return out.astype(np.int64) if importance_type == "split" else out
 
     @classmethod
     def load(cls, path, threads: int = 0) -> MedsBoost:

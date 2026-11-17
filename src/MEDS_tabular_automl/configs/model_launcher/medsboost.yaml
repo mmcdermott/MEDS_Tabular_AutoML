@@ -27,6 +27,10 @@ model_launcher:
     # (a multiple of 7; 0 draws a fresh sample every `refresh` trees instead).
     layouts: 14
     refresh: 1
+    # Also write each split's gain in the saved model (format version 2), for gain feature importance
+    # (MedsBoost.feature_importance("gain")) after reloading it. Off: the saved file is the version 1 format that
+    # every MEDS-Tab release reads. Does not change training.
+    save_gain: false
 
 path:
   model_file_stem: "medsboost"
