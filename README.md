@@ -84,7 +84,7 @@ meds-tab-model "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_
 
 This uses the default windows (`2h`, `12h`, `1d`, `7d`, `30d`, full history) and aggregations (`static/present`,
 `code/count`, `code/recency`, `value/sum`, `value/min`, `value/max`); set
-`tabularization.window_sizes` and `tabularization.aggs` to change them. 
+`tabularization.window_sizes` and `tabularization.aggs` to change them.
 
 The last command trains a single
 model with default hyperparameters. To tune hyperparameters instead, run it as a multirun sweep (raise
