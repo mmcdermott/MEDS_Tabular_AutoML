@@ -32,18 +32,17 @@ This uses the defaults minimum code inclusion count, window sizes, and aggregati
 ```yaml
 min_code_inclusion_count: 10
 window_sizes:
+  - 2h
+  - 12h
   - 1d
   - 7d
   - 30d
-  - 365d
   - full
 aggs:
   - static/present
-  - static/mean
   - code/count
-  - value/count
+  - code/recency
   - value/sum
-  - value/sum_sqd
   - value/min
   - value/max
 ```

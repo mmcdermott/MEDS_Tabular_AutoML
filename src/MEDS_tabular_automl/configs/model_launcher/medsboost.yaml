@@ -6,6 +6,9 @@ defaults:
 model_launcher:
   _target_: MEDS_tabular_automl.medsboost_model.MedsBoostModel.initialize
 
+  # Drop the columns with fewer than this many nonzero training rows before training (0 or 1 keeps them all).
+  min_column_nnz: 0
+
   # medsboost (MEDS_tabular_automl.medsboost): binary gradient-boosted trees for wide, sparse tabularized data.
   # Needs the compiled library (installed from source with a C++17 compiler and OpenMP).
   model:
@@ -27,6 +30,11 @@ model_launcher:
     # (a multiple of 7; 0 draws a fresh sample every `refresh` trees instead).
     layouts: 14
     refresh: 1
+    # Also write node statistics in the saved model (format version 2): each split's gain, and every node's and
+    # leaf's hessian sum and row count (cover). For gain feature importance (MedsBoost.feature_importance("gain"))
+    # after reloading it, and exact TreeSHAP from the file. Off: the saved file is the version 1 format that every
+    # MEDS-Tab release reads. Does not change training.
+    save_stats: false
 
 path:
   model_file_stem: "medsboost"

@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.4.2
+
+New default features, chosen from feature ablations on 10 generated MIMIC-IV tasks and checked on 11 MIMIC-IV
+clinical cohorts with `medsboost`: a `code/recency` aggregation, and a leaner default set of windows and
+aggregations. Tabularized outputs and models from earlier versions are not affected, but rerunning with the
+defaults gives different features. This release also adds feature importance and saved node statistics for
+`medsboost` models, and reproducible training subsets (`train_subset`) for scaling studies.
+
+### Added
+
+- `code/recency`: 1 / (1 + days since the code's last occurrence at or before the prediction time), absent for
+    a code the subject never had. It is computed once over the full history whatever the window sizes (written
+    as `full/code/recency.npz`), since recency over a shorter window would only threshold it. Both the Python
+    backend and the native engine implement it.
+- `medsboost` puts a code's `code/recency` column in its `code/count` slot, so each tree uses either one of
+    the code's windowed counts or its recency, which keeps training time down.
+- `model_launcher.min_column_nnz` (`medsboost`): drops the columns with fewer nonzero training rows before
+    training. Off (0) by default.
+- Opt-in code-group roll-ups, `code/group_count` and `code/group_recency`: a code's group is the code without
+    its last `//` segment, and every group of at least two described codes becomes a feature `<group>/group`
+    whose records include those of codes too rare to be features. They count a group's records per window and
+    give the recency of its latest one; `medsboost` puts both in one slot per group. Not in the default
+    aggregations: they added about 0.0015 to 0.0025 held-out AUROC in the ablations but 20–40% training time on
+    large cohorts.
+- **medsboost feature importance**: `MedsBoost.feature_importance("split" | "gain")`, like LightGBM's
+    `Booster.feature_importance`: per column, the number of splits on it or their total gain.
+- **`save_stats`** (`model_launcher.model.save_stats=true`, or `MedsBoost(save_stats=True)` /
+    `MedsBoost.save(path, save_stats=True)`): the saved model also records node statistics (format version
+    2): each split's gain, and every node's and leaf's hessian sum and row count (cover). Gain importance then
+    works after reloading it, and the file holds what exact TreeSHAP needs. Off by default, and then the saved
+    model is byte-for-byte the version 1 format, which every release reads; version 2 files load from this
+    release on. Training is unchanged: these statistics were already computed to choose the splits and the
+    leaf values.
+- **`matrix_column_names(dataset)`** (`MEDS_tabular_automl.medsboost_model`): the name of each column of a
+    model's training matrix, after code filtering (and `min_column_nnz`), in the order of its feature
+    importances. The usage guide shows how to rank a trained model's features with it.
+- **`train_subset`: train on a reproducible subset of the training split**, e.g. for scaling studies.
+    `train_subset.by=subjects` keeps `n` (or a `fraction` of the) training subjects that have labels, with all
+    their labels; `train_subset.by=labels` keeps `n` (or a `fraction` of the) training label rows. Subjects
+    and label rows are taken in a salted SHA-256 order (`train_subset.salt`), so a subset is the same on any
+    machine and smaller subsets are nested in larger ones. Tuning and held-out labels are kept whole. Every
+    stage applies it given the same overrides: code frequencies (`meds-tab-describe`, which then also takes
+    `input_label_dir`), tabularization and the model use the selected subjects only. The cropped labels, the
+    selected subjects and the counts are written under `<output_dir>/train_subset/`.
+
+### Changed
+
+- Default windows: `[2h, 12h, 1d, 7d, 30d, full]` (were `[1d, 7d, 30d, 365d, full]`). Short windows carry
+    much of the signal, while `365d` added little between `30d` and the full history.
+- Default aggregations: `[static/present, code/count, code/recency, value/sum, value/min, value/max]`.
+    `static/mean`, `value/count` and `value/sum_sqd` left held-out AUROC unchanged in the ablations but cost
+    training time; they remain available.
+- **Tabularization reads only the labeled subjects' events** of each shard, with both backends. Features
+    depend only on each labeled subject's own events, so the output is unchanged; tasks whose cohort is a
+    small part of the data, and training subsets, tabularize faster.
+
 ## 0.4.1
 
 Upgrading from 0.4.0 changes no results: tabularized features and the model are unchanged. Tabularization now

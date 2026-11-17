@@ -20,7 +20,7 @@ MEDS-Tab turns longitudinal electronic health records in the [Medical Event Data
 ## Why MEDS-Tab?
 
 - **Fast:** the native C++ engine tabularizes a whole MIMIC-IV task in about a minute on a laptop, and `medsboost`, MEDS-Tab's own gradient-boosted trees for these matrices, trains in a few minutes.
-- **Strong baselines:** across 40 MIMIC-IV and NWICU tasks from a recent benchmark comparing 12 models ([arXiv:2609.18134](https://arxiv.org/abs/2609.18134)), a single `medsboost` model per task outperforms all other non-MEDS-Tab models on average (see [Results](#results)).
+- **Strong baselines:** across 40 MIMIC-IV and NWICU tasks from a recent benchmark comparing 12 models ([arXiv:2609.18134](https://arxiv.org/abs/2609.18134)), a single `medsboost` model per task outperforms all other non-MEDS-Tab models on average.
 - **Any MEDS dataset, any task:** tasks are defined by label files (for example from [ACES](https://github.com/justin13601/ACES) or [MEDS-DEV](https://github.com/Medical-Event-Data-Standard/MEDS-DEV)); features are computed at each label's prediction time.
 - **Runs anywhere:** compiled wheels for Linux, Windows and Apple-silicon macOS.
 
@@ -78,14 +78,45 @@ per data shard):
 meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR"
 meds-tab-tabularize-static "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
 meds-tab-tabularize-time-series "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
-meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
-    "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=100"
+meds-tab-model "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
+    "output_model_dir=$MODEL_DIR" "task_name=$TASK"
 ```
 
-This uses the default windows (`1d`, `7d`, `30d`, `365d`, full history) and aggregations; set
-`tabularization.window_sizes` and `tabularization.aggs` to change them. Drop `--multirun` to train a single
-model with default hyperparameters. Models, predictions and tuning and held-out AUROCs are written under
-`$MODEL_DIR`.
+This uses the default windows (`2h`, `12h`, `1d`, `7d`, `30d`, full history) and aggregations (`static/present`,
+`code/count`, `code/recency`, `value/sum`, `value/min`, `value/max`); set
+`tabularization.window_sizes` and `tabularization.aggs` to change them.
+
+The last command trains a single
+model with default hyperparameters. To tune hyperparameters instead, run it as a multirun sweep (raise
+`hydra.sweeper.n_trials` for a more thorough search, at proportionally higher cost):
+
+```console
+meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
+    "output_model_dir=$MODEL_DIR" "task_name=$TASK" "hydra.sweeper.n_trials=5"
+```
+
+Models, predictions and tuning and held-out AUROCs are written under `$MODEL_DIR`.
+
+### Train on a subset (scaling studies)
+
+To train on part of the training split, give every command above the same `train_subset` overrides, and
+`meds-tab-describe` the labels too:
+
+```console
+SUBSET=("train_subset.by=subjects" "train_subset.n=5000" "train_subset.salt=0")
+meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" "${SUBSET[@]}"
+# ...and "${SUBSET[@]}" on meds-tab-tabularize-static, meds-tab-tabularize-time-series and meds-tab-model
+```
+
+- `train_subset.by=subjects` keeps `n` training subjects that have labels, with all their labels;
+    `train_subset.by=labels` keeps `n` training label rows. `train_subset.fraction` replaces `n` with a share.
+- The selection is reproducible and nested: subjects are taken in the order of
+    `sha256("<salt>:<subject_id>")` (label rows: `sha256("<salt>:<subject_id>:<prediction time>")`), so with
+    one salt, the 1,000-subject subset is inside the 5,000-subject one. Change the salt for independent repeats.
+- Tuning and held-out labels are kept whole, so every subset is evaluated on the same subjects.
+- Code frequencies, tabularization and the model all use the selected subjects only. The cropped labels, the
+    selected subjects (`subjects.parquet`) and the counts (`subset.json`) are written to
+    `$OUTPUT_DIR/train_subset/<id>/`; use one `$OUTPUT_DIR` per subset.
 
 ## Scripts and Examples
 
@@ -135,7 +166,7 @@ Static features capture the presence of each code and, for codes with static num
 
 ## Model Support and Normalization/Imputation Options
 
-The default and recommended model is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. It runs the same algorithm as LightGBM (Newton boosting, histograms, leaf-wise growth, bagging, early stopping), but never stores or scans absent entries, drops features that can no longer split, and samples one window per code and aggregation in each tree. On the 10 MIMIC-IV MG tasks it trains 12.5 times faster than LightGBM at the same held-out AUROC. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files.
+The default and recommended model is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. It runs the same algorithm as LightGBM (Newton boosting, histograms, leaf-wise growth, bagging, early stopping), but never stores or scans absent entries, drops features that can no longer split, and samples one window per code and aggregation in each tree. On the 10 MIMIC-IV MG tasks it trains 12.5 times faster than LightGBM at the same held-out AUROC. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files. Its feature importances (`feature_importance("split" | "gain")`) can be read from a saved model; with `model_launcher.model.save_stats=true` the saved model also holds split gains and node cover (see the usage guide).
 
 XGBoost and LightGBM are also supported, as are KNN, logistic regression, random forest and SGD classifiers from scikit-learn. An experimental AutoGluon integration provides automated model selection.
 

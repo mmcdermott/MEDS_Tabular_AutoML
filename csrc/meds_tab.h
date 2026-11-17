@@ -90,6 +90,8 @@ void meds_tab_shard_free(meds_tab_shard* shard);
 #define MEDS_TAB_VALUE_SUM_SQD (1u << 3)
 #define MEDS_TAB_VALUE_MIN (1u << 4)
 #define MEDS_TAB_VALUE_MAX (1u << 5)
+/* 1 / (1 + days since the code's last record in the window): code/recency. */
+#define MEDS_TAB_CODE_RECENCY (1u << 6)
 
 /* One matrix per window and selected statistic: window-major, then statistics in
  * bit order. A finite window at time t covers (t - width, t]. value_columns

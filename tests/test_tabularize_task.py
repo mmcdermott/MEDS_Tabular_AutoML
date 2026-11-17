@@ -138,6 +138,9 @@ EXPECTED_STATIC_FILES = [
     "tuning/0/none/static/present.npz",
 ]
 
+# The aggregations these tests check (the defaults before code/recency and the leaner default set).
+AGGS = "[static/present,static/mean,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]"
+
 
 def test_tabularize(tmp_path):
     input_dir = Path(tmp_path) / "input_dir"
@@ -214,6 +217,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "input_label_dir": str(input_label_dir.resolve()),
     }
 
@@ -301,6 +305,7 @@ def test_tabularize(tmp_path):
         **shared_config,
         "tabularization.min_code_inclusion_count": 1,
         "tabularization.window_sizes": "[30d,365d,full]",
+        "tabularization.aggs": AGGS,
         "task_name": "test_task",
         "input_tabularized_dir": str(output_dir.resolve()),
         "input_label_dir": str(input_label_dir.resolve()),
