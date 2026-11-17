@@ -56,9 +56,10 @@ def _kept_columns(X_train, min_nnz: int) -> np.ndarray:
 
 
 def matrix_column_names(it: TabularDataset, min_column_nnz: int = 0) -> list[str]:
-    """The name (``f"{feature}/{agg}/{window}"``) of each column a model is trained on, in the order of
-    ``MedsBoost.feature_importance``. Unlike ``it.get_all_column_names()``, it leaves out the columns the code
-    masks (``tabularization.min_code_inclusion_count`` etc.) drop and, given the trial's
+    """Names of the columns a model is trained on, in the order of ``MedsBoost.feature_importance``.
+
+    Each name is ``f"{feature}/{agg}/{window}"``. Unlike ``it.get_all_column_names()``, it leaves out the
+    columns the code masks (``tabularization.min_code_inclusion_count`` etc.) drop and, given the trial's
     ``model_launcher.min_column_nnz``, the rare columns medsboost drops (``it`` must then be the train split).
     """
     names = [name for name, _, _ in _matrix_columns(it)]
