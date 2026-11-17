@@ -21,8 +21,18 @@ import numpy as np
 import polars as pl
 from scipy.sparse import csr_array
 
+from ..utils import code_group, select_feature_counts, with_groups
 from . import engine
-from .contract import CODE_AGGS, DYNAMIC_AGGS, FULL_HISTORY_AGGS, SUFFIXES, TabularConfig, window_microseconds
+from .contract import (
+    CODE_AGGS,
+    DYNAMIC_AGGS,
+    FULL_HISTORY_AGGS,
+    GROUP_AGGS,
+    GROUP_STATISTIC,
+    SUFFIXES,
+    TabularConfig,
+    window_microseconds,
+)
 from .storage import (
     Publisher,
     atomic_write_json,
@@ -37,7 +47,7 @@ from .storage import (
 )
 
 STATISTIC_BITS = {agg: 1 << bit for bit, agg in enumerate(DYNAMIC_AGGS)}  # The engine's statistic bits.
-INTEGER_AGGS = ("code/count", "value/count", "static/present")
+INTEGER_AGGS = ("code/count", "value/count", "static/present", "code/group_count")
 
 
 def shard_names(input_dir: Path) -> list[str]:
@@ -56,18 +66,13 @@ def shard_names(input_dir: Path) -> list[str]:
 def select_features(counts: dict[str, int], config: TabularConfig) -> frozenset[str]:
     """The features the Python backend's filter_to_codes keeps, in its order of filters; ties at
     max_included_codes are broken by name."""
-    items = dict(counts)
-    if config.allowed_codes is not None:
-        allowed = set(config.allowed_codes)
-        items = {k: v for k, v in items.items() if k in allowed}
-    if config.min_code_inclusion_frequency is not None:
-        total = sum(items.values())
-        items = {k: v for k, v in items.items() if v / total >= config.min_code_inclusion_frequency}
-    if config.min_code_inclusion_count is not None:
-        items = {k: v for k, v in items.items() if v >= config.min_code_inclusion_count}
-    if config.max_included_codes is not None:
-        ranked = sorted(items.items(), key=lambda item: (-item[1], item[0]))
-        items = dict(ranked[: config.max_included_codes])
+    items = select_feature_counts(
+        counts,
+        config.allowed_codes,
+        config.min_code_inclusion_count,
+        config.min_code_inclusion_frequency,
+        config.max_included_codes,
+    )
     if not items:
         raise ValueError("Code filtering criteria leaves only 0 codes.")
     return frozenset(items)
@@ -89,6 +94,10 @@ class Vocabulary:
     present_keep: np.ndarray
     mean_names: tuple[str, ...]
     mean_keep: np.ndarray
+    group_names: tuple[str, ...] = ()  # Code group of each code/group_* column; group IDs index this.
+    code_groups: np.ndarray = (
+        None  # int32 per code ID: the ID of its group if '<group>/group' is selected, else -1.
+    )
 
     @classmethod
     def build(cls, counts: dict[str, int], selected: frozenset[str]) -> Vocabulary:
@@ -110,6 +119,9 @@ class Vocabulary:
         value_columns = np.array([value_index.get(name, -1) for name in code_names], dtype=np.int32)
         present_names, present_keep = family("static/present")
         mean_names, mean_keep = family("static/mean")
+        group_names, group_keep = family("code/group_count")
+        group_index = {name: i for i, name in enumerate(group_names) if group_keep[i]}
+        code_groups = np.array([group_index.get(code_group(name), -1) for name in code_names], dtype=np.int32)
         return cls(
             code_names,
             code_keep,
@@ -119,11 +131,15 @@ class Vocabulary:
             present_keep,
             mean_names,
             mean_keep,
+            group_names,
+            code_groups,
         )
 
     def block_width(self, agg: str) -> int:
         if agg in CODE_AGGS:
             return len(self.code_names)
+        if agg in GROUP_AGGS:
+            return len(self.group_names)
         if agg in DYNAMIC_AGGS:
             return self.value_count
         return len(self.present_names if agg == "static/present" else self.mean_names)
@@ -146,6 +162,11 @@ class EncodedShard:
     static_mean: np.ndarray  # static/mean column, or -1 when not a selected feature.
     static_values: np.ndarray
     shard_subjects: np.ndarray  # Every subject with any record, sorted.
+    # Timed records of described codes in selected groups, as group IDs, sorted by (subject, time); rare codes
+    # count toward their group. Empty unless code/group_* aggregations are configured.
+    group_subjects: np.ndarray = None
+    group_times: np.ndarray = None
+    group_codes: np.ndarray = None
 
 
 def _numpy(series: pl.Series, dtype) -> np.ndarray:
@@ -182,8 +203,8 @@ def _code_ids(names: tuple[str, ...]) -> pl.Expr:
     return pl.col("code").cast(pl.Enum(names), strict=False).to_physical()
 
 
-def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
-    """Reads, validates and encodes one MEDS shard."""
+def read_shard(path: Path, vocab: Vocabulary, groups: bool = False) -> EncodedShard:
+    """Reads, validates and encodes one MEDS shard (and its records' code groups if groups)."""
     schema = pl.read_parquet_schema(path)
     missing = {"subject_id", "time", "code", "numeric_value"} - set(schema)
     if missing:
@@ -217,6 +238,25 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
     codes = _numpy(timed["code_id"], np.int32)
     values = np.where(vocab.value_columns[codes] < 0, np.nan, timed["numeric_value"].to_numpy())
 
+    group_arrays = {}
+    if groups:
+        group_id = pl.lit(pl.Series(vocab.code_groups, dtype=pl.Int32)).gather(pl.col("code_id"))
+        grouped = (
+            frame.filter(pl.col("time").is_not_null() & pl.col("code_id").is_not_null())
+            .select("subject_id", "time", group_id.alias("group_id"))
+            .filter(pl.col("group_id") >= 0)
+        )
+        g_subjects, g_times = _numpy(grouped["subject_id"], np.int64), _numpy(grouped["time"], np.int64)
+        if not engine.rows_sorted(g_subjects, g_times):
+            grouped = grouped.sort(["subject_id", "time"], maintain_order=True)
+            g_subjects, g_times = _numpy(grouped["subject_id"], np.int64), _numpy(grouped["time"], np.int64)
+        group_arrays = {
+            "group_subjects": g_subjects,
+            "group_times": g_times,
+            "group_codes": _numpy(grouped["group_id"], np.int32),
+        }
+    del frame
+
     # Timeless records of selected static/present codes. Timeless rows are few, so they are read again.
     static = (
         pl.scan_parquet(path)
@@ -245,6 +285,7 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
         static_mean=np.where(selected_mean, mean, -1).astype(np.int32),
         static_values=np.where(selected_mean, static["numeric_value"].to_numpy()[kept], np.nan),
         shard_subjects=shard_subjects,
+        **group_arrays,
     )
 
 
@@ -386,6 +427,7 @@ class Pipeline:
         if len(counts) != len(frame):
             raise ValueError(f"{self.code_metadata} lists a feature more than once.")
         self._metadata_digest = digest(counts)
+        counts = with_groups(counts)  # The code groups' features, as the Python backend derives them.
         self._vocabulary = Vocabulary.build(counts, select_features(counts, self.config))
 
     @property
@@ -491,6 +533,31 @@ class Pipeline:
                 for (window, agg), matrix in zip(blocks, matrices, strict=True):
                     output.write(window, agg, matrix)
             shard.close()
+        if config.group_aggs:
+            # Code statistics over each record's group: code/group_count per window, code/group_recency once.
+            groups = len(vocab.group_names)
+            shard = engine.Shard(
+                encoded.group_subjects,
+                encoded.group_times,
+                encoded.group_codes,
+                np.full(len(encoded.group_codes), np.nan),
+                groups,
+                self.threads,
+            )
+            for agg in config.group_aggs:
+                windows = ("full",) if agg in FULL_HISTORY_AGGS else config.window_sizes
+                matrices = shard.aggregate(
+                    row_subjects,
+                    row_times,
+                    [window_microseconds(w) for w in windows],
+                    STATISTIC_BITS[GROUP_STATISTIC[agg]],
+                    np.full(groups, -1, dtype=np.int32),
+                    0,
+                    self.threads,
+                )
+                for window, matrix in zip(windows, matrices, strict=True):
+                    output.write(window, agg, matrix)
+            shard.close()
         if config.static_aggs:
             present, mean = self._static(encoded, row_subjects, row_times)
             for agg, matrix in (("static/present", present), ("static/mean", mean)):
@@ -544,7 +611,9 @@ class Pipeline:
         row_subjects, row_times = _numpy(rows["subject_id"], np.int64), _numpy(rows["time"], np.int64)
         order = np.empty(len(rows), dtype=np.int64)
         order[rows["label"].to_numpy()] = np.arange(len(rows))
-        encoded = read_shard(self.input_dir / f"{name}.parquet", self.vocabulary)
+        encoded = read_shard(
+            self.input_dir / f"{name}.parquet", self.vocabulary, bool(self.config.group_aggs)
+        )
         staged = self.publisher.stage()
         output = ShardOutput(staged, self.config.do_compress, pool)
 

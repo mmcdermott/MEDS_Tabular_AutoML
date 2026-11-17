@@ -12,11 +12,12 @@ from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
 from .. import TABULARIZATION_CFG, native
-from ..describe_codes import filter_parquet, get_feature_columns
+from ..describe_codes import filter_parquet, filter_parquet_groups, get_feature_columns
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
 from ..generate_ts_features import get_flat_ts_rep
 from ..utils import (
+    GROUP_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
     agg_windows,
@@ -96,6 +97,8 @@ def main(
         ).with_suffix(".npz")
 
         def read_fn(in_fp):
+            if agg in GROUP_AGGREGATIONS:  # noqa: B023
+                return filter_parquet_groups(in_fp, cfg.tabularization._resolved_codes, feature_columns)
             return filter_parquet(in_fp, cfg.tabularization._resolved_codes)
 
         def compute_fn(shard_df):
@@ -112,7 +115,7 @@ def main(
                 label_df,  # noqa: B023
             )
 
-            if not summary_df.shape[1]:
+            if not summary_df.shape[1] and agg not in GROUP_AGGREGATIONS:  # noqa: B023
                 raise ValueError("No data found in the summarized dataframe.")
 
             del index_df

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import polars as pl
 
-from MEDS_tabular_automl.utils import get_feature_names
+from MEDS_tabular_automl.utils import GROUP_SUFFIX, get_feature_names, with_groups
 
 SUFFIXES = ["code", "value", "static/present", "static/mean"]
 
@@ -173,15 +173,19 @@ def get_feature_columns(fp: Path) -> list[str]:
         fp: File path to the Parquet data.
 
     Returns:
-        Sorted list of column names.
+        Sorted list of column names, with the code groups' "<group>/group" features (see `with_groups`).
 
     Examples:
         >>> with tempfile.NamedTemporaryFile() as f:
         ...     pl.DataFrame({"code": ["E", "D", "A"], "count": [1, 3, 2]}).write_parquet(f.name)
         ...     get_feature_columns(f.name)
         ['A', 'D', 'E']
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     pl.DataFrame({"code": ["L//1/code", "L//2/code"], "count": [1, 3]}).write_parquet(f.name)
+        ...     get_feature_columns(f.name)
+        ['L//1/code', 'L//2/code', 'L/group']
     """
-    return sorted(get_feature_freqs(fp).keys())
+    return sorted(with_groups(get_feature_freqs(fp)).keys())
 
 
 def get_feature_freqs(fp: Path) -> dict[str, int]:
@@ -316,3 +320,41 @@ def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
     # Drop rows with rare codes
     df = df.filter(~(rare_static_code | rare_ts_code))
     return df
+
+
+def filter_parquet_groups(fp: Path, allowed_codes: list[str], feature_columns: list[str]) -> pl.LazyFrame:
+    """Loads the timed records of a MEDS shard whose code belongs to an allowed code group, with each code
+    replaced by its group, for the code/group_* aggregations.
+
+    A record counts toward its group whenever its code is described ("<code>/code" is a feature column), even
+    if the code itself is too rare to be a feature.
+
+    Args:
+        fp: Path to the Parquet file of a MEDS shard.
+        allowed_codes: The selected features; groups are the "<group>/group" ones.
+        feature_columns: Every described feature.
+
+    Returns:
+        The records' subject_id, time and group (as "code"), in file order, with null numeric values.
+
+    Examples:
+        >>> with tempfile.NamedTemporaryFile() as f:
+        ...     pl.DataFrame({
+        ...         "subject_id": [1, 1, 1, 1, 1],
+        ...         "code": ["L//a", "L//b", "L//c", "M//a", "L//a"],
+        ...         "time": ["2021-01-01", "2021-01-02", "2021-01-03", "2021-01-04", None],
+        ...         "numeric_value": [1.0, 2.0, 3.0, 4.0, 5.0],
+        ...     }).write_parquet(f.name)
+        ...     features = ["L//a/code", "L//b/code", "M//a/code", "L/group"]
+        ...     filter_parquet_groups(f.name, ["L//a/code", "L/group"], features).collect()["code"].to_list()
+        ['L', 'L']
+    """
+    groups = [g[: -len(GROUP_SUFFIX)] for g in get_feature_names("code/group_count", allowed_codes)]
+    members = [c[: -len("/code")] for c in feature_columns if c.endswith("/code")]
+    code = pl.col("code").cast(pl.String)
+    group = code.str.extract(r"^(.*)//", 1)  # Greedy: everything before the last "//".
+    return (
+        pl.scan_parquet(fp)
+        .filter(pl.col("time").is_not_null() & code.is_in(members) & group.is_in(groups))
+        .with_columns(group.alias("code"), pl.lit(None, dtype=pl.Float64).alias("numeric_value"))
+    )

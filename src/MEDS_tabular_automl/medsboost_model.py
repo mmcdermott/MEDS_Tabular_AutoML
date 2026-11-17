@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 # Aggregations that share another's slot: a code's recency is one more alternative to its windowed counts.
-SLOT_OF_AGG = {"code/recency": "code/count"}
+SLOT_OF_AGG = {"code/recency": "code/count", "code/group_recency": "code/group_count"}
 
 
 def column_slots(it: TabularDataset) -> np.ndarray:
