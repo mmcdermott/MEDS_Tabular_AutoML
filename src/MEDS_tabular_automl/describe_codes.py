@@ -235,6 +235,25 @@ def clear_code_aggregation_suffix(code: str) -> str:
     raise ValueError(f"Code {code} does not have a recognized aggregation suffix!")
 
 
+def labeled_subjects_only(shard: pl.LazyFrame, labels: pl.LazyFrame) -> pl.LazyFrame:
+    """The events of ``shard`` whose subject has a row in ``labels``, in their original order.
+
+    Features at a label time depend only on the labeled subject's own events, so tabularizing a shard needs
+    nothing else; with a small cohort or a ``train_subset`` this skips most of the shard.
+
+    Examples:
+        >>> shard = pl.LazyFrame({"subject_id": [1, 1, 2, 3, 3], "code": ["A", "B", "A", "C", "A"]})
+        >>> labels = pl.LazyFrame({"subject_id": [3, 1, 3]}, schema={"subject_id": pl.Int32})
+        >>> labeled_subjects_only(shard, labels).collect()["code"].to_list()
+        ['A', 'B', 'C', 'A']
+        >>> labeled_subjects_only(shard, labels.clear()).collect().height
+        0
+    """
+    dtype = shard.collect_schema()["subject_id"]
+    subjects = labels.select(pl.col("subject_id").cast(dtype)).unique().collect()["subject_id"]
+    return shard.filter(pl.col("subject_id").is_in(subjects.implode()))
+
+
 def filter_parquet(fp: Path, allowed_codes: list[str]) -> pl.LazyFrame:
     """Loads and filters a Parquet file with Polars to include only specified codes and removes rare
     codes/values.

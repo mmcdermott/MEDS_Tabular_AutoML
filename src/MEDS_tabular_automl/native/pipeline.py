@@ -145,7 +145,7 @@ class EncodedShard:
     static_present: np.ndarray  # static/present column.
     static_mean: np.ndarray  # static/mean column, or -1 when not a selected feature.
     static_values: np.ndarray
-    shard_subjects: np.ndarray  # Every subject with any record, sorted.
+    shard_subjects: np.ndarray  # Every (selected) subject with any record, sorted.
 
 
 def _numpy(series: pl.Series, dtype) -> np.ndarray:
@@ -182,8 +182,12 @@ def _code_ids(names: tuple[str, ...]) -> pl.Expr:
     return pl.col("code").cast(pl.Enum(names), strict=False).to_physical()
 
 
-def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
-    """Reads, validates and encodes one MEDS shard."""
+def read_shard(path: Path, vocab: Vocabulary, subjects: np.ndarray | None = None) -> EncodedShard:
+    """Reads, validates and encodes one MEDS shard.
+
+    With ``subjects``, only their events are encoded (after the whole shard is validated): features at a
+    label time depend only on the labeled subject's own events.
+    """
     schema = pl.read_parquet_schema(path)
     missing = {"subject_id", "time", "code", "numeric_value"} - set(schema)
     if missing:
@@ -205,6 +209,8 @@ def read_shard(path: Path, vocab: Vocabulary) -> EncodedShard:
         raise ValueError(f"{path}: subject_id and code must not be null.")
     if frame["numeric_value"].is_infinite().any():
         raise ValueError(f"{path}: infinite numeric values are unsupported.")
+    if subjects is not None:
+        frame = frame.filter(pl.col("subject_id").is_in(pl.Series(subjects, dtype=pl.Int64).implode()))
     shard_subjects = _numpy(frame["subject_id"].unique().sort(), np.int64)
 
     # Timed events of selected codes, sorted by (subject, time) unless they already are.
@@ -538,7 +544,9 @@ class Pipeline:
         row_subjects, row_times = _numpy(rows["subject_id"], np.int64), _numpy(rows["time"], np.int64)
         order = np.empty(len(rows), dtype=np.int64)
         order[rows["label"].to_numpy()] = np.arange(len(rows))
-        encoded = read_shard(self.input_dir / f"{name}.parquet", self.vocabulary)
+        # Only the labeled subjects' events: with a small cohort or a train_subset, most of the shard is
+        # skipped.
+        encoded = read_shard(self.input_dir / f"{name}.parquet", self.vocabulary, np.unique(row_subjects))
         staged = self.publisher.stage()
         output = ShardOutput(staged, self.config.do_compress, pool)
 

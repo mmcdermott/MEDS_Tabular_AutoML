@@ -11,8 +11,8 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import TABULARIZATION_CFG, native
-from ..describe_codes import filter_parquet, get_feature_columns
+from .. import TABULARIZATION_CFG, native, train_subset
+from ..describe_codes import filter_parquet, get_feature_columns, labeled_subjects_only
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
 from ..generate_ts_features import get_flat_ts_rep
@@ -62,6 +62,7 @@ def main(
 
     if not Path(cfg.input_label_dir).is_dir():
         raise ValueError(f"input_label_dir: {cfg.input_label_dir} is not a directory.")
+    train_subset.apply(cfg)
 
     if native.use_native(cfg):
         native.tabularize(cfg, "tabularize_time_series")
@@ -91,7 +92,11 @@ def main(
         ).with_suffix(".npz")
 
         def read_fn(in_fp):
-            return filter_parquet(in_fp, cfg.tabularization._resolved_codes)
+            # Only the subjects with labels in this shard (see tabularize_static).
+            return labeled_subjects_only(
+                filter_parquet(in_fp, cfg.tabularization._resolved_codes),
+                label_df,  # noqa: B023
+            )
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame

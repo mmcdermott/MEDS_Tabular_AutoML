@@ -9,4 +9,8 @@ output_filepath: ${output_dir}/metadata/codes.parquet
 # training subjects listed there. Defaults to the parent of `input_dir` (i.e., `input_dir=<MEDS_ROOT>/data`).
 meds_root_dir: null
 
+# The task's labels: only needed with train_subset, whose training subjects come from them. Code frequencies
+# are then fit on the selected training subjects only.
+input_label_dir: null
+
 name: describe_codes

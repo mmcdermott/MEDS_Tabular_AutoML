@@ -6,7 +6,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
-from .. import LAUNCH_MODEL_CFG
+from .. import LAUNCH_MODEL_CFG, train_subset
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,7 @@ def main(cfg: DictConfig) -> float:
     Returns:
         The evaluation result as the ROC AUC score on the held-out test set.
     """
+    train_subset.apply(cfg)
 
     try:
         cfg.tabularization._resolved_codes  # noqa: B018

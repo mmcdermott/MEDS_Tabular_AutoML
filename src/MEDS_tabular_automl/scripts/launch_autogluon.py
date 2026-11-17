@@ -8,7 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from MEDS_tabular_automl.tabular_dataset import TabularDataset as DenseIterator
 
-from .. import LAUNCH_MODEL_CFG
+from .. import LAUNCH_MODEL_CFG, train_subset
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ def main(cfg: DictConfig) -> float:
             "AutoGluon could not be imported. Please try installing it using: `pip install autogluon`"
         ) from e
 
+    train_subset.apply(cfg)
     # collect data based on the configuration
     itrain = DenseIterator(cfg, "train")
     ituning = DenseIterator(cfg, "tuning")

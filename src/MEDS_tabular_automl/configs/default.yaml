@@ -14,6 +14,19 @@ native:
   # Engine and writer threads; null uses every CPU available to the process.
   threads: null
 
+# Train on a reproducible subset of the training split, e.g. for scaling studies (see
+# MEDS_tabular_automl/train_subset.py). Tuning and held-out are kept whole. Give every stage (describe,
+# tabularize, model) the same train_subset.* overrides and the task's input_label_dir.
+train_subset:
+  # null: the whole training split. "subjects": n (or a fraction of the) training subjects that have labels,
+  # with all their labels. "labels": n (or a fraction of the) training label rows.
+  by: null
+  n: null
+  fraction: null
+  # Selection order: sha256("<salt>:<subject_id>") for subjects, sha256("<salt>:<subject_id>:<prediction time
+  # in microseconds>") for label rows. With one salt, smaller subsets are inside larger ones.
+  salt: "0"
+
 log_dir: ${output_dir}/.logs/
 cache_dir: ${output_dir}/.cache
 

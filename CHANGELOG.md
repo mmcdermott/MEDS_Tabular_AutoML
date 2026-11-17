@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`train_subset`: train on a reproducible subset of the training split**, e.g. for scaling studies.
+    `train_subset.by=subjects` keeps `n` (or a `fraction` of the) training subjects that have labels, with all
+    their labels; `train_subset.by=labels` keeps `n` (or a `fraction` of the) training label rows. Subjects
+    and label rows are taken in a salted SHA-256 order (`train_subset.salt`), so a subset is the same on any
+    machine and smaller subsets are nested in larger ones. Tuning and held-out labels are kept whole. Every
+    stage applies it given the same overrides: code frequencies (`meds-tab-describe`, which then also takes
+    `input_label_dir`), tabularization and the model use the selected subjects only. The cropped labels, the
+    selected subjects and the counts are written under `<output_dir>/train_subset/`.
+
+### Changed
+
+- **Tabularization reads only the labeled subjects' events** of each shard, with both backends. Features
+    depend only on each labeled subject's own events, so the output is unchanged; tasks whose cohort is a
+    small part of the data, and training subsets, tabularize faster.
+
 ## 0.4.1
 
 Upgrading from 0.4.0 changes no results: tabularized features and the model are unchanged. Tabularization now
