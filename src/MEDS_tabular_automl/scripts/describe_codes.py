@@ -11,7 +11,7 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import DESCRIBE_CODES_CFG
+from .. import DESCRIBE_CODES_CFG, train_subset
 from ..describe_codes import (
     compute_feature_frequencies,
     convert_to_df,
@@ -63,6 +63,18 @@ def get_training_shards(cfg: DictConfig) -> tuple[list[Path], pl.LazyFrame]:
     )
     if train_subjects.select(pl.len()).collect().item() == 0:
         raise ValueError(f"No training subjects found in {subject_splits_fp}")
+    selected = train_subset.selected_subjects(cfg)
+    if selected is not None:  # fit the code frequencies on the training subset only
+        dtype = train_subjects.collect_schema()[subject_id_col]
+        train_subjects = train_subjects.join(
+            selected.select(pl.col("subject_id").cast(dtype).alias(subject_id_col)),
+            on=subject_id_col,
+            how="semi",
+        )
+        if train_subjects.select(pl.len()).collect().item() == 0:
+            raise ValueError(
+                f"None of the train_subset subjects is a training subject in {subject_splits_fp}"
+            )
     return data_shards, train_subjects
 
 
@@ -76,6 +88,7 @@ def main(cfg: DictConfig):
         cfg: The configuration object for the tabularization process, loaded from a Hydra
             YAML configuration file.
     """
+    train_subset.apply(cfg)
     iter_wrapper = load_tqdm(cfg.tqdm)
 
     # 0. Identify Output Columns and Frequencies

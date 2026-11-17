@@ -84,7 +84,7 @@ meds-tab-model "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_
 
 This uses the default windows (`2h`, `12h`, `1d`, `7d`, `30d`, full history) and aggregations (`static/present`,
 `code/count`, `code/recency`, `value/sum`, `value/min`, `value/max`); set
-`tabularization.window_sizes` and `tabularization.aggs` to change them. 
+`tabularization.window_sizes` and `tabularization.aggs` to change them.
 
 The last command trains a single
 model with default hyperparameters. To tune hyperparameters instead, run it as a multirun sweep (raise
@@ -96,6 +96,27 @@ meds-tab-model --multirun "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "i
 ```
 
 Models, predictions and tuning and held-out AUROCs are written under `$MODEL_DIR`.
+
+### Train on a subset (scaling studies)
+
+To train on part of the training split, give every command above the same `train_subset` overrides, and
+`meds-tab-describe` the labels too:
+
+```console
+SUBSET=("train_subset.by=subjects" "train_subset.n=5000" "train_subset.salt=0")
+meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" "${SUBSET[@]}"
+# ...and "${SUBSET[@]}" on meds-tab-tabularize-static, meds-tab-tabularize-time-series and meds-tab-model
+```
+
+- `train_subset.by=subjects` keeps `n` training subjects that have labels, with all their labels;
+    `train_subset.by=labels` keeps `n` training label rows. `train_subset.fraction` replaces `n` with a share.
+- The selection is reproducible and nested: subjects are taken in the order of
+    `sha256("<salt>:<subject_id>")` (label rows: `sha256("<salt>:<subject_id>:<prediction time>")`), so with
+    one salt, the 1,000-subject subset is inside the 5,000-subject one. Change the salt for independent repeats.
+- Tuning and held-out labels are kept whole, so every subset is evaluated on the same subjects.
+- Code frequencies, tabularization and the model all use the selected subjects only. The cropped labels, the
+    selected subjects (`subjects.parquet`) and the counts (`subset.json`) are written to
+    `$OUTPUT_DIR/train_subset/<id>/`; use one `$OUTPUT_DIR` per subset.
 
 ## Scripts and Examples
 

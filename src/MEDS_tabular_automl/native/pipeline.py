@@ -161,7 +161,7 @@ class EncodedShard:
     static_present: np.ndarray  # static/present column.
     static_mean: np.ndarray  # static/mean column, or -1 when not a selected feature.
     static_values: np.ndarray
-    shard_subjects: np.ndarray  # Every subject with any record, sorted.
+    shard_subjects: np.ndarray  # Every (selected) subject with any record, sorted.
     # Timed records of described codes in selected groups, as group IDs, sorted by (subject, time); rare codes
     # count toward their group. Empty unless code/group_* aggregations are configured.
     group_subjects: np.ndarray = None
@@ -203,8 +203,14 @@ def _code_ids(names: tuple[str, ...]) -> pl.Expr:
     return pl.col("code").cast(pl.Enum(names), strict=False).to_physical()
 
 
-def read_shard(path: Path, vocab: Vocabulary, groups: bool = False) -> EncodedShard:
-    """Reads, validates and encodes one MEDS shard (and its records' code groups if groups)."""
+def read_shard(
+    path: Path, vocab: Vocabulary, groups: bool = False, keep_subjects: np.ndarray | None = None
+) -> EncodedShard:
+    """Reads, validates and encodes one MEDS shard (and its records' code groups if groups).
+
+    With ``keep_subjects``, only their records are encoded (after the whole shard is validated): features at a
+    label time depend only on the labeled subject's own records.
+    """
     schema = pl.read_parquet_schema(path)
     missing = {"subject_id", "time", "code", "numeric_value"} - set(schema)
     if missing:
@@ -226,6 +232,9 @@ def read_shard(path: Path, vocab: Vocabulary, groups: bool = False) -> EncodedSh
         raise ValueError(f"{path}: subject_id and code must not be null.")
     if frame["numeric_value"].is_infinite().any():
         raise ValueError(f"{path}: infinite numeric values are unsupported.")
+    kept_subjects = None if keep_subjects is None else pl.Series(keep_subjects, dtype=pl.Int64).implode()
+    if kept_subjects is not None:
+        frame = frame.filter(pl.col("subject_id").is_in(kept_subjects))
     shard_subjects = _numpy(frame["subject_id"].unique().sort(), np.int64)
 
     # Timed events of selected codes, sorted by (subject, time) unless they already are.
@@ -269,6 +278,8 @@ def read_shard(path: Path, vocab: Vocabulary, groups: bool = False) -> EncodedSh
         )
         .collect()
     )
+    if kept_subjects is not None:
+        static = static.filter(pl.col("subject_id").is_in(kept_subjects))
     present = static["present"].to_numpy()
     kept = present >= 0
     kept[kept] = vocab.present_keep[present[kept]]
@@ -611,8 +622,13 @@ class Pipeline:
         row_subjects, row_times = _numpy(rows["subject_id"], np.int64), _numpy(rows["time"], np.int64)
         order = np.empty(len(rows), dtype=np.int64)
         order[rows["label"].to_numpy()] = np.arange(len(rows))
+        # Only the labeled subjects' records: with a small cohort or a train_subset, most of the shard is
+        # skipped.
         encoded = read_shard(
-            self.input_dir / f"{name}.parquet", self.vocabulary, bool(self.config.group_aggs)
+            self.input_dir / f"{name}.parquet",
+            self.vocabulary,
+            bool(self.config.group_aggs),
+            np.unique(row_subjects),
         )
         staged = self.publisher.stage()
         output = ShardOutput(staged, self.config.do_compress, pool)
