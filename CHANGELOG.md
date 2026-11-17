@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 New default features, chosen from feature ablations on 10 generated MIMIC-IV tasks and checked on 11 MIMIC-IV
 clinical cohorts with `medsboost`: a `code/recency` aggregation, and a leaner default set of windows and
 aggregations. Tabularized outputs and models from earlier versions are not affected, but rerunning with the
-defaults gives different features.
+defaults gives different features. This release also adds feature importance and saved node statistics for
+`medsboost` models, and reproducible training subsets (`train_subset`) for scaling studies.
 
 ### Added
 
@@ -23,6 +24,18 @@ defaults gives different features.
     give the recency of its latest one; `medsboost` puts both in one slot per group. Not in the default
     aggregations: they added about 0.0015 to 0.0025 held-out AUROC in the ablations but 20–40% training time on
     large cohorts.
+- **medsboost feature importance**: `MedsBoost.feature_importance("split" | "gain")`, like LightGBM's
+    `Booster.feature_importance`: per column, the number of splits on it or their total gain.
+- **`save_stats`** (`model_launcher.model.save_stats=true`, or `MedsBoost(save_stats=True)` /
+    `MedsBoost.save(path, save_stats=True)`): the saved model also records node statistics (format version
+    2): each split's gain, and every node's and leaf's hessian sum and row count (cover). Gain importance then
+    works after reloading it, and the file holds what exact TreeSHAP needs. Off by default, and then the saved
+    model is byte-for-byte the version 1 format, which every release reads; version 2 files load from this
+    release on. Training is unchanged: these statistics were already computed to choose the splits and the
+    leaf values.
+- **`matrix_column_names(dataset)`** (`MEDS_tabular_automl.medsboost_model`): the name of each column of a
+    model's training matrix, after code filtering (and `min_column_nnz`), in the order of its feature
+    importances. The usage guide shows how to rank a trained model's features with it.
 - **`train_subset`: train on a reproducible subset of the training split**, e.g. for scaling studies.
     `train_subset.by=subjects` keeps `n` (or a `fraction` of the) training subjects that have labels, with all
     their labels; `train_subset.by=labels` keeps `n` (or a `fraction` of the) training label rows. Subjects

@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 SLOT_OF_AGG = {"code/recency": "code/count", "code/group_recency": "code/group_count"}
 
 
+def _matrix_columns(it: TabularDataset):
+    """(name, aggregation, is_static) of each column of the loaded matrix, in its order: the loader's, model
+    files in `get_model_files` order, each filtered by its code mask."""
+    names = it.get_all_column_names()  # f"{feature}/{agg}/{window}", before the code masks
+    pos = 0
+    for f in get_model_files(it.cfg, it.split, it._data_shards[0]):
+        is_static = f.stem in ("mean", "present")
+        agg = f"static/{f.stem}" if is_static else f"{f.parent.stem}/{f.stem}"
+        mask = np.asarray(it.code_masks[agg])
+        for name, keep in zip(names[pos : pos + len(mask)], mask, strict=True):
+            if keep:
+                yield name, agg, is_static
+        pos += len(mask)
+
+
 def column_slots(it: TabularDataset) -> np.ndarray:
     """One slot per (code, aggregation): all windows of a code's aggregation are alternatives; static columns
     -1. A code's code/recency column joins its code/count slot (see SLOT_OF_AGG), so each tree uses either one
@@ -26,21 +41,32 @@ def column_slots(it: TabularDataset) -> np.ndarray:
 
     The column order is the loader's: model files in `get_model_files` order, each filtered by its code mask.
     """
-    names = it.get_all_column_names()  # f"{feature}/{agg}/{window}", before the code masks
-    slot_of, keys, pos = [], {}, 0
-    for f in get_model_files(it.cfg, it.split, it._data_shards[0]):
-        is_static = f.stem in ("mean", "present")
-        agg = f"static/{f.stem}" if is_static else f"{f.parent.stem}/{f.stem}"
-        mask = np.asarray(it.code_masks[agg])
-        for name, keep in zip(names[pos : pos + len(mask)], mask, strict=True):
-            if keep:
-                if is_static:
-                    slot_of.append(-1)
-                else:
-                    key = (name.rsplit("/", 3)[0], SLOT_OF_AGG.get(agg, agg))
-                    slot_of.append(keys.setdefault(key, len(keys)))
-        pos += len(mask)
+    slot_of, keys = [], {}
+    for name, agg, is_static in _matrix_columns(it):
+        if is_static:
+            slot_of.append(-1)
+        else:
+            slot_of.append(keys.setdefault((name.rsplit("/", 3)[0], SLOT_OF_AGG.get(agg, agg)), len(keys)))
     return np.asarray(slot_of, dtype=np.int32)
+
+
+def _kept_columns(X_train, min_nnz: int) -> np.ndarray:
+    """Indices of the columns with at least min_nnz stored training entries (see min_column_nnz)."""
+    return np.flatnonzero(np.diff(sp.csc_matrix(X_train, dtype=np.float32).indptr) >= min_nnz)
+
+
+def matrix_column_names(it: TabularDataset, min_column_nnz: int = 0) -> list[str]:
+    """Names of the columns a model is trained on, in the order of ``MedsBoost.feature_importance``.
+
+    Each name is ``f"{feature}/{agg}/{window}"``. Unlike ``it.get_all_column_names()``, it leaves out the
+    columns the code masks (``tabularization.min_code_inclusion_count`` etc.) drop and, given the trial's
+    ``model_launcher.min_column_nnz``, the rare columns medsboost drops (``it`` must then be the train split).
+    """
+    names = [name for name, _, _ in _matrix_columns(it)]
+    if min_column_nnz > 1:
+        X, _ = it.get_data()
+        names = [names[i] for i in _kept_columns(X, min_column_nnz)]
+    return names
 
 
 class MedsBoostModel(GradientBoostedTreesModel):
@@ -114,7 +140,7 @@ class MedsBoostModel(GradientBoostedTreesModel):
         """
         if min_nnz <= 1:
             return
-        keep = np.flatnonzero(np.diff(self.dtrain[0].indptr) >= min_nnz)
+        keep = _kept_columns(self.dtrain[0], min_nnz)
         logger.info(
             f"medsboost: keeping {len(keep)} of {self.dtrain[0].shape[1]} columns (min_column_nnz={min_nnz})"
         )

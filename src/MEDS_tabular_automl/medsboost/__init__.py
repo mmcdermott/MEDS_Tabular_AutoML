@@ -39,6 +39,70 @@ Models saved under the name medsboost had before MEDS-Tab 0.4.1, sparsegb, still
     ...     old = MedsBoost.load(Path(d) / "old.txt")
     >>> text.startswith("medsboost 1"), bool(np.allclose(old.predict_proba(X[500:]), p))
     (True, True)
+
+Feature importance, like LightGBM's: how often each column is split on, or the total gain of those splits.
+The informative columns 0 and 1 come first:
+
+    >>> gain = model.feature_importance("gain")
+    >>> splits = model.feature_importance("split")
+    >>> gain.shape, splits.dtype, int(splits.sum()) > 0
+    ((40,), dtype('int64'), True)
+    >>> sorted(np.argsort(-gain)[:2].tolist())
+    [0, 1]
+
+Split counts survive any save; gains only a save with ``save_stats`` (format version 2, which predictions
+ignore), so a default save is unchanged:
+
+    >>> with tempfile.TemporaryDirectory() as d:
+    ...     model.save(Path(d) / "v1.txt")
+    ...     model.save(Path(d) / "v2.txt", save_stats=True)
+    ...     v1_text = (Path(d) / "v1.txt").read_text()
+    ...     v2_text = (Path(d) / "v2.txt").read_text()
+    ...     v1 = MedsBoost.load(Path(d) / "v1.txt")
+    ...     v2 = MedsBoost.load(Path(d) / "v2.txt")
+    >>> v1_text == text, v2_text.startswith("medsboost 2")
+    (True, True)
+    >>> bool(np.array_equal(v1.feature_importance("split"), splits))
+    True
+    >>> bool(np.allclose(v2.feature_importance("gain"), gain))
+    True
+    >>> bool(np.allclose(v2.predict_proba(X[500:]), p))
+    True
+    >>> v1.feature_importance("gain")
+    Traceback (most recent call last):
+        ...
+    ValueError: this model was loaded from a file saved without node statistics; save it with save_stats=True
+    >>> model.feature_importance("cover")
+    Traceback (most recent call last):
+        ...
+    ValueError: importance_type must be one of ['gain', 'split'], got 'cover'
+
+Format version 2 adds, per tree, ``gain hess count`` to each node line (``feature threshold left right``;
+a child ``c < 0`` is leaf ``~c``) and, after the leaf values line, a line of leaf hessian sums and a line of
+leaf row counts: the node cover that exact TreeSHAP needs, on the tree's (bagged) training rows. Every
+node's hessian sum and row count are those of its two children added:
+
+    >>> def stat(nodes, leaves, child, k):  # k: 5 = hessian sum, 6 = row count
+    ...     return float(nodes[child][k]) if child >= 0 else leaves[k - 5][~child]
+    >>> lines, consistent = v2_text.splitlines(), []
+    >>> i = lines.index(f"trees {model.num_trees}") + 1
+    >>> while i < len(lines):
+    ...     n_nodes, n_leaves = (int(v) for v in lines[i].split()[1:])
+    ...     nodes = [line.split() for line in lines[i + 1 : i + 1 + n_nodes]]
+    ...     leaves = [[float(v) for v in lines[i + n_nodes + j].split()] for j in (2, 3)]
+    ...     consistent += [
+    ...         n_leaves == 1
+    ...         or all(
+    ...             np.isclose(
+    ...                 stat(nodes, leaves, int(n[2]), k) + stat(nodes, leaves, int(n[3]), k), float(n[k])
+    ...             )
+    ...             for n in nodes
+    ...             for k in (5, 6)
+    ...         )
+    ...     ]
+    ...     i += n_nodes + 4
+    >>> len(consistent) == model.num_trees, all(consistent)
+    (True, True)
 """
 
 from __future__ import annotations
@@ -186,6 +250,10 @@ def library() -> ct.CDLL:
     lib.medsboost_predict.argtypes = [ct.c_void_p, ct.c_int64, I64P, I32P, F32P, ct.c_int, F64P]
     lib.medsboost_save.restype = ct.c_int
     lib.medsboost_save.argtypes = [ct.c_void_p, ct.c_char_p]
+    lib.medsboost_save_ex.restype = ct.c_int
+    lib.medsboost_save_ex.argtypes = [ct.c_void_p, ct.c_char_p, ct.c_int]
+    lib.medsboost_feature_importance.restype = ct.c_int
+    lib.medsboost_feature_importance.argtypes = [ct.c_void_p, ct.c_int, F64P]
     lib.medsboost_load.restype = ct.c_void_p
     lib.medsboost_load.argtypes = [ct.c_char_p]
     lib.medsboost_free.restype = None
@@ -231,6 +299,11 @@ class MedsBoost:
         layouts: number of precomputed column layouts (multiple of 7); 0 draws a fresh column sample every
             `refresh` trees instead. Only matters when slots are given.
         refresh: trees per column sample (or per layout draw).
+        save_stats: also write node statistics when saving (format version 2): each split's gain, and the
+            hessian sum and row count (cover) of every node and leaf. Then ``feature_importance("gain")``
+            works on the reloaded model, and the file has what exact TreeSHAP needs. Off by default: the
+            saved file is then the version 1 format that every MEDS-Tab release reads. Does not affect
+            training.
     """
 
     def __init__(
@@ -248,6 +321,7 @@ class MedsBoost:
         min_sum_hessian: float = 1e-3,
         layouts: int = 14,
         refresh: int = 1,
+        save_stats: bool = False,
     ):
         self.params = {
             "threads": threads or default_threads(),
@@ -264,6 +338,7 @@ class MedsBoost:
             "layouts": layouts,
             "refresh": refresh,
         }
+        self.save_stats = bool(save_stats)  # an output option, not a training parameter
         self._handle = None
         self.info: dict = {}
 
@@ -381,10 +456,51 @@ class MedsBoost:
     def num_trees(self) -> int:
         return int(library().medsboost_num_trees(self._handle)) if self._handle is not None else 0
 
-    def save(self, path) -> None:
-        """Writes the model in medsboost's text format."""
-        if self._handle is None or library().medsboost_save(self._handle, str(path).encode()) != 0:
+    def save(self, path, save_stats: bool | None = None) -> None:
+        """Writes the model in medsboost's text format.
+
+        Args:
+            save_stats: write node statistics: split gains and node / leaf cover (format version 2); None uses
+                the ``save_stats`` the model was created with.
+
+        Raises:
+            ValueError: statistics were requested for a model loaded from a file saved without them.
+            OSError: the file could not be written.
+        """
+        if self._handle is None:
+            raise OSError(f"could not save the model to {path}: it is not trained or loaded")
+        stats = self.save_stats if save_stats is None else bool(save_stats)
+        status = library().medsboost_save_ex(self._handle, str(path).encode(), int(stats))
+        if status == 2:
+            raise ValueError("this model was loaded from a file saved without node statistics")
+        if status != 0:
             raise OSError(f"could not save the model to {path}")
+
+    def feature_importance(self, importance_type: str = "split") -> np.ndarray:
+        """Importance of each column, like LightGBM's ``Booster.feature_importance``.
+
+        Args:
+            importance_type: "split" (int array: how many splits use the column) or "gain" (float array: the
+                total gain of those splits).
+
+        Raises:
+            ValueError: an unknown importance type, or "gain" for a model loaded from a file saved without
+                node statistics (see ``save_stats``).
+        """
+        kinds = {"split": 0, "gain": 1}
+        if importance_type not in kinds:
+            raise ValueError(f"importance_type must be one of {sorted(kinds)}, got {importance_type!r}")
+        if self._handle is None:
+            raise RuntimeError("model is not trained or loaded")
+        lib = library()
+        out = np.zeros(int(lib.medsboost_num_features(self._handle)))
+        status = lib.medsboost_feature_importance(self._handle, kinds[importance_type], _ptr(out, F64P))
+        if status == 2:
+            raise ValueError(
+                "this model was loaded from a file saved without node statistics; "
+                "save it with save_stats=True"
+            )
+        return out.astype(np.int64) if importance_type == "split" else out
 
     @classmethod
     def load(cls, path, threads: int = 0) -> MedsBoost:

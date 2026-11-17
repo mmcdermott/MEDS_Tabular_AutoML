@@ -166,7 +166,7 @@ Static features capture the presence of each code and, for codes with static num
 
 ## Model Support and Normalization/Imputation Options
 
-The default and recommended model is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. It runs the same algorithm as LightGBM (Newton boosting, histograms, leaf-wise growth, bagging, early stopping), but never stores or scans absent entries, drops features that can no longer split, and samples one window per code and aggregation in each tree. On the 10 MIMIC-IV MG tasks it trains 12.5 times faster than LightGBM at the same held-out AUROC. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files.
+The default and recommended model is `medsboost`, MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. It runs the same algorithm as LightGBM (Newton boosting, histograms, leaf-wise growth, bagging, early stopping), but never stores or scans absent entries, drops features that can no longer split, and samples one window per code and aggregation in each tree. On the 10 MIMIC-IV MG tasks it trains 12.5 times faster than LightGBM at the same held-out AUROC. During a sweep, each split's matrix is cached on its first load, so later trials skip re-reading the tabularized files. Its feature importances (`feature_importance("split" | "gain")`) can be read from a saved model; with `model_launcher.model.save_stats=true` the saved model also holds split gains and node cover (see the usage guide).
 
 XGBoost and LightGBM are also supported, as are KNN, logistic regression, random forest and SGD classifiers from scikit-learn. An experimental AutoGluon integration provides automated model selection.
 

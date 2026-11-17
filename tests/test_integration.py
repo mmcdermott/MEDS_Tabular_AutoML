@@ -9,10 +9,13 @@ import meds
 import polars as pl
 from hydra import compose, initialize
 from meds_evaluation.schema import validate_binary_classification_schema
+from omegaconf import OmegaConf
 
 from MEDS_tabular_automl import medsboost
 from MEDS_tabular_automl.describe_codes import get_feature_columns
 from MEDS_tabular_automl.file_name import list_subdir_files
+from MEDS_tabular_automl.medsboost_model import matrix_column_names
+from MEDS_tabular_automl.tabular_dataset import TabularDataset
 from MEDS_tabular_automl.utils import (
     VALUE_AGGREGATIONS,
     get_events_df,
@@ -272,6 +275,8 @@ def test_integration(tmp_path):
             "delete_below_top_k": 2,
             "data_loading_params.keep_data_in_memory": True,
         }
+        if model == "medsboost":
+            model_config["model_launcher.model.save_stats"] = True
         overrides = [f"tabularization.aggs={stdout_agg.strip()}"]
         if model == "autogluon":
             script = "meds-tab-autogluon"
@@ -293,6 +298,18 @@ def test_integration(tmp_path):
             validate_binary_classification_schema(
                 pl.read_parquet(time_output_dir / "best_trial/held_out_predictions.parquet")
             )
+            if model == "medsboost":
+                # Feature importances of the best trial, named as the usage guide shows.
+                best = time_output_dir / "best_trial"
+                assert (best / "medsboost.txt").read_text().startswith("medsboost 2")  # save_stats
+                trained = medsboost.MedsBoost.load(best / "medsboost.txt")
+                trial = OmegaConf.load(best / "config.log")
+                names = matrix_column_names(
+                    TabularDataset(trial, "train"), trial.model_launcher.get("min_column_nnz", 0)
+                )
+                gain = trained.feature_importance("gain")
+                assert len(names) == len(gain) == len(trained.feature_importance("split"))
+                assert len(set(names)) == len(names)  # (gains are 0 here: too few rows to split)
         else:
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1

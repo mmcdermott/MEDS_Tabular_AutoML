@@ -573,6 +573,38 @@ below to train a different model.
     the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
     prefer XGBoost or add an observation indicator if the distinction matters for your task.
 
+### Feature importance (`medsboost`)
+
+A `medsboost` model reports how much it uses each column of its training matrix, like LightGBM's `Booster.feature_importance`: `feature_importance("split")`, the number of splits on the column, or `feature_importance("gain")`, their total gain (the loss reduction they bring on the training rows). Split counts work on any saved model. Gains need the model to be saved with its node statistics: add `model_launcher.model.save_stats=true` to `meds-tab-model`. Training is unchanged; the saved file then also records each split's gain and the hessian sum and row count (cover) of every node and leaf, which exact TreeSHAP needs.
+
+```console
+meds-tab-model --multirun \
+    "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_DIR" "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK" "model_launcher.model.save_stats=true"
+```
+
+Then name the importances of the best trial with its configuration:
+
+```python
+from pathlib import Path
+
+from omegaconf import OmegaConf
+
+from MEDS_tabular_automl.medsboost import MedsBoost
+from MEDS_tabular_automl.medsboost_model import matrix_column_names
+from MEDS_tabular_automl.tabular_dataset import TabularDataset
+
+best = Path("OUTPUT_MODEL_DIR/TASK/YYYY-MM-DD_HH-MM-SS/best_trial")
+model = MedsBoost.load(best / "medsboost.txt")
+cfg = OmegaConf.load(best / "config.log")  # the trial's configuration
+names = matrix_column_names(TabularDataset(cfg, "train"), cfg.model_launcher.get("min_column_nnz", 0))
+gain = model.feature_importance("gain")
+for value, name in sorted(zip(gain, names), reverse=True)[:20]:
+    print(f"{value:12.1f}  {name}")  # e.g. "<code>/value/mean/30d"
+```
+
+`matrix_column_names` names the columns the trial actually trained on (after its code filtering, e.g. `tabularization.min_code_inclusion_count`, and the rare columns `model_launcher.min_column_nnz` drops), in the order of the importances. Each name is `<feature>/<aggregation>/<window>`; add up the windows and aggregations of a code to rank codes. Gains are computed on the training rows of each tree (bagged), as in LightGBM.
+
 ### Input/Output Data Structure
 
 ```text
