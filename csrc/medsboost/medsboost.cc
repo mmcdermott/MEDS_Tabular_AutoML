@@ -354,6 +354,115 @@ double predict_row(const Model& m, const int32_t* idx, const float* val, int64_t
   return s;
 }
 
+// Path-dependent TreeSHAP (Lundberg, Erion and Lee, 2018) with each node's training row count as
+// its cover, computed per leaf in a numerically stable form. Along the path to a leaf, each
+// distinct feature j has z_j, the fraction of the training rows that follow the path at its splits
+// (the product of the child / parent counts), and o_j, 1 if the row follows them all, else 0. The
+// leaf adds to feature i
+//   value * (o_i - z_i) * integral_0^1 prod_{j != i} ((1 - t) z_j + t o_j) dt,
+// its Shapley value: the Shapley weight |S|! (d - |S| - 1)! / d! is the integral of t^|S| (1 -
+// t)^(d-|S|-1). The integrand is a polynomial of degree d - 1, so ceil(d / 2) Gauss-Legendre points
+// give it exactly. Only products of numbers in [0, 1] are formed: unlike the path extension /
+// unwinding of the original algorithm, nothing is divided, which lost all precision on MEDSBoost's
+// leaf-wise trees (100+ levels deep).
+
+// Gauss-Legendre nodes and weights on [0, 1] for n points (Newton's method on the Legendre
+// polynomial).
+void gauss_legendre(int n, std::vector<double>* nodes, std::vector<double>* weights) {
+  const double pi = 3.14159265358979323846;
+  nodes->assign(n, 0.0);
+  weights->assign(n, 0.0);
+  for (int i = 0; i < (n + 1) / 2; ++i) {
+    double x = std::cos(pi * (i + 0.75) / (n + 0.5)), derivative = 1;
+    for (int iteration = 0; iteration < 100; ++iteration) {
+      double p1 = 1, p2 = 0;
+      for (int j = 1; j <= n; ++j) {
+        const double p3 = p2;
+        p2 = p1;
+        p1 = ((2.0 * j - 1) * x * p2 - (j - 1.0) * p3) / j;
+      }
+      derivative = n * (x * p1 - p2) / (x * x - 1);
+      const double step = p1 / derivative;
+      x -= step;
+      if (std::abs(step) < 1e-16) break;
+    }
+    (*nodes)[i] = 0.5 * (1 - x);
+    (*nodes)[n - 1 - i] = 0.5 * (1 + x);
+    (*weights)[i] = (*weights)[n - 1 - i] = 1.0 / ((1 - x * x) * derivative * derivative);
+  }
+}
+
+double cover(const Tree& t, int node) {
+  return static_cast<double>(node >= 0 ? t.nodes[node].count : t.leaf_count[~node]);
+}
+
+// One row's walk of one tree. feats / z / o hold the path's distinct features (indices into
+// Model::fids) and their fractions; quad_nodes[q] / quad_weights[q] the q-point rule.
+struct ShapWalk {
+  const Model& m;
+  const Tree& t;
+  const int* bins;
+  double* phi;
+  const std::vector<std::vector<double>>& quad_nodes;
+  const std::vector<std::vector<double>>& quad_weights;
+  int* feats;
+  double *z, *o, *f, *prefix, *acc;
+
+  void leaf(double value, int d) {
+    if (d == 0) return;
+    const int q = (d + 1) / 2;
+    std::fill(acc, acc + d, 0.0);
+    for (int k = 0; k < q; ++k) {
+      const double x = quad_nodes[q][k], w = quad_weights[q][k];
+      prefix[0] = 1;
+      for (int j = 0; j < d; ++j) {
+        f[j] = (1 - x) * z[j] + x * o[j];
+        prefix[j + 1] = prefix[j] * f[j];
+      }
+      double suffix = 1;
+      for (int j = d - 1; j >= 0; --j) {
+        acc[j] += w * prefix[j] * suffix;
+        suffix *= f[j];
+      }
+    }
+    for (int j = 0; j < d; ++j) phi[feats[j]] += value * (o[j] - z[j]) * acc[j];
+  }
+
+  void walk(int node, int d) {
+    if (node < 0) {
+      leaf(t.leaf_value[~node], d);
+      return;
+    }
+    const Node& n = t.nodes[node];
+    const int local = m.fpos[n.feat];
+    const int hot = bins[local] <= n.thr ? n.left : n.right;
+    int pos = 0;
+    while (pos < d && feats[pos] != local) ++pos;
+    const double count = static_cast<double>(n.count);
+    for (const int child : {n.left, n.right}) {
+      const double ratio = cover(t, child) / count, one = child == hot ? 1.0 : 0.0;
+      if (pos < d) {  // a feature already on the path: its fractions multiply
+        const double z_before = z[pos], o_before = o[pos];
+        z[pos] *= ratio;
+        o[pos] *= one;
+        walk(child, d);
+        z[pos] = z_before;
+        o[pos] = o_before;
+      } else {
+        feats[d] = local;
+        z[d] = ratio;
+        o[d] = one;
+        walk(child, d + 1);
+      }
+    }
+  }
+};
+
+int tree_depth(const Tree& t, int node) {
+  if (node < 0) return 0;
+  return 1 + std::max(tree_depth(t, t.nodes[node].left), tree_depth(t, t.nodes[node].right));
+}
+
 }  // namespace
 
 namespace {
@@ -1288,6 +1397,69 @@ int medsboost_feature_importance(const void* model, int kind, double* out) {
   for (const Tree& t : m.trees) {
     if (t.leaf_value.size() == 1) continue;
     for (const Node& tn : t.nodes) out[tn.feat] += kind == 0 ? 1.0 : tn.gain;
+  }
+  return 0;
+}
+
+// The columns the trees split on (ascending), which medsboost_shap reports contributions for.
+int64_t medsboost_num_used_features(const void* model) {
+  return static_cast<int64_t>(static_cast<const Model*>(model)->fids.size());
+}
+
+int medsboost_used_features(const void* model, int32_t* out) {
+  const Model& m = *static_cast<const Model*>(model);
+  std::copy(m.fids.begin(), m.fids.end(), out);
+  return 0;
+}
+
+// Exact path-dependent TreeSHAP contributions (log-odds) of a CSR matrix with sorted column
+// indices: out[r * (k + 1) + i] for the k used features (medsboost_used_features order), then the
+// expected value in the last slot, so each row of out sums to the row's raw score. Uses the node
+// row counts saved with save_stats: returns 2 for a model loaded without them.
+int medsboost_shap(const void* model, int64_t n, const int64_t* ptr, const int32_t* idx,
+                   const float* val, int threads, double* out) {
+  const Model& m = *static_cast<const Model*>(model);
+  if (!m.has_stats) return 2;
+  const int k = static_cast<int>(m.fids.size());
+  double expected = m.init;
+  int max_depth = 0;
+  for (const Tree& t : m.trees) {
+    const double root = cover(t, t.leaf_value.size() == 1 ? ~0 : 0);
+    for (size_t i = 0; i < t.leaf_value.size(); ++i)
+      expected += t.leaf_value[i] * static_cast<double>(t.leaf_count[i]) / root;
+    if (t.leaf_value.size() > 1) max_depth = std::max(max_depth, tree_depth(t, 0));
+  }
+  // Rules for every path length up to the deepest leaf (a path has at most max_depth distinct
+  // features).
+  const int max_points = (max_depth + 1) / 2;
+  std::vector<std::vector<double>> quad_nodes(max_points + 1), quad_weights(max_points + 1);
+  for (int q = 1; q <= max_points; ++q) gauss_legendre(q, &quad_nodes[q], &quad_weights[q]);
+  std::vector<int> zero_bins(k);
+  for (int i = 0; i < k; ++i) zero_bins[i] = m.fs[i].zero_bin;
+  const size_t width = static_cast<size_t>(max_depth) + 2;
+#pragma omp parallel num_threads(threads)
+  {
+    std::vector<int> bins(k), feats(width);
+    std::vector<double> z(width), o(width), f(width), prefix(width), acc(width);
+#pragma omp for schedule(dynamic, 16)
+    for (int64_t r = 0; r < n; ++r) {
+      double* phi = out + r * (k + 1);
+      std::fill(phi, phi + k + 1, 0.0);
+      std::copy(zero_bins.begin(), zero_bins.end(), bins.begin());
+      for (int64_t j = ptr[r]; j < ptr[r + 1]; ++j) {
+        const int32_t c = idx[j];
+        if (c >= 0 && c < m.m_cols && m.fpos[c] >= 0)
+          bins[m.fpos[c]] = to_bin(m.fs[m.fpos[c]], val[j]);
+      }
+      for (const Tree& t : m.trees) {
+        if (t.leaf_value.size() == 1) continue;
+        ShapWalk walk{
+            m,        t,        bins.data(), phi,           quad_nodes, quad_weights, feats.data(),
+            z.data(), o.data(), f.data(),    prefix.data(), acc.data()};
+        walk.walk(0, 0);
+      }
+      phi[k] = expected;
+    }
   }
   return 0;
 }

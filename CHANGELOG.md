@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`MedsBoost.shap_values(X)`**: exact SHAP values of each row (path-dependent TreeSHAP, in log-odds, from
+    the node row counts saved with `save_stats`), like `shap.TreeExplainer` and LightGBM's `pred_contrib`. It
+    returns the values of the columns the trees use (a small part of wide tabularized data), their indices
+    and the expected value; each row's values plus the expected value add up to `predict_raw`. Each leaf's
+    contribution is integrated exactly by Gauss-Legendre quadrature rather than by the original algorithm's
+    path unwinding, which loses all precision on MEDSBoost's leaf-wise trees (100+ levels deep on wide sparse
+    data). Rows run in parallel in the C++ library (`medsboost_shap`).
+
 ## 0.4.2
 
 New default features, chosen from feature ablations on 10 generated MIMIC-IV tasks and checked on 11 MIMIC-IV
