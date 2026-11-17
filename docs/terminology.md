@@ -42,6 +42,7 @@ Note that "Static" and "Dynamic" refer to whether a timestamp is recorded in the
 | `static/present` | Static Codes           | Binary indicator of code presence                  |
 | `static/mean`    | Static Numeric Values  | Mean of the subject's static values of the code    |
 | `code/count`     | Dynamic Codes          | Count of code occurrences within lookback window   |
+| `code/recency`   | Dynamic Codes          | 1 / (1 + days since the code's last occurrence)    |
 | `value/count`    | Dynamic Numeric Values | Count of measurements within lookback window       |
 | `value/sum`      | Dynamic Numeric Values | Sum of measurements within lookback window         |
 | `value/sum_sqd`  | Dynamic Numeric Values | Sum of squared measurements within lookback window |
@@ -50,18 +51,21 @@ Note that "Static" and "Dynamic" refer to whether a timestamp is recorded in the
 
 Static aggregations are computed once per subject_id and static code. Dynamic aggregations are computed per subject_id, code, and lookback window, where the lookback window defines the time period before a reference time point over which measurements are aggregated. Note that the value-based aggregations (`value/*`) are only computed for the subset of dynamic code measurements that include numeric values, while `code/count` is computed for all dynamic codes regardless of whether they have numeric values.
 
+`code/recency` is computed once over the full history up to the prediction time, whatever the window sizes, and stored under the `full` window: it is 1 / (1 + days since the code's last occurrence), and absent for a code the subject never had. Recency over a shorter window `w` would only threshold it (the code occurred within `w` exactly when its recency is at least 1 / (1 + `w` in days)). With `medsboost`, a code's recency is one more alternative in its `code/count` slot, so each tree uses either one of the code's windowed counts or its recency.
+
 We provide examples of these aggregations here. Notice that for dynamic aggregations, data within a lookback window (e.g., last 24 hours) is input to the aggregation function.
 
-| Aggregation      | Input Data                               | Result | Explanation                                                           |
-| ---------------- | ---------------------------------------- | ------ | --------------------------------------------------------------------- |
-| `static/present` | Gender//Female                           | 1      | Indicates the presence (1) of the code "Gender//Female"               |
-| `static/mean`    | Birth Weight: [3.2, 3.4] kg              | 3.3    | Mean of the subject's static values of the code                       |
-| `code/count`     | Heart Rate: [80, NULL, 78, 90]           | 4      | Counts the occurrences of codes within the lookback window            |
-| `value/count`    | Heart Rate: [80, 78, 90]                 | 3      | Counts the number of measurements recorded within the lookback window |
-| `value/sum`      | Glucose Levels: [100, 110, 105]          | 315    | Sums the measurement values within the lookback window                |
-| `value/sum_sqd`  | Blood Pressure Readings: [120, 125]      | 30,025 | Sums the squares of the measurements (120² + 125²)                    |
-| `value/min`      | Temperature Readings: [37.5, 38.0, 37.0] | 37.0   | Finds the minimum value within the lookback window                    |
-| `value/max`      | Respiratory Rate: [16, 18, 20]           | 20     | Finds the maximum value within the lookback window                    |
+| Aggregation      | Input Data                               | Result | Explanation                                                                          |
+| ---------------- | ---------------------------------------- | ------ | ------------------------------------------------------------------------------------ |
+| `static/present` | Gender//Female                           | 1      | Indicates the presence (1) of the code "Gender//Female"                              |
+| `static/mean`    | Birth Weight: [3.2, 3.4] kg              | 3.3    | Mean of the subject's static values of the code                                      |
+| `code/count`     | Heart Rate: [80, NULL, 78, 90]           | 4      | Counts the occurrences of codes within the lookback window                           |
+| `code/recency`   | Last Heart Rate 2 days before            | 0.333  | 1 / (1 + 2): 1 for a code recorded at the prediction time, toward 0 as it gets older |
+| `value/count`    | Heart Rate: [80, 78, 90]                 | 3      | Counts the number of measurements recorded within the lookback window                |
+| `value/sum`      | Glucose Levels: [100, 110, 105]          | 315    | Sums the measurement values within the lookback window                               |
+| `value/sum_sqd`  | Blood Pressure Readings: [120, 125]      | 30,025 | Sums the squares of the measurements (120² + 125²)                                   |
+| `value/min`      | Temperature Readings: [37.5, 38.0, 37.0] | 37.0   | Finds the minimum value within the lookback window                                   |
+| `value/max`      | Respiratory Rate: [16, 18, 20]           | 20     | Finds the maximum value within the lookback window                                   |
 
 ## Lookback Window
 
@@ -69,10 +73,11 @@ We define a lookback window as a time period before a reference time point over 
 
 ```yaml
 window_sizes:
+  - 2h   # 2 hours
+  - 12h   # 12 hours
   - 1d   # 1 day
   - 7d   # 7 days
   - 30d   # 30 days
-  - 365d   # 1 year
   - full   # full subject history
 ```
 

@@ -19,6 +19,7 @@ from ..generate_ts_features import get_flat_ts_rep
 from ..utils import (
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
+    agg_windows,
     get_shard_prefix,
     load_tqdm,
     write_df,
@@ -79,7 +80,11 @@ def main(
         for agg in cfg.tabularization.aggs
         if agg not in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]
     ]
-    tabularization_tasks = list(product(meds_shard_fps, cfg.tabularization.window_sizes, aggs))
+    tabularization_tasks = [
+        (shard_fp, window_size, agg)
+        for shard_fp, agg in product(meds_shard_fps, aggs)
+        for window_size in agg_windows(agg, cfg.tabularization.window_sizes)
+    ]
     np.random.shuffle(tabularization_tasks)
 
     # iterate through them

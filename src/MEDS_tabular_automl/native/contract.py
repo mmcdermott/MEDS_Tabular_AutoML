@@ -15,16 +15,20 @@ from dataclasses import asdict, dataclass
 SEMANTICS_VERSION = 2
 
 STATIC_AGGS = ("static/present", "static/mean")
-CODE_AGGS = ("code/count",)
+CODE_AGGS = ("code/count", "code/recency")
 VALUE_AGGS = ("value/count", "value/sum", "value/sum_sqd", "value/min", "value/max")
-DYNAMIC_AGGS = CODE_AGGS + VALUE_AGGS
-DEFAULT_WINDOWS = ("1d", "7d", "30d", "365d", "full")
-SUPPORTED_AGGS = STATIC_AGGS + DYNAMIC_AGGS
+# The engine's statistics, in its bit (and output) order.
+DYNAMIC_AGGS = ("code/count", *VALUE_AGGS, "code/recency")
+# Computed once over the full history (written under the "full" window), whatever the window sizes.
+FULL_HISTORY_AGGS = ("code/recency",)
+DEFAULT_WINDOWS = ("2h", "12h", "1d", "7d", "30d", "full")
+DEFAULT_AGGS = ("static/present", "code/count", "code/recency", "value/sum", "value/min", "value/max")
+SUPPORTED_AGGS = STATIC_AGGS + CODE_AGGS + VALUE_AGGS
 # Feature-name suffix in metadata/codes.parquet of each aggregation.
 SUFFIXES = {
     "static/present": "/static/present",
     "static/mean": "/static/mean",
-    "code/count": "/code",
+    **dict.fromkeys(CODE_AGGS, "/code"),
     **dict.fromkeys(VALUE_AGGS, "/value"),
 }
 
@@ -61,7 +65,7 @@ class TabularConfig:
     tabularization config."""
 
     window_sizes: tuple[str, ...] = DEFAULT_WINDOWS
-    aggs: tuple[str, ...] = SUPPORTED_AGGS
+    aggs: tuple[str, ...] = DEFAULT_AGGS
     allowed_codes: tuple[str, ...] | None = None
     min_code_inclusion_count: int | None = 10
     min_code_inclusion_frequency: float | None = None

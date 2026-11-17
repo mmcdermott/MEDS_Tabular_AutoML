@@ -22,7 +22,7 @@ import polars as pl
 from scipy.sparse import csr_array
 
 from . import engine
-from .contract import DYNAMIC_AGGS, SUFFIXES, TabularConfig, window_microseconds
+from .contract import CODE_AGGS, DYNAMIC_AGGS, FULL_HISTORY_AGGS, SUFFIXES, TabularConfig, window_microseconds
 from .storage import (
     Publisher,
     atomic_write_json,
@@ -122,7 +122,7 @@ class Vocabulary:
         )
 
     def block_width(self, agg: str) -> int:
-        if agg == "code/count":
+        if agg in CODE_AGGS:
             return len(self.code_names)
         if agg in DYNAMIC_AGGS:
             return self.value_count
@@ -471,20 +471,26 @@ class Pipeline:
                 len(vocab.code_names),
                 self.threads,
             )
-            matrices = shard.aggregate(
-                row_subjects,
-                row_times,
-                [window_microseconds(w) for w in config.window_sizes],
-                sum(STATISTIC_BITS[agg] for agg in dynamic),
-                vocab.value_columns,
-                vocab.value_count,
-                self.threads,
-            )
+            # Windowed statistics over every window size, then full-history ones (code/recency).
+            windowed = tuple(agg for agg in dynamic if agg not in FULL_HISTORY_AGGS)
+            full_history = tuple(agg for agg in dynamic if agg in FULL_HISTORY_AGGS)
+            for aggs, windows in ((windowed, config.window_sizes), (full_history, ("full",))):
+                if not aggs:
+                    continue
+                matrices = shard.aggregate(
+                    row_subjects,
+                    row_times,
+                    [window_microseconds(w) for w in windows],
+                    sum(STATISTIC_BITS[agg] for agg in aggs),
+                    vocab.value_columns,
+                    vocab.value_count,
+                    self.threads,
+                )
+                # Window-major, then statistics in DYNAMIC_AGGS order, as config.dynamic_aggs lists them.
+                blocks = [(window, agg) for window in windows for agg in aggs]
+                for (window, agg), matrix in zip(blocks, matrices, strict=True):
+                    output.write(window, agg, matrix)
             shard.close()
-            # Window-major, then statistics in DYNAMIC_AGGS order, as config.dynamic_aggs lists them.
-            blocks = [(window, agg) for window in config.window_sizes for agg in dynamic]
-            for (window, agg), matrix in zip(blocks, matrices, strict=True):
-                output.write(window, agg, matrix)
         if config.static_aggs:
             present, mean = self._static(encoded, row_subjects, row_times)
             for agg, matrix in (("static/present", present), ("static/mean", mean)):

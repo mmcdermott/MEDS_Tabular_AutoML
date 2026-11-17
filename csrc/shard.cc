@@ -16,6 +16,8 @@
 namespace meds_tab {
 namespace {
 
+constexpr double kMicrosecondsPerDay = 86'400'000'000.0;  // Event and row times are microseconds.
+
 // Index of the lowest set bit of a non-zero word.
 inline int LowestBit(std::uint64_t bits) {
 #ifdef _MSC_VER
@@ -65,6 +67,8 @@ inline std::uint64_t Bit(std::int32_t code) { return std::uint64_t{1} << (code &
 // subject the worker sees and are then reused, so the event loop never allocates.
 struct Scratch {
   std::vector<std::int64_t> records, numbers;
+  // Time of each code's latest record added to the window (code/recency).
+  std::vector<std::int64_t> last_time;
   // Window sums that never subtract, so a value leaving the window cannot disturb
   // the others' sum. A code's values in the window occupy slots [head, tail) of the
   // code's slice, in arrival order. Slots [head, mid) are the front: suffix[k] sums
@@ -93,7 +97,7 @@ struct NumericPlan {
   bool sum = false, squares = false, min = false, max = false;
 
   explicit NumericPlan(std::uint32_t mask) {
-    for (int stat = kValueCount; stat < kStatisticCount; ++stat) {
+    for (int stat = kValueCount; stat <= kMax; ++stat) {
       if (!(mask & (1u << stat))) continue;
       stats.push_back(stat);
       sum = sum || stat == kSum;
@@ -279,6 +283,8 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
     throw std::invalid_argument("Invalid statistic mask.");
   }
   const bool counts = mask & (1u << kCodeCount);
+  const bool recency = mask & (1u << kRecency);
+  const bool codes = counts || recency;  // Both are over the codes with a record in the window.
   const NumericPlan numeric(mask);
   const auto stats = numeric.stats.size();
   const bool has_numeric = stats > 0;
@@ -310,7 +316,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
   std::vector<Scratch> scratch(WorkerCount(threads, jobs.size()));
 
   // 1. Size every row: entries at [w * stride + row + 1], prefix-summed below.
-  std::vector<std::int64_t> code_outer(counts ? w_count * stride : 0);
+  std::vector<std::int64_t> code_outer(codes ? w_count * stride : 0);
   std::vector<std::int64_t> value_outer(has_numeric ? w_count * stride : 0);
   ParallelFor(jobs.size(), threads, [&](std::size_t worker, std::size_t j) {
     const auto& job = jobs[j];
@@ -319,17 +325,19 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
     SizeRows(events_, local_codes_.data(), event_begin_[job.subject], event_begin_[job.subject + 1],
              vocab_size, rows, job.row_begin, job.row_end, windows, has_numeric, scratch[worker],
              [&](std::size_t w, std::int64_t row, std::int64_t code, std::int64_t value) {
-               if (counts) code_outer[w * stride + row + 1] = code;
+               if (codes) code_outer[w * stride + row + 1] = code;
                if (has_numeric) value_outer[w * stride + row + 1] = value;
              });
   });
 
   // 2. Allocate each final matrix once. The numeric statistics of a window share
   //    one Csr: it holds the row offsets, the columns and the first statistic's
-  //    values, and each further statistic gets only a values array.
+  //    values, and each further statistic gets only a values array. Likewise
+  //    code/count and code/recency share the window's code Csr; outputs follow the
+  //    Statistic order, so a window's recency comes after its numeric statistics.
   Result result;
-  const auto allocate = [&](std::vector<std::int64_t>& outer, std::size_t w,
-                            std::int64_t columns) -> Csr& {
+  const auto allocate = [&](std::vector<std::int64_t>& outer, std::size_t w, std::int64_t columns,
+                            bool output = true) -> Csr& {
     auto* offsets = outer.data() + w * stride;
     for (std::size_t row = 0; row + 1 < stride; ++row) {
       if (offsets[row + 1] > std::numeric_limits<std::int64_t>::max() - offsets[row]) {
@@ -340,16 +348,26 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
     auto& csr = result.csrs.emplace_back(rows.size, columns);
     csr.Resize(offsets[stride - 1]);
     std::copy(offsets, offsets + stride, csr.outer());
-    result.outputs.push_back({result.csrs.size() - 1, csr.values()});
+    if (output) result.outputs.push_back({result.csrs.size() - 1, csr.values()});
     return csr;
   };
   std::vector<std::int64_t*> code_inner(w_count), value_inner(w_count);
-  std::vector<double*> code_values(w_count), stat_values(w_count * stats);
+  std::vector<double*> code_values(w_count), recency_values(w_count), stat_values(w_count * stats);
   for (std::size_t w = 0; w < w_count; ++w) {
-    if (counts) {
-      const Csr& csr = allocate(code_outer, w, code_count_);
+    std::size_t code_csr = 0;
+    if (codes) {
+      // The Csr's own values hold code/count when it is selected, else code/recency.
+      const Csr& csr = allocate(code_outer, w, code_count_, counts);
+      code_csr = result.csrs.size() - 1;
       code_inner[w] = csr.inner();
-      code_values[w] = csr.values();
+      if (counts) {
+        code_values[w] = csr.values();
+        if (recency) {
+          recency_values[w] = result.shared_values.emplace_back(new double[csr.nnz()]).get();
+        }
+      } else {
+        recency_values[w] = csr.values();
+      }
     }
     if (has_numeric) {
       const Csr& csr = allocate(value_outer, w, value_columns ? value_column_count : code_count_);
@@ -362,6 +380,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
         result.outputs.push_back({index, values});
       }
     }
+    if (recency) result.outputs.push_back({code_csr, recency_values[w]});
   }
 
   // 3. Fill disjoint (subject rows, window) spans in place, largest estimated
@@ -380,7 +399,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
         return outer[w * stride + jobs[j].row_end] - outer[w * stride + jobs[j].row_begin];
       };
       std::int64_t work = events;
-      if (counts) work += entries(code_outer);
+      if (codes) work += entries(code_outer);
       if (has_numeric) work += static_cast<std::int64_t>(stats) * entries(value_outer);
       tasks.push_back({j, w, work});
     }
@@ -401,6 +420,7 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
     const double* values = events_.values;
     s.records.assign(vocab_size, 0);
     s.active.assign(words, 0);
+    if (recency) s.last_time.assign(vocab_size, 0);
     if (has_numeric) {
       s.numbers.assign(vocab_size, 0);
       s.valued.assign(words, 0);
@@ -429,6 +449,9 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
     const auto add = [&](std::int64_t i) {
       const auto code = local_codes_[i];
       if (s.records[code]++ == 0) s.active[code >> 6] |= Bit(code);
+      // Events arrive in time order, so the latest added is the code's last record in the window
+      // for as long as the code has one there.
+      if (recency) s.last_time[code] = events_.times[i];
       if (!has_numeric) return;
       const double value = values[i];
       if (std::isnan(value)) return;
@@ -514,13 +537,19 @@ Result Shard::Aggregate(Rows rows, const std::vector<std::int64_t>& windows, std
         for (; left < right && events_.times[left] <= cutoff; ++left) remove(left);
       }
       // Walking the set bits in order emits columns in ascending order.
-      if (counts) {
+      if (codes) {
         auto position = code_outer[w * stride + row];
         for (std::size_t word = 0; word < words; ++word) {
           for (auto bits = s.active[word]; bits; bits &= bits - 1) {
             const auto code = static_cast<std::int32_t>(word * 64 + LowestBit(bits));
             code_inner[w][position] = vocab[code];
-            code_values[w][position++] = static_cast<double>(s.records[code]);
+            if (counts) code_values[w][position] = static_cast<double>(s.records[code]);
+            if (recency) {
+              const double days =
+                  static_cast<double>(time - s.last_time[code]) / kMicrosecondsPerDay;
+              recency_values[w][position] = 1.0 / (1.0 + days);
+            }
+            ++position;
           }
         }
       }

@@ -558,11 +558,12 @@ below to train a different model.
 
     This affects the value aggregations (`value/sum`, `value/sum_sqd`, `value/min`, `value/max`) and
     `static/mean`, where an observed 0 means something other than no measurement. It does not affect
-    `code/count`, `value/count` or `static/present`, which are 0 exactly when nothing was observed.
+    `code/count`, `code/recency`, `value/count` or `static/present`, which are 0 exactly when nothing was
+    observed.
 
-    When `value/count` is among the aggregations, as in the default configurations, LightGBM can recover the
-    distinction from it: a code's `value/count` is positive whenever a value, 0 included, was observed in the
-    window. On synthetic data where the label depends only on observed-0 vs. absent, LightGBM reached an AUROC
+    When a count is among the aggregations (`code/count` in the default configuration, or `value/count`), the
+    trees can recover the distinction from it: a code's `value/count` is positive whenever a value, 0 included,
+    was observed in the window, and its `code/count` whenever the code was recorded. On synthetic data where the label depends only on observed-0 vs. absent, LightGBM reached an AUROC
     of 0.64 from the value column alone and 0.78 once the count column was added; XGBoost reached 0.77 from
     the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
     prefer XGBoost or add an observation indicator if the distinction matters for your task.
