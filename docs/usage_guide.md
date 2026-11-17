@@ -99,7 +99,7 @@ For the rest of the tutorial we will assume that the data has been reshared into
 
 ## 2. **`meds-tab-describe`**
 
-This command computes the frequencies of different code types over the **training subjects only**. Subjects are assigned to splits by the MEDS subject splits file, `metadata/subject_splits.parquet` under the MEDS root directory, and only subjects whose split is `train` are counted, regardless of how the data shards are organized into directories. This file is required: `meds-tab-describe` raises an error if it is missing. Because these frequencies drive feature selection in later stages (e.g., `min_code_inclusion_count`), fitting them on training subjects only keeps tuning and held-out data from influencing which features are kept. The codes are differentiated into the following categories:
+This command computes the frequencies of different code types over the **training subjects only**. Subjects are assigned to splits by the MEDS subject splits file, `metadata/subject_splits.parquet` under the MEDS root directory, and only subjects whose split is `train` are counted, regardless of how the data shards are organized into directories. This file is required: `meds-tab-describe` raises an error if it is missing. Because these frequencies drive feature selection in later stages (e.g., `min_code_inclusion_count`), fitting them on training subjects only keeps tuning and held-out data from influencing which features are kept. With a [training subset](#6-training-on-a-subset-scaling-studies) (`train_subset`), only the selected training subjects are counted. The codes are differentiated into the following categories:
 
 - dynamic codes (codes with timestamps)
 - dynamic numeric values (codes with timestamps and numerical values)
@@ -120,6 +120,7 @@ This stage is not parallelized as it runs very quickly.
     - `input_dir`: The directory containing the MEDS data.
     - `output_dir`: The directory to store the tabularized data.
     - `meds_root_dir` (optional): The MEDS root directory containing `metadata/subject_splits.parquet`. Defaults to the parent of `input_dir`.
+    - `input_label_dir` (optional): The task's labels. Only needed with `train_subset`, whose training subjects come from them (see [Training on a subset](#6-training-on-a-subset-scaling-studies)).
 
 !!! warning "Re-run after upgrading"
 
@@ -222,6 +223,10 @@ This stage is not parallelized as it runs very quickly.
 !!! warning "Label file layout"
 
     `input_label_dir` must mirror the sharding of the MEDS data: the labels of the subjects in `${MEDS_RESHARD_DIR}/data/<SPLIT>/<SHARD>.parquet` go in `${TASKS_DIR}/${TASK}/<SPLIT>/<SHARD>.parquet`, with columns `subject_id`, `prediction_time` and `boolean_value`.
+
+!!! info "Only labeled subjects are read"
+
+    Both tabularization stages, with both backends, read only the events of the subjects that have labels in each shard: features at a label time depend only on that subject's own events. A task whose cohort is a small part of the data, or a [training subset](#6-training-on-a-subset-scaling-studies), therefore tabularizes faster, with the same output.
 
 !!! note "Static numeric values (`static/mean`)"
 
@@ -677,3 +682,55 @@ OUTPUT_MODEL_DIR/
     ```
 
     Run `meds-tab-autogluon model_launcher=autogluon --help` to see all kwargs. Autogluon requires a lot of memory as it makes all the sparse matrices dense, and is not recommended for large datasets.
+
+## 6. Training on a subset (scaling studies)
+
+To see how performance grows with the amount of training data, train on reproducible subsets of the training split. Give **every** stage (`meds-tab-describe`, both tabularization stages and `meds-tab-model`) the same `train_subset` overrides, and `meds-tab-describe` the task's labels too:
+
+```console
+SUBSET=("train_subset.by=subjects" "train_subset.n=5000" "train_subset.salt=0")
+OUT="${OUTPUT_DIR}/${TASK}/subjects-5000-salt0"
+
+meds-tab-describe "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
+meds-tab-tabularize-static "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
+meds-tab-tabularize-time-series "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
+meds-tab-model --multirun "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "output_model_dir=${OUT}/model" "task_name=$TASK" "${SUBSET[@]}"
+```
+
+??? note "Args Description"
+
+    - `train_subset.by`: `subjects` keeps `train_subset.n` training subjects that have labels, with all their labels; `labels` keeps `train_subset.n` training label rows. `null` (the default) uses the whole training split.
+    - `train_subset.n` / `train_subset.fraction`: the size, as a count or as a share of the training subjects (label rows) in `(0, 1]`. Give exactly one.
+    - `train_subset.salt`: the selection order (default `"0"`).
+
+How the subjects are chosen:
+
+- **Reproducible**: subjects are taken in the order of `sha256("<salt>:<subject_id>")`, and label rows in the order of `sha256("<salt>:<subject_id>:<prediction time in microseconds>")`. The order does not depend on the machine, the operating system or library versions.
+- **Nested**: with one salt, a smaller subset is contained in a larger one (the 1,000 subjects are among the 5,000), so a learning curve only adds data. Other salts give independent repeats, for error bars.
+- **Evaluation unchanged**: tuning and held-out labels are kept whole, so every subset is evaluated on the same subjects.
+- **Selected subjects only**: code frequencies (and so feature selection), tabularization and the model use the selected training subjects only.
+
+Each stage writes the cropped labels once (the first stage to run does it, and the others reuse them) under the stage's `output_dir`:
+
+```text
+OUT/train_subset/subjects-5000-salt0-<fingerprint>/
+├── labels/<split>/<shard>.parquet   # train cropped; tuning and held_out copied unchanged
+├── subjects.parquet                 # the selected training subjects
+└── subset.json                      # the options, and the kept / total training subjects and label rows
+```
+
+`<fingerprint>` identifies the source label files, so changed labels give a new subset. Use one `output_dir` per subset: its code frequencies and tabularized data are specific to it. A learning curve is then a loop:
+
+```console
+for n in 1000 2000 5000 10000 20000; do
+  for salt in 0 1 2; do
+    OUT="${OUTPUT_DIR}/${TASK}/subjects-${n}-salt${salt}"
+    SUBSET=("train_subset.by=subjects" "train_subset.n=$n" "train_subset.salt=$salt")
+    # ... the four commands above
+  done
+done
+```
