@@ -4,6 +4,8 @@ from pathlib import Path
 
 from omegaconf import DictConfig
 
+from .utils import agg_windows
+
 
 def list_subdir_files(root: Path | str, ext: str) -> list[Path]:
     """List files in subdirectories of a directory with a given extension.
@@ -87,18 +89,25 @@ def get_model_files(cfg: DictConfig, split: str, shard: str) -> list[Path]:
          'data/test/IID/3/0/7d/code/count.npz',
          'data/test/IID/3/0/7d/value/sum.npz',
          'data/test/IID/3/0/none/static/present.npz']
+
+        ``code/recency`` is computed over the full history only, whatever the window sizes:
+
+        >>> cfg.tabularization.aggs = ["code/count", "code/recency"]
+        >>> [fp.as_posix() for fp in get_model_files(cfg, "train", "0")]
+        ['data/train/0/1d/code/count.npz',
+         'data/train/0/7d/code/count.npz',
+         'data/train/0/full/code/recency.npz']
     """
     window_sizes = cfg.tabularization.window_sizes
     aggs = cfg.tabularization.aggs
     shard_dir = Path(cfg.path.input_tabularized_dir) / split / shard
     # Given a shard number, returns the model files
     model_files = []
-    for window_size in window_sizes:
-        for agg in aggs:
-            if agg.startswith("static"):
-                continue
-            else:
-                model_files.append(shard_dir / window_size / f"{agg}.npz")
+    for agg in aggs:
+        if not agg.startswith("static"):
+            model_files.extend(
+                shard_dir / window_size / f"{agg}.npz" for window_size in agg_windows(agg, window_sizes)
+            )
     for agg in aggs:
         if agg.startswith("static"):
             window_size = "none"

@@ -12,13 +12,15 @@ from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
 from .. import TABULARIZATION_CFG, native, train_subset
-from ..describe_codes import filter_parquet, get_feature_columns, labeled_subjects_only
+from ..describe_codes import filter_parquet, filter_parquet_groups, get_feature_columns, labeled_subjects_only
 from ..file_name import list_subdir_files
 from ..generate_summarized_reps import generate_summary
 from ..generate_ts_features import get_flat_ts_rep
 from ..utils import (
+    GROUP_AGGREGATIONS,
     STATIC_CODE_AGGREGATION,
     STATIC_VALUE_AGGREGATION,
+    agg_windows,
     get_shard_prefix,
     load_tqdm,
     write_df,
@@ -80,7 +82,11 @@ def main(
         for agg in cfg.tabularization.aggs
         if agg not in [STATIC_CODE_AGGREGATION, STATIC_VALUE_AGGREGATION]
     ]
-    tabularization_tasks = list(product(meds_shard_fps, cfg.tabularization.window_sizes, aggs))
+    tabularization_tasks = [
+        (shard_fp, window_size, agg)
+        for shard_fp, agg in product(meds_shard_fps, aggs)
+        for window_size in agg_windows(agg, cfg.tabularization.window_sizes)
+    ]
     np.random.shuffle(tabularization_tasks)
 
     # iterate through them
@@ -92,11 +98,12 @@ def main(
         ).with_suffix(".npz")
 
         def read_fn(in_fp):
+            if agg in GROUP_AGGREGATIONS:  # noqa: B023
+                shard = filter_parquet_groups(in_fp, cfg.tabularization._resolved_codes, feature_columns)
+            else:
+                shard = filter_parquet(in_fp, cfg.tabularization._resolved_codes)
             # Only the subjects with labels in this shard (see tabularize_static).
-            return labeled_subjects_only(
-                filter_parquet(in_fp, cfg.tabularization._resolved_codes),
-                label_df,  # noqa: B023
-            )
+            return labeled_subjects_only(shard, label_df)  # noqa: B023
 
         def compute_fn(shard_df):
             # Load Sparse DataFrame
@@ -112,7 +119,7 @@ def main(
                 label_df,  # noqa: B023
             )
 
-            if not summary_df.shape[1]:
+            if not summary_df.shape[1] and agg not in GROUP_AGGREGATIONS:  # noqa: B023
                 raise ValueError("No data found in the summarized dataframe.")
 
             del index_df
