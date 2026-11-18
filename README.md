@@ -71,8 +71,16 @@ pip install .
 
 ### Run
 
-With MEDS data in `$MEDS_DIR/data` and a task's labels in `$LABELS_DIR` (`<split>/<shard>.parquet`, one file
-per data shard):
+The commands below use:
+
+- `$MEDS_DIR`: the MEDS dataset root, with the data in `$MEDS_DIR/data` and the splits in
+    `$MEDS_DIR/metadata/subject_splits.parquet`;
+- `$LABELS_DIR`: the task's labels, laid out like the data (`<split>/<shard>.parquet`, one file per data
+    shard, with columns `subject_id`, `prediction_time` and `boolean_value`);
+- `$TASK`: a name for the task, e.g. `mortality/in_icu/first_24h`. It fills the required `task_name`, which
+    only `meds-tab-autogluon` uses (as the label column name); any string works for the other models;
+- `$OUTPUT_DIR`: where code frequencies and tabularized data are written (use one per task);
+- `$MODEL_DIR`: where models, predictions and metrics are written.
 
 ```console
 meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR"

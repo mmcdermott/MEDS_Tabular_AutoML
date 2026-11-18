@@ -605,6 +605,21 @@ for value, name in sorted(zip(gain, names), reverse=True)[:20]:
 
 `matrix_column_names` names the columns the trial actually trained on (after its code filtering, e.g. `tabularization.min_code_inclusion_count`, and the rare columns `model_launcher.min_column_nnz` drops), in the order of the importances. Each name is `<feature>/<aggregation>/<window>`; add up the windows and aggregations of a code to rank codes. Gains are computed on the training rows of each tree (bagged), as in LightGBM.
 
+Gains say how much the model uses a column, not in which direction. **SHAP values** do: `model.shap_values(X)` gives each row's exact contribution of each column, in log-odds (path-dependent TreeSHAP, as `shap.TreeExplainer` and LightGBM's `pred_contrib` compute it, from the node row counts saved with `save_stats`). It returns the values of the columns the trees use, their indices, and the expected value; each row's values plus the expected value add up to `model.predict_raw(X)`:
+
+```python
+held_out = TabularDataset(cfg, "held_out")
+X, _ = held_out.get_data()
+X = X.tocsr()[:1000]  # a sample: about 15 ms per row on 12 CPUs with 150 deep trees
+values, columns, expected = model.shap_values(X)
+importance = abs(values).mean(0)  # mean |SHAP| per column
+direction = values.mean(0)  # positive: raises the predicted risk on average
+for i in importance.argsort()[::-1][:20]:
+    print(f"{importance[i]:.3f} {direction[i]:+.3f}  {names[columns[i]]}")
+```
+
+Here `names` is the `matrix_column_names` list above and `X` must have the training matrix's columns (with `min_column_nnz`, keep the same columns). Values are exact also for MEDSBoost's leaf-wise trees, which can be 100+ levels deep: each leaf's contribution is integrated exactly by Gauss-Legendre quadrature instead of the original algorithm's path unwinding, which loses precision at that depth.
+
 ### Input/Output Data Structure
 
 ```text
