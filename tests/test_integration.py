@@ -6,6 +6,7 @@ from io import StringIO
 from pathlib import Path
 
 import meds
+import numpy as np
 import polars as pl
 from hydra import compose, initialize
 from meds_evaluation.schema import validate_binary_classification_schema
@@ -310,6 +311,11 @@ def test_integration(tmp_path):
                 gain = trained.feature_importance("gain")
                 assert len(names) == len(gain) == len(trained.feature_importance("split"))
                 assert len(set(names)) == len(names)  # (gains are 0 here: too few rows to split)
+                # SHAP values of the held-out rows, as the usage guide shows: they add up to the raw scores.
+                X, _ = TabularDataset(trial, "held_out").get_data()
+                values, columns, expected = trained.shap_values(X)
+                assert values.shape == (X.shape[0], len(columns))
+                assert np.allclose(values.sum(1) + expected, trained.predict_raw(X), rtol=0, atol=1e-9)
         else:
             assert len(glob.glob(str(output_model_dir / "*/sweep_results/**/*.pkl"))) == 2
             assert len(glob.glob(str(output_model_dir / "*/best_trial/*.pkl"))) == 1

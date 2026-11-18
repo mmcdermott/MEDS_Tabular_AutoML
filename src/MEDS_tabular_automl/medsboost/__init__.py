@@ -103,6 +103,25 @@ node's hessian sum and row count are those of its two children added:
     ...     i += n_nodes + 4
     >>> len(consistent) == model.num_trees, all(consistent)
     (True, True)
+
+SHAP values (exact path-dependent TreeSHAP, from the node row counts): for each row, the contributions of the
+columns the trees use plus the expected value give the row's log-odds. The informative columns 0 and 1 have
+the largest mean absolute values:
+
+    >>> values, columns, expected = model.shap_values(X[500:])
+    >>> values.shape == (100, len(columns))
+    True
+    >>> bool(np.allclose(values.sum(1) + expected, model.predict_raw(X[500:])))
+    True
+    >>> sorted(columns[np.argsort(-np.abs(values).mean(0))[:2]].tolist())
+    [0, 1]
+    >>> v2_values, _, v2_expected = v2.shap_values(X[500:])
+    >>> bool(np.allclose(v2_values, values)), bool(np.isclose(v2_expected, expected))
+    (True, True)
+    >>> v1.shap_values(X[500:])
+    Traceback (most recent call last):
+        ...
+    ValueError: this model was loaded from a file saved without node statistics; save it with save_stats=True
 """
 
 from __future__ import annotations
@@ -254,6 +273,12 @@ def library() -> ct.CDLL:
     lib.medsboost_save_ex.argtypes = [ct.c_void_p, ct.c_char_p, ct.c_int]
     lib.medsboost_feature_importance.restype = ct.c_int
     lib.medsboost_feature_importance.argtypes = [ct.c_void_p, ct.c_int, F64P]
+    lib.medsboost_num_used_features.restype = ct.c_int64
+    lib.medsboost_num_used_features.argtypes = [ct.c_void_p]
+    lib.medsboost_used_features.restype = ct.c_int
+    lib.medsboost_used_features.argtypes = [ct.c_void_p, I32P]
+    lib.medsboost_shap.restype = ct.c_int
+    lib.medsboost_shap.argtypes = [ct.c_void_p, ct.c_int64, I64P, I32P, F32P, ct.c_int, F64P]
     lib.medsboost_load.restype = ct.c_void_p
     lib.medsboost_load.argtypes = [ct.c_char_p]
     lib.medsboost_free.restype = None
@@ -501,6 +526,54 @@ class MedsBoost:
                 "save it with save_stats=True"
             )
         return out.astype(np.int64) if importance_type == "split" else out
+
+    def shap_values(self, X) -> tuple[np.ndarray, np.ndarray, float]:
+        """Exact SHAP values of each row of X (same column layout as training), in log-odds.
+
+        Path-dependent TreeSHAP (Lundberg, Erion and Lee, 2018), like ``shap.TreeExplainer`` with
+        ``feature_perturbation="tree_path_dependent"`` and LightGBM's ``pred_contrib``: a feature's value is
+        averaged out over the training rows that reach each node (the node row counts saved with
+        ``save_stats``). Each row's values and the expected value add up to ``predict_raw``.
+
+        Only the columns the trees split on can have a non-zero value, so only those are returned: on wide
+        tabularized data they are a small part of the columns.
+
+        Returns:
+            values: (rows, k) contributions of the k used columns.
+            columns: (k,) their column indices in X, ascending.
+            expected_value: the model's expected log-odds over the training rows, the same for every row.
+
+        Raises:
+            ValueError: the model was loaded from a file saved without node statistics (see ``save_stats``).
+        """
+        if self._handle is None:
+            raise RuntimeError("model is not trained or loaded")
+        lib = library()
+        ptr, idx, val, n = _csr(X)
+        if X.shape[1] != lib.medsboost_num_features(self._handle):
+            raise ValueError(
+                f"X has {X.shape[1]} columns, the model {lib.medsboost_num_features(self._handle)}"
+            )
+        k = int(lib.medsboost_num_used_features(self._handle))
+        columns = np.zeros(k, dtype=np.int32)
+        lib.medsboost_used_features(self._handle, _ptr(columns, I32P))
+        out = np.zeros((n, k + 1))
+        status = lib.medsboost_shap(
+            self._handle,
+            n,
+            _ptr(ptr, I64P),
+            _ptr(idx, I32P),
+            _ptr(val, F32P),
+            int(self.params["threads"]),
+            _ptr(out, F64P),
+        )
+        if status == 2:
+            raise ValueError(
+                "this model was loaded from a file saved without node statistics; "
+                "save it with save_stats=True"
+            )
+        expected = float(out[0, k]) if n else float("nan")
+        return out[:, :k], columns.astype(np.int64), expected
 
     @classmethod
     def load(cls, path, threads: int = 0) -> MedsBoost:
