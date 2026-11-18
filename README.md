@@ -1,7 +1,7 @@
 # Scalable tabularization and tabular feature usage utilities over generic MEDS datasets
 
 <p align="center">
-  <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/-Python_3.11+-blue?logo=python&logoColor=white"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python" src="https://img.shields.io/badge/-Python_3.11_to_3.13-blue?logo=python&logoColor=white"></a>
   <a href="https://pypi.org/project/meds-tab/"><img alt="PyPI" src="https://img.shields.io/pypi/v/meds-tab?color=orange"></a>
   <a href="https://hydra.cc/"><img alt="Hydra" src="https://img.shields.io/badge/Config-Hydra_1.3-89b8cd"></a>
   <a href="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML"><img alt="Codecov" src="https://codecov.io/gh/mmcdermott/MEDS_Tabular_AutoML/graph/badge.svg?token=6GD05EDQ39"></a>
