@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
+
+Exact SHAP values for `medsboost` models, a supported Python range below 3.14, and a clearer README quick
+start. Tabularized outputs, models and default features are unchanged from 0.4.2.
 
 ### Added
 
@@ -11,6 +14,14 @@
     contribution is integrated exactly by Gauss-Legendre quadrature rather than by the original algorithm's
     path unwinding, which loses all precision on MEDSBoost's leaf-wise trees (100+ levels deep on wide sparse
     data). Rows run in parallel in the C++ library (`medsboost_shap`).
+
+### Changed
+
+- `requires-python` is now `>=3.11,<3.14`: Hydra 1.3.x, which runs MEDS-Tab's commands, crashes on Python 3.14.
+
+### Docs
+
+- The README quick start defines the variables it uses (`$TASK`, `$OUTPUT_DIR`, `$MODEL_DIR`).
 
 ## 0.4.2
 
