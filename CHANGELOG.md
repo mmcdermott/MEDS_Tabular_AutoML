@@ -5,7 +5,8 @@
 Faster `medsboost` training (22% less total training time on 10 MIMIC-IV MG tasks, same held-out AUROC), a faster
 matrix cache, and no reload of the model and data to write predictions.
 
-Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identical outputs.
+Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identical outputs. A native
+`meds-tab-describe`: 9x faster on MIMIC-IV, with identical counts. The native engine's C ABI is version 3.
 
 ### Changed
 
@@ -29,7 +30,7 @@ Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identic
 - **The native backend computes several shards at once** (`native.shards_in_flight`, default 3) on worker
     threads, while the oldest finished shard is written and published. One shard at a time left most CPUs idle.
 - **A shard's uncompressed blocks are written by one engine call** (`engine.write_blocks`, new C function
-    `meds_tab_write_blocks`, ABI version 2). Written one by one, every block re-entered Python, and writer
+    `meds_tab_write_blocks`). Written one by one, every block re-entered Python, and writer
     threads queued on the GIL behind shard reads: about 15 ms per block instead of 0.5 ms on MIMIC-IV.
 - On 3 MIMIC-IV MG tasks (366 shards, 16,104 blocks each, 12 logical CPUs), native tabularization took
     36-45 s instead of 53-65 s (-29% to -33%), with identical block files and about 0.5 GB more peak memory.
@@ -42,6 +43,10 @@ Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identic
 - `MedsBoost(slot_k=...)` / `model_launcher.model.slot_k`: columns of each slot a fresh sample uses (`layouts=0`).
 - `MedsBoost.info` also reports the C++ trainer's phase timers (column layouts, tree growth, root histograms,
     partitioning, split histograms, scoring).
+- **Native backend for `meds-tab-describe`** (`backend=auto|native|python`, as for tabularization). Shards
+    without training subjects are skipped after reading their subjects; the others are read once with PyArrow,
+    codes kept dictionary-encoded, and counted from the Arrow buffers in C++ (`meds_tab_code_counter_*`), 8 shards at a time. On MIMIC-IV it took 5.1 s instead of 46.1 s (9x) with identical counts
+    (139,153 features), and it writes no per-shard cache (75 MB before). `codes.parquet` is sorted by code.
 
 ## 0.4.3
 
