@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 from . import engine
 from .contract import SUPPORTED_AGGS, TabularConfig
-from .pipeline import Pipeline
+from .pipeline import SHARDS_IN_FLIGHT, Pipeline
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -113,6 +113,7 @@ def _pipeline(cfg: DictConfig, config: TabularConfig) -> Pipeline:
         code_metadata=cfg.tabularization.filtered_code_metadata_fp,
         threads=_threads(cfg),
         reuse=not cfg.do_overwrite,
+        shards_in_flight=int(cfg.native.get("shards_in_flight") or SHARDS_IN_FLIGHT),
     )
 
 

@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-#define MEDS_TAB_ABI_VERSION 2
+#define MEDS_TAB_ABI_VERSION 3
 
 typedef struct meds_tab_shard meds_tab_shard;
 typedef struct meds_tab_result meds_tab_result;
@@ -118,6 +118,13 @@ void meds_tab_result_free(meds_tab_result* result);
 int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t integer,
                          int64_t* file_bytes);
 
+/* Writes count blocks as meds_tab_write_block does, on up to threads threads:
+ * blocks[i] to paths[i], integer[i] for its values; file_bytes[i] receives its
+ * size. One call writes a shard's blocks without returning to the caller (and,
+ * from Python, without taking the GIL) between them. On failure, the blocks
+ * written so far stay on disk. */
+int meds_tab_write_blocks(int64_t count, const char* const* paths, const meds_tab_csr* blocks,
+                          const int32_t* integer, int64_t* file_bytes, int32_t threads);
 /* meds-tab-describe's code frequencies, counted from Arrow record batches. */
 typedef struct meds_tab_code_counter meds_tab_code_counter;
 

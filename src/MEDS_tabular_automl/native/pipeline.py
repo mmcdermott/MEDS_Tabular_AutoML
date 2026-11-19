@@ -12,8 +12,8 @@ exactly the outputs whose inputs, configuration and engine are unchanged.
 from __future__ import annotations
 
 import time
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict, deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -48,6 +48,9 @@ from .storage import (
 
 STATISTIC_BITS = {agg: 1 << bit for bit, agg in enumerate(DYNAMIC_AGGS)}  # The engine's statistic bits.
 INTEGER_AGGS = ("code/count", "value/count", "static/present", "code/group_count")
+
+# Shards computed at once by default (Pipeline shards_in_flight, native.shards_in_flight).
+SHARDS_IN_FLIGHT = 3
 
 
 def shard_names(input_dir: Path) -> list[str]:
@@ -318,48 +321,67 @@ def _gather(matrix: csr_array, rows: np.ndarray) -> csr_array:
 class ShardOutput:
     """The blocks of one staged shard directory, written by a pool of writer threads.
 
-    Native writes release the GIL, so blocks are written concurrently. Compressed blocks are written by
-    storage.write_csr_block. Submitted matrices stay referenced until wait() returns.
+    Uncompressed blocks are collected and written by flush() in one engine call on threads threads: per block,
+    a native write is fast, but re-entering Python for every block made writer threads queue on the GIL behind
+    the shard reads (about 15 ms per block instead of 0.5 ms on MIMIC-IV). Compressed blocks are written one
+    per writer task by storage.write_csr_block. Submitted matrices stay referenced until wait() returns.
     """
 
-    def __init__(self, directory: Path, compress: bool, pool: ThreadPoolExecutor):
+    def __init__(self, directory: Path, compress: bool, pool: ThreadPoolExecutor, threads: int = 1):
         self.directory = directory
         self.compress = compress
         self.pool = pool
+        self.threads = threads
         self.pending = []
+        self.batch: list[tuple[str, str, csr_array]] = []
         self.files: dict[str, int] = {}  # Block name -> file size.
         self.entries = 0
 
     def _write(self, window: str, agg: str, matrix: csr_array):
         path = block_path(self.directory, window, agg)
-        integer = agg in INTEGER_AGGS
-        if self.compress:
-            write_csr_block(path, matrix, integer=integer, compress=True)
-            size = path.stat().st_size
-        else:
-            size = engine.write_block(path, matrix, integer=integer)
-        return f"{window}/{agg}.npz", int(matrix.indptr[-1]), size
+        write_csr_block(path, matrix, integer=agg in INTEGER_AGGS, compress=True)
+        return [(f"{window}/{agg}.npz", int(matrix.indptr[-1]), path.stat().st_size)]
+
+    def _write_batch(self, batch: list[tuple[str, str, csr_array]]):
+        sizes = engine.write_blocks(
+            [(block_path(self.directory, w, a), m, a in INTEGER_AGGS) for w, a, m in batch], self.threads
+        )
+        return [
+            (f"{w}/{a}.npz", int(m.indptr[-1]), size) for (w, a, m), size in zip(batch, sizes, strict=True)
+        ]
 
     def write(self, window: str, agg: str, matrix: csr_array):
-        self.pending.append(self.pool.submit(self._write, window, agg, matrix))
+        if self.compress:
+            self.pending.append(self.pool.submit(self._write, window, agg, matrix))
+        else:
+            self.batch.append((window, agg, matrix))
+
+    def flush(self):
+        """Starts writing the blocks collected so far."""
+        if self.batch:
+            self.pending.append(self.pool.submit(self._write_batch, self.batch))
+            self.batch = []
 
     def wait(self):
         """Waits for every submitted block; raises the first failure after all have finished."""
+        self.flush()
         error = None
         for future in self.pending:
             try:
-                name, entries, size = future.result()
+                written = future.result()
             except BaseException as exception:
                 error = error or exception
                 continue
-            self.files[name] = size
-            self.entries += entries
+            for name, entries, size in written:
+                self.files[name] = size
+                self.entries += entries
         self.pending.clear()
         if error is not None:
             raise error
 
     def abandon(self):
         """Cancels pending blocks and waits for running ones, so the directory can be discarded."""
+        self.batch = []
         for future in self.pending:
             future.cancel()
         for future in self.pending:
@@ -398,8 +420,9 @@ class Pipeline:
 
     code_metadata is meds-tab-describe's codes.parquet (default <output_dir>/metadata/codes.parquet). Outputs
     whose recorded identity (inputs, configuration, feature metadata, engine build) still matches are reused
-    unless reuse is False. threads bounds both the engine and the writer pool. Each public method holds the
-    output directory's lock while it runs.
+    unless reuse is False. threads bounds both the engine and the writer pool; shards_in_flight shards are
+    computed at once (each on up to threads engine threads). Each public method holds the output directory's
+    lock while it runs.
     """
 
     def __init__(
@@ -411,15 +434,19 @@ class Pipeline:
         code_metadata=None,
         threads: int = 1,
         reuse: bool = True,
+        shards_in_flight: int = SHARDS_IN_FLIGHT,
     ):
         if not isinstance(threads, int) or threads < 1:
             raise ValueError("threads must be a positive integer.")
+        if not isinstance(shards_in_flight, int) or shards_in_flight < 1:
+            raise ValueError("shards_in_flight must be a positive integer.")
         self.input_dir = Path(input_dir).resolve()
         self.output_dir = Path(output_dir).resolve()
         self.config = config
         self.code_metadata = Path(code_metadata or self.output_dir / "metadata/codes.parquet")
         self.threads = threads
         self.reuse = reuse
+        self.shards_in_flight = shards_in_flight
         self.publisher = Publisher(self.output_dir)
         # Per stage and shard: {"reused": True}, or {"reused": False, "seconds": ..., "entries": ...}.
         self.report: dict[str, dict] = defaultdict(dict)
@@ -485,22 +512,35 @@ class Pipeline:
         """Runs start(name) for every shard; it computes the shard, submits its blocks and returns a ShardJob,
         or None when the shard is reused.
 
-        Each shard is finished after the next one is computed, so computing overlaps writing.
+        Up to shards_in_flight shards are computed at once on worker threads: reading a shard and the engine
+        release the GIL, and one shard alone leaves most CPUs idle (its read and encoding are sequential).
+        Shards are finished (blocks written, then published) in order, while the next shards_in_flight are
+        computed; with 1, each shard is finished after the next one is computed, so computing overlaps
+        writing.
         """
-        pending: list[ShardJob] = []
+        self._describe()  # Loaded once, before any worker thread needs it.
+        jobs: deque[Future] = deque()
         try:
-            for name in names:
-                job = start(name)
-                if job is not None:
-                    pending.append(job)
-                while len(pending) > 1:
-                    pending.pop(0).finish()
-            while pending:
-                pending.pop(0).finish()
+            with ThreadPoolExecutor(self.shards_in_flight, thread_name_prefix="meds-tab-shard") as computers:
+                for name in names:
+                    if len(jobs) > self.shards_in_flight:
+                        self._finish(jobs.popleft())
+                    jobs.append(computers.submit(start, name))
+                while jobs:
+                    self._finish(jobs.popleft())
         except BaseException:
-            for job in pending:
-                job.abandon()
+            for future in jobs:
+                future.cancel()
+            for future in jobs:
+                if not future.cancelled() and future.exception() is None and future.result() is not None:
+                    future.result().abandon()
             raise
+
+    @staticmethod
+    def _finish(future: Future):
+        job = future.result()
+        if job is not None:
+            job.finish()
 
     def _by_size(self, names: list[str]) -> list[str]:
         """Shards smallest first, so the first writes start as early as possible."""
@@ -631,7 +671,7 @@ class Pipeline:
             np.unique(row_subjects),
         )
         staged = self.publisher.stage()
-        output = ShardOutput(staged, self.config.do_compress, pool)
+        output = ShardOutput(staged, self.config.do_compress, pool, self.threads)
 
         def publish():
             self._publish(job, self.output_dir / "tabularize" / name, manifest, {"identity": identity})
@@ -647,6 +687,7 @@ class Pipeline:
             self._write_blocks(
                 encoded, row_subjects, row_times, output if in_order else _Reordered(output, order)
             )
+            output.flush()
         except BaseException:
             job.abandon()
             raise

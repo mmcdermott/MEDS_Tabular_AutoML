@@ -44,6 +44,12 @@ def main(cfg: DictConfig) -> float:
     # save model
     model_launcher.save_model(trial_output_dir / model_filename)
 
+    # Write the trial's predictions while its model and data are loaded: the evaluation callback copies
+    # them with the best trial instead of reloading the model and every split afterwards.
+    if hasattr(model_launcher, "load_model"):
+        for split in cfg.get("prediction_splits", []):
+            model_launcher.predict(split).write_parquet(trial_output_dir / f"{split}_predictions.parquet")
+
     # save model config
     config_fp = trial_output_dir / f"{cfg.path.config_log_stem}.log"
     with open(config_fp, "w") as f:
