@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from scipy.sparse import csr_array
 
-ABI_VERSION = 1
+ABI_VERSION = 2
 I64P = ct.POINTER(ct.c_int64)
 I32P = ct.POINTER(ct.c_int32)
 F64P = ct.POINTER(ct.c_double)
@@ -46,6 +46,25 @@ class StaticRecords(ct.Structure):
         ("mean", I32P),
         ("values", F64P),
         ("size", ct.c_int64),
+    )
+
+
+class ArrowColumn(ct.Structure):
+    _fields_ = (("validity", ct.c_void_p), ("data", ct.c_void_p), ("offset", ct.c_int64))
+
+
+class ArrowRecords(ct.Structure):
+    _fields_ = (
+        ("length", ct.c_int64),
+        ("subjects", ArrowColumn),
+        ("times", ArrowColumn),
+        ("code_indices", ArrowColumn),
+        ("code_offsets", ArrowColumn),
+        ("code_bytes", ct.c_void_p),
+        ("dictionary_length", ct.c_int64),
+        ("large_offsets", ct.c_int32),
+        ("values", ArrowColumn),
+        ("values_64", ct.c_int32),
     )
 
 
@@ -78,6 +97,13 @@ SIGNATURES = {
     "meds_tab_result_matrix": (ct.c_int, [ct.c_void_p, ct.c_int64, ct.POINTER(CSR)]),
     "meds_tab_result_free": (None, [ct.c_void_p]),
     "meds_tab_write_block": (ct.c_int, [ct.c_char_p, ct.POINTER(CSR), ct.c_int32, I64P]),
+    "meds_tab_code_counter_new": (ct.c_void_p, [I64P, ct.c_int64]),
+    "meds_tab_code_counter_free": (None, [ct.c_void_p]),
+    "meds_tab_code_counter_add": (ct.c_int, [ct.c_void_p, ct.POINTER(ArrowRecords), ct.c_int64]),
+    "meds_tab_code_counter_merge": (ct.c_int, [ct.c_void_p, ct.c_void_p]),
+    "meds_tab_code_counter_has_train_subjects": (ct.c_int, [ct.c_void_p, I64P, ct.c_int64, I32P]),
+    "meds_tab_code_counter_size": (ct.c_int, [ct.c_void_p, I64P, I64P]),
+    "meds_tab_code_counter_export": (ct.c_int, [ct.c_void_p, I64P, ct.c_char_p, I64P]),
 }
 
 
@@ -285,3 +311,121 @@ def write_block(path: Path, matrix: csr_array, *, integer: bool) -> int:
     size = ct.c_int64()
     _check(library().meds_tab_write_block(os.fsencode(path), ct.byref(block), integer, ct.byref(size)))
     return size.value
+
+
+def _arrow_column(array) -> ArrowColumn:
+    """An Arrow array's validity bitmap (None when it has no nulls) and data buffer, with its offset."""
+    buffers = array.buffers()
+    validity = buffers[0].address if buffers[0] is not None and array.null_count else None
+    data = buffers[1].address if len(buffers) > 1 and buffers[1] is not None else None
+    return ArrowColumn(validity, data, array.offset)
+
+
+class CodeCounter:
+    """Meds-tab-describe's code frequencies of the training subjects' records, counted by the engine from
+    PyArrow record batches (see csrc/describe.h).
+
+    Not thread-safe: use one counter per thread and merge.
+    """
+
+    def __init__(self, train_subjects: np.ndarray):
+        train = _array(np.ascontiguousarray(train_subjects, dtype=np.int64), np.int64, "train_subjects")
+        handle = library().meds_tab_code_counter_new(_pointer(train, I64P), len(train))
+        if not handle:
+            raise ValueError(_error())
+        self.handle = handle
+        self.free = library().meds_tab_code_counter_free
+
+    def __del__(self):
+        if getattr(self, "handle", None):
+            self.free(self.handle)
+
+    def add(self, batches):
+        """Adds PyArrow record batches (or a table's batches), counted in one engine call.
+
+        Each has columns subject_id (int64), time (any type: only its nulls are read), code (a dictionary of
+        strings with int32 indices) and numeric_value (float32 or float64).
+        """
+        import pyarrow as pa
+
+        records, keep = [], []
+        for batch in batches:
+            subjects, times, codes, values = (
+                batch["subject_id"],
+                batch["time"],
+                batch["code"],
+                batch["numeric_value"],
+            )
+            if subjects.type != pa.int64() or values.type not in (pa.float32(), pa.float64()):
+                raise ValueError("subject_id must be int64 and numeric_value float32 or float64.")
+            if not (pa.types.is_dictionary(codes.type) and codes.type.index_type == pa.int32()):
+                raise ValueError("code must be a dictionary array with int32 indices.")
+            dictionary = codes.dictionary
+            if dictionary.type not in (pa.string(), pa.large_string()):
+                raise ValueError("The code dictionary must hold strings.")
+            if not times.null_count:
+                time_column = ArrowColumn(None, None, 0)  # Every record is timed.
+            elif times.buffers()[0] is None:  # A null-typed column: every record is static.
+                no_times = np.zeros((len(times) + 7) // 8, dtype=np.uint8)
+                keep.append(no_times)
+                time_column = ArrowColumn(no_times.ctypes.data, None, 0)
+            else:
+                time_column = _arrow_column(times)
+            dictionary_bytes = dictionary.buffers()[2]
+            records.append(
+                ArrowRecords(
+                    batch.num_rows,
+                    _arrow_column(subjects),
+                    time_column,
+                    _arrow_column(codes.indices),
+                    _arrow_column(dictionary),
+                    dictionary_bytes.address if dictionary_bytes is not None else None,
+                    len(dictionary),
+                    dictionary.type == pa.large_string(),
+                    _arrow_column(values),
+                    values.type == pa.float64(),
+                )
+            )
+            keep.append(batch)
+        array = (ArrowRecords * len(records))(*records)
+        _check(library().meds_tab_code_counter_add(self.handle, array, len(records)))
+        del keep
+
+    def has_train_subject(self, subjects) -> bool:
+        """Whether a PyArrow int64 array or chunked array of subjects holds a training subject (null slots may
+        give a false True, never a false False)."""
+        found = ct.c_int32()
+        for chunk in getattr(subjects, "chunks", [subjects]):
+            data = chunk.buffers()[1]
+            if data is None or not len(chunk):
+                continue
+            address = data.address + 8 * chunk.offset
+            _check(
+                library().meds_tab_code_counter_has_train_subjects(
+                    self.handle, ct.cast(address, I64P), len(chunk), ct.byref(found)
+                )
+            )
+            if found.value:
+                return True
+        return False
+
+    def merge(self, other: CodeCounter):
+        """Adds other's counts to this counter's, matching codes by name."""
+        _check(library().meds_tab_code_counter_merge(self.handle, other.handle))
+
+    def result(self) -> tuple[list[str], np.ndarray]:
+        """Every code seen (in first-seen order) and its (code, value, static/present, static/mean) counts."""
+        codes, name_bytes = ct.c_int64(), ct.c_int64()
+        _check(library().meds_tab_code_counter_size(self.handle, ct.byref(codes), ct.byref(name_bytes)))
+        offsets = np.zeros(codes.value + 1, dtype=np.int64)
+        names = ct.create_string_buffer(max(name_bytes.value, 1))
+        counts = np.zeros((codes.value, 4), dtype=np.int64)
+        _check(
+            library().meds_tab_code_counter_export(
+                self.handle, _pointer(offsets, I64P), names, _pointer(counts, I64P)
+            )
+        )
+        raw = names.raw[: name_bytes.value]
+        return [
+            raw[a:b].decode() for a, b in zip(offsets[:-1].tolist(), offsets[1:].tolist(), strict=True)
+        ], counts

@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-#define MEDS_TAB_ABI_VERSION 1
+#define MEDS_TAB_ABI_VERSION 2
 
 typedef struct meds_tab_shard meds_tab_shard;
 typedef struct meds_tab_result meds_tab_result;
@@ -117,6 +117,66 @@ void meds_tab_result_free(meds_tab_result* result);
  * as integers (count statistics). *file_bytes receives the file size. */
 int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t integer,
                          int64_t* file_bytes);
+
+/* meds-tab-describe's code frequencies, counted from Arrow record batches. */
+typedef struct meds_tab_code_counter meds_tab_code_counter;
+
+/* One column of an Arrow array: validity bitmap (NULL: no nulls), data buffer,
+ * and the array's offset in elements. */
+typedef struct {
+  const uint8_t* validity;
+  const void* data;
+  int64_t offset;
+} meds_tab_arrow_column;
+
+/* The columns of one record batch of a MEDS shard. subjects: int64. times: only
+ * the validity is read (null: a static record). code_indices: int32 indices into
+ * the batch's string dictionary, whose offsets (int32, or int64 when
+ * large_offsets) and validity are code_offsets and whose bytes are code_bytes.
+ * values: float64 when values_64, else float32; null or NaN is missing. */
+typedef struct {
+  int64_t length;
+  meds_tab_arrow_column subjects;
+  meds_tab_arrow_column times;
+  meds_tab_arrow_column code_indices;
+  meds_tab_arrow_column code_offsets;
+  const char* code_bytes;
+  int64_t dictionary_length;
+  int32_t large_offsets;
+  meds_tab_arrow_column values;
+  int32_t values_64;
+} meds_tab_arrow_records;
+
+/* A counter of the records of the subjects in train_subjects (sorted ascending;
+ * copied); NULL on error. */
+meds_tab_code_counter* meds_tab_code_counter_new(const int64_t* train_subjects,
+                                                 int64_t train_count);
+void meds_tab_code_counter_free(meds_tab_code_counter* counter);
+
+/* Adds count batches' records of training subjects with a subject and a code:
+ * per code, timed records, timed records with a value, timeless records and
+ * timeless records with a value (describe's code, value, static/present and
+ * static/mean counts). Codes are interned once per distinct dictionary string;
+ * a dictionary repeating the previous batch's is not looked up again. */
+int meds_tab_code_counter_add(meds_tab_code_counter* counter, const meds_tab_arrow_records* batches,
+                              int64_t count);
+
+/* Sets *found to 1 if any of subjects (size values) is a training subject, else 0.
+ * Values in null slots may be anything: a match there only makes *found 1. */
+int meds_tab_code_counter_has_train_subjects(const meds_tab_code_counter* counter,
+                                             const int64_t* subjects, int64_t size, int32_t* found);
+
+/* Adds from's counts to into's, matching codes by name. */
+int meds_tab_code_counter_merge(meds_tab_code_counter* into, const meds_tab_code_counter* from);
+
+/* The number of distinct codes and the total bytes of their names. */
+int meds_tab_code_counter_size(const meds_tab_code_counter* counter, int64_t* codes,
+                               int64_t* name_bytes);
+
+/* Copies the codes out: name_offsets (codes + 1), names (name_bytes), counts
+ * (codes x 4, code-major), sized from meds_tab_code_counter_size. */
+int meds_tab_code_counter_export(const meds_tab_code_counter* counter, int64_t* name_offsets,
+                                 char* names, int64_t* counts);
 
 #ifdef __cplusplus
 }

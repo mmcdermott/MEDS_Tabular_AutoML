@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Native backend for `meds-tab-describe`** (`backend=auto|native|python`, as for tabularization). Shards
+    without training subjects are skipped after reading their subjects; the others are read once with PyArrow,
+    codes kept dictionary-encoded, and counted from the Arrow buffers in C++ (`meds_tab_code_counter_*`, ABI
+    version 2), 8 shards at a time. On MIMIC-IV it took 5.1 s instead of 46.1 s (9x) with identical counts
+    (139,153 features), and it writes no per-shard cache (75 MB before). `codes.parquet` is sorted by code.
+
 ## 0.4.3
 
 Exact SHAP values for `medsboost` models, a supported Python range below 3.14, and a clearer README quick
