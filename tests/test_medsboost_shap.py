@@ -161,7 +161,8 @@ def test_very_deep_leaf_wise_trees_stay_exact():
     X.data = np.round(X.data * 30) + 1
     signal = np.asarray(X[:, :50].sum(1)).ravel()
     y = ((signal + rng.normal(0, 2, 12000)) > np.median(signal)).astype(np.float32)
-    model = MedsBoost(threads=2, max_rounds=20, early_stopping=1000).fit(
+    # Plain bagging (goss_top=0): GOSS trees see half the rows and do not grow deep enough for this test.
+    model = MedsBoost(threads=2, max_rounds=20, early_stopping=1000, goss_top=0).fit(
         X[:11000], y[:11000], X[11000:], y[11000:]
     )
     with tempfile.TemporaryDirectory() as d:
