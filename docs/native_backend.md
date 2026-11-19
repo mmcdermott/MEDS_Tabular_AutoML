@@ -1,9 +1,9 @@
 # Native Backend
 
-`meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` run on a C++ engine by default, and on
-the Python implementation where the engine can't run. The commands, their configuration and the files they
-write are the same either way: `TabularDataset` and the model launchers read the native backend's output
-exactly as they read the Python backend's. `meds-tab-describe` and model training are not affected.
+`meds-tab-describe`, `meds-tab-tabularize-static` and `meds-tab-tabularize-time-series` run on a C++ engine
+by default, and on the Python implementation where the engine can't run. The commands, their configuration
+and the files they write are the same either way: `TabularDataset` and the model launchers read the native
+backend's output exactly as they read the Python backend's. Model training is not affected.
 
 ## Using it
 
@@ -17,10 +17,11 @@ meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... "tab
 meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
 ```
 
-| Setting          | Default            | Meaning                                                                                    |
-| ---------------- | ------------------ | ------------------------------------------------------------------------------------------ |
-| `backend`        | `auto`             | `auto`, `native` or `python`; the `MEDS_TAB_BACKEND` environment variable sets the default |
-| `native.threads` | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)            |
+| Setting                   | Default            | Meaning                                                                                                      |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `backend`                 | `auto`             | `auto`, `native` or `python`; the `MEDS_TAB_BACKEND` environment variable sets the default                   |
+| `native.threads`          | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)                              |
+| `native.shards_in_flight` | 3                  | Shards read and computed at once; each adds one shard's events and blocks to memory, 1 computes them in turn |
 
 - `backend=auto` runs the native backend when it can, and otherwise the Python backend, logging why: the
     engine is not built, the configuration uses something it does not implement (an aggregation or window
@@ -111,6 +112,28 @@ How the work is scheduled also differs:
 The native engine implements the aggregations `static/present`, `static/mean`, `code/count`, `code/recency`
 and `value/{count,sum,sum_sqd,min,max}`, and window sizes `full` and `<n><us|ms|s|m|h|d|w>`.
 
+### meds-tab-describe
+
+The Python backend scans each shard four times, one group-by on code strings per kind of count, and caches
+each shard's counts under `cache_dir` before summing them in Python. The native backend:
+
+- reads each shard's `subject_id` column first and skips shards without a training subject (e.g. tuning and
+    held-out shards);
+- reads the other columns with PyArrow, keeping codes dictionary-encoded as Parquet stores them;
+- counts every record batch straight from the Arrow buffers in C++ (`csrc/describe.cc`, the
+    `meds_tab_code_counter_*` functions): a batch's dictionary is mapped to codes once per distinct string (and
+    not at all when it repeats the previous batch's, as consecutive row groups' dictionaries usually do), and each
+    record costs a subject check (one search per run of a subject's records), a dictionary index and four
+    counters kept per dictionary entry;
+- reads 8 shards at once (`native.shards_in_flight`, when set), one counter per thread, merged by code name.
+
+It writes no per-shard cache, and `codes.parquet` is sorted by code (the Python backend's row order follows its
+shuffled shards; both hold the same counts).
+
+On MIMIC-IV (366 shards, 139,153 features fit on the training subjects, 6-core/12-thread Windows machine), the
+command took 5.1 s instead of 46.1 s (9x), with identical counts, and wrote no cache instead of 75 MB. About 1 s
+of it is starting Python and Hydra; most of the rest is PyArrow decoding the Parquet columns, on every CPU.
+
 ## Performance
 
 Measured on task-specific tabularization of a MIMIC-IV cohort (MEDS 0.2.0): a random 10% of the subjects
@@ -156,11 +179,16 @@ configuration, scheduling and files; C++ owns aggregation buffers. Byte counts a
 | Fill       | `Shard::Aggregate`                            | Each event enters and leaves each window once; each entry is written once, in place                                                                                                                           | Per worker, reused: up to 80 B per subject code and 48 B per subject event                                                                 |
 | Views      | `engine.Shard.aggregate`                      | None (SciPy CSR views of the native buffers)                                                                                                                                                                  | One owner per result frees it when the last view is released                                                                               |
 | Static     | `AggregateStatic` (`csrc/static_features.cc`) | Stable sort of record indices by subject                                                                                                                                                                      | 8 B/record index; output CSR 16 B/entry (native `Result`)                                                                                  |
-| Write      | `engine.write_block` (`csrc/npz.cc`)          | Per block: one scan to choose the stored type; per 1 MiB chunk: value conversion, row-ID expansion, column conversion (bounds-checked); CRC-32 of every byte                                                  | At most `threads` blocks in flight, a 1 MiB buffer each                                                                                    |
+| Write      | `engine.write_blocks` (`csrc/npz.cc`)         | A shard's blocks in one call on native threads. Per block: one scan to choose the stored type; per 1 MiB chunk: value conversion, row-ID expansion, column conversion (bounds-checked); CRC-32 of every byte  | At most `threads` blocks in flight per call, a 1 MiB buffer each                                                                           |
 | Publish    | `Publisher`, manifests                        | Rename of the staged directory; manifest written last                                                                                                                                                         | —                                                                                                                                          |
 
-A shard is computed while the previous shard's blocks are written (smallest shards first), so up to two
-shards' outputs are resident. To bound memory, use smaller shards, as with the Python backend.
+Up to `native.shards_in_flight` shards are read and computed at once on worker threads (smallest shards
+first) while the oldest finished shard's blocks are written and published, so up to `shards_in_flight + 1`
+shards' outputs are resident. Reading a shard is mostly Polars and the engine calls release the GIL, so
+shards overlap well; one shard at a time left most CPUs idle. A shard's uncompressed blocks are written by
+one engine call: written one by one, each block re-entered Python, and writer threads queued on the GIL
+behind shard reads (on MIMIC-IV, about 15 ms per block instead of 0.5 ms). To bound memory, lower
+`native.shards_in_flight` or use smaller shards, as with the Python backend.
 Label-time tabularization computes every label row, duplicates included, in (subject, time) order and
 writes the blocks in label-file order. Compressed blocks (`do_compress`) are written by Python's `zipfile`.
 
@@ -173,10 +201,12 @@ writes the blocks in label-file order. Compressed blocks (`do_compress`) are wri
 | `csrc/static_features.{h,cc}`                | `static/present` and `static/mean`                                            |
 | `csrc/types.h`, `csrc/parallel.h`            | Events, rows, the CSR and result types; the thread loop                       |
 | `csrc/npz.{h,cc}`                            | Block writing                                                                 |
+| `csrc/describe.{h,cc}`                       | `meds-tab-describe`'s code counts                                             |
 | `csrc/c_api.cc`, `csrc/python_module.cc`     | The C ABI's implementation; the stub that lets setuptools build the library   |
 | `src/MEDS_tabular_automl/native/stages.py`   | Backend selection and the two commands' entry points                          |
 | `src/MEDS_tabular_automl/native/pipeline.py` | Shard reading and encoding, scheduling, writing, reuse                        |
 | `src/MEDS_tabular_automl/native/engine.py`   | ctypes bindings                                                               |
+| `src/MEDS_tabular_automl/native/describe.py` | `meds-tab-describe`: shard reading (PyArrow), scheduling, merging counts      |
 | `src/MEDS_tabular_automl/native/storage.py`  | Block files (Python side), atomic publication, manifests                      |
 | `src/MEDS_tabular_automl/native/contract.py` | Supported configurations, window parsing, output identity                     |
 | `setup.py`                                   | Builds `csrc/` as the optional extension `MEDS_tabular_automl.native._engine` |

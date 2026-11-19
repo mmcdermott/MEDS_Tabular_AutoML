@@ -113,6 +113,8 @@ class EvaluationCallback(Callback):
             ...     (best_trial_dir / 'test_predictions.parquet').exists()
             True
         """
+        if all((Path(best_trial_dir) / f"{split}_predictions.parquet").is_file() for split in splits):
+            return  # the trial wrote them (launch_model.main): no need to reload the model and data
         config_fp = Path(best_trial_dir) / "config.log"
         cfg = OmegaConf.load(config_fp) if config_fp.exists() else OmegaConf.create()
         path_cfg = cfg.get("path") or {}

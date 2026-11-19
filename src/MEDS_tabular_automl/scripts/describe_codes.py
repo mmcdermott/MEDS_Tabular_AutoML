@@ -11,7 +11,7 @@ import polars as pl
 from MEDS_transforms.mapreduce.rwlock import rwlock_wrap
 from omegaconf import DictConfig
 
-from .. import DESCRIBE_CODES_CFG, train_subset
+from .. import DESCRIBE_CODES_CFG, native, train_subset
 from ..describe_codes import (
     compute_feature_frequencies,
     convert_to_df,
@@ -96,6 +96,18 @@ def main(cfg: DictConfig):
 
     # Map: Iterates through shards and caches feature frequencies
     train_shards, train_subjects = get_training_shards(cfg)
+    if native.use_native(cfg, native.describe_unavailable):
+        output_fp = Path(cfg.output_filepath)
+        if output_fp.is_file() and not cfg.do_overwrite:
+            logger.info(f"{output_fp} exists and do_overwrite is False: keeping it.")
+            return
+        subjects = train_subjects.collect()[meds.SubjectSplitSchema.subject_id_name].to_numpy()
+        in_flight = cfg.get("native", {}).get("shards_in_flight") or 8
+        feature_df = native.describe_codes(train_shards, subjects, shards_in_flight=int(in_flight))
+        write_df(feature_df, output_fp, do_overwrite=cfg.do_overwrite)
+        logger.info(f"Native describe: {len(train_shards)} shards, {len(feature_df):,} features.")
+        logger.info("Stored feature columns and frequencies.")
+        return
     np.random.shuffle(train_shards)
     train_cache_files = []
 

@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.5.0
+
+Faster end to end on MIMIC-IV: a native `meds-tab-describe` (9x faster, identical counts), native tabularization
+about 30% faster (byte-identical blocks), and `medsboost` training 22% faster at the same held-out AUROC, with
+faster matrix loading and no reload of the model to write predictions.
+
+**Models differ from 0.4.3:** `medsboost` now defaults to single-precision histograms and GOSS row sampling, so
+trained models (not their held-out AUROC, on 10 MIMIC-IV tasks) change. `model_launcher.model.goss_top=0` restores
+bagging; building with `MEDSBOOST_F64` restores double precision. Tabularized outputs and `codes.parquet` counts
+are unchanged (`codes.parquet` rows are now sorted by code). The native engine's C ABI is version 3: rebuild it
+from source checkouts.
+
+### Changed
+
+- **`medsboost` defaults: single-precision histograms and GOSS row sampling.** On 10 MIMIC-IV MG tasks (seeds 1-2),
+    the new defaults trained in 192 s in total instead of 245 s (x0.61-0.90 per task) with the same held-out
+    AUROC (mean 0.9534 vs 0.9532; per task -0.0005 to +0.0019).
+    - Histograms are single precision: 12-byte bins and float gradients/hessians in the histogram passes (node
+        totals, leaf values and scores stay double). Alone: 18% less time, faster on every task, mean AUROC change
+        -0.0001. Build with `MEDSBOOST_F64` defined for double precision.
+    - Rows per tree: GOSS (`goss_top: 0.3`, `goss_other: 0.2`) instead of bagging 0.8. On top of single precision
+        it saved another 5% in total, mostly on the larger cohorts (x0.71 and x0.91 on the two LAB tasks, within
+        +-7% elsewhere). `goss_top: 0` restores bagging (`bagging_fraction`). The default sweep now tunes
+        `goss_other` (0.1-0.5) instead of the unused `bagging_fraction`.
+- **The matrix cache loads tabularized blocks on a thread pool** (`TabularDataset._build_matrix_cache`, 32 shards
+    at a time): reading thousands of small block files is latency-bound. Cold reads of a MIMIC-IV task's blocks
+    went from ~8 ms to under 1 ms per file; whole cache builds were about 4x faster per non-zero on Windows. The
+    cached matrix is identical.
+- **Trials write their own predictions** (`{split}_predictions.parquet`, while the model and data are loaded), and
+    the evaluation callback copies them with the best trial instead of reloading the model and every split (about
+    35 s per run on MIMIC-IV). The predictions are identical.
+- **The native backend computes several shards at once** (`native.shards_in_flight`, default 3) on worker
+    threads, while the oldest finished shard is written and published. One shard at a time left most CPUs idle.
+- **A shard's uncompressed blocks are written by one engine call** (`engine.write_blocks`, new C function
+    `meds_tab_write_blocks`). Written one by one, every block re-entered Python, and writer
+    threads queued on the GIL behind shard reads: about 15 ms per block instead of 0.5 ms on MIMIC-IV.
+- On 3 MIMIC-IV MG tasks (366 shards, 16,104 blocks each, 12 logical CPUs), native tabularization took
+    36-45 s instead of 53-65 s (-29% to -33%), with identical block files and about 0.5 GB more peak memory.
+    `native.shards_in_flight=1` restores one shard at a time.
+
+### Added
+
+- `MedsBoost(goss_top=..., goss_other=...)` / `model_launcher.model.goss_top|goss_other`: GOSS row sampling (as in
+    LightGBM), which the C++ trainer already supported but Python did not expose. Default 0.3 / 0.2 (see above).
+- `MedsBoost(slot_k=...)` / `model_launcher.model.slot_k`: columns of each slot a fresh sample uses (`layouts=0`).
+- `MedsBoost.info` also reports the C++ trainer's phase timers (column layouts, tree growth, root histograms,
+    partitioning, split histograms, scoring).
+- **Native backend for `meds-tab-describe`** (`backend=auto|native|python`, as for tabularization). Shards
+    without training subjects are skipped after reading their subjects; the others are read once with PyArrow,
+    codes kept dictionary-encoded, and counted from the Arrow buffers in C++ (`meds_tab_code_counter_*`), 8 shards at a time. On MIMIC-IV it took 5.1 s instead of 46.1 s (9x) with identical counts
+    (139,153 features), and it writes no per-shard cache (75 MB before). `codes.parquet` is sorted by code.
+
 ## 0.4.3
 
 Exact SHAP values for `medsboost` models, a supported Python range below 3.14, and a clearer README quick

@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 from . import engine
 from .contract import SUPPORTED_AGGS, TabularConfig
-from .pipeline import Pipeline
+from .pipeline import SHARDS_IN_FLIGHT, Pipeline
 
 if TYPE_CHECKING:
     from omegaconf import DictConfig
@@ -50,20 +50,29 @@ def native_unavailable(cfg: DictConfig) -> str | None:
     return None
 
 
-def use_native(cfg: DictConfig) -> bool:
+def describe_unavailable(cfg: DictConfig) -> str | None:
+    """Why the native backend cannot run meds-tab-describe, or None if it can: it needs only the engine."""
+    try:
+        engine.library()
+    except (OSError, RuntimeError) as error:
+        return str(error)
+    return None
+
+
+def use_native(cfg: DictConfig, unavailable=native_unavailable) -> bool:
     """Whether to run the native backend for cfg's ``backend``: ``auto`` (the default), ``python`` or
     ``native``.
 
-    ``auto`` runs the native backend whenever it can (see ``native_unavailable``) and the Python backend
-    otherwise, saying why; both write the same files. ``native`` raises RuntimeError when it cannot run;
-    ``python`` never runs it.
+    ``auto`` runs the native backend whenever it can (``unavailable(cfg)`` is None; by default
+    ``native_unavailable``, the tabularization check) and the Python backend otherwise, saying why; both write
+    the same files. ``native`` raises RuntimeError when it cannot run; ``python`` never runs it.
     """
     choice = cfg.get("backend", "auto")
     if choice not in BACKENDS:
         raise ValueError(f"backend must be one of {BACKENDS}, not {choice!r}.")
     if choice == "python":
         return False
-    reason = native_unavailable(cfg)
+    reason = unavailable(cfg)
     if reason is None:
         return True
     if choice == "native":
@@ -104,6 +113,7 @@ def _pipeline(cfg: DictConfig, config: TabularConfig) -> Pipeline:
         code_metadata=cfg.tabularization.filtered_code_metadata_fp,
         threads=_threads(cfg),
         reuse=not cfg.do_overwrite,
+        shards_in_flight=int(cfg.native.get("shards_in_flight") or SHARDS_IN_FLIGHT),
     )
 
 

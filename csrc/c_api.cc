@@ -2,13 +2,16 @@
 // into an error value and meds_tab_last_error().
 #include "meds_tab.h"
 
+#include <algorithm>
 #include <exception>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
 
+#include "describe.h"
 #include "npz.h"
+#include "parallel.h"
 #include "shard.h"
 #include "static_features.h"
 #include "types.h"
@@ -18,6 +21,9 @@ struct meds_tab_shard {
 };
 struct meds_tab_result {
   meds_tab::Result result;
+};
+struct meds_tab_code_counter {
+  meds_tab::CodeCounter counter;
 };
 
 static_assert(MEDS_TAB_CODE_COUNT == 1u << meds_tab::kCodeCount &&
@@ -151,21 +157,127 @@ void meds_tab_result_free(meds_tab_result* result) { delete result; }
 
 int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t integer,
                          int64_t* file_bytes) {
+  return meds_tab_write_blocks(1, &path, block, &integer, file_bytes, 1);
+}
+
+int meds_tab_write_blocks(int64_t count, const char* const* paths, const meds_tab_csr* blocks,
+                          const int32_t* integer, int64_t* file_bytes, int32_t threads) {
   return Guard(
       [&] {
-        Require(path && block && file_bytes, "Invalid block arguments.");
-        meds_tab::npz::Block view;
-        view.rows = block->rows;
-        view.columns = block->columns;
-        view.nnz = block->nnz;
-        view.index_64 = block->index_64 != 0;
-        view.values_integer = block->values_integer != 0;
-        view.outer = block->outer;
-        view.inner = block->inner;
-        view.values = block->values;
-        *file_bytes = meds_tab::npz::WriteBlock(path, view, integer != 0);
+        Require(count >= 0 && threads >= 1, "Invalid block count or thread count.");
+        Require(count == 0 || (paths && blocks && integer && file_bytes),
+                "Invalid block arguments.");
+        meds_tab::ParallelFor(
+            static_cast<std::size_t>(count), threads, [&](std::size_t, std::size_t i) {
+              const meds_tab_csr& block = blocks[i];
+              Require(paths[i] != nullptr, "Invalid block arguments.");
+              meds_tab::npz::Block view;
+              view.rows = block.rows;
+              view.columns = block.columns;
+              view.nnz = block.nnz;
+              view.index_64 = block.index_64 != 0;
+              view.values_integer = block.values_integer != 0;
+              view.outer = block.outer;
+              view.inner = block.inner;
+              view.values = block.values;
+              file_bytes[i] = meds_tab::npz::WriteBlock(paths[i], view, integer[i] != 0);
+            });
         return 1;
       },
       0, -1);
+}
+
+meds_tab_code_counter* meds_tab_code_counter_new(const int64_t* train_subjects,
+                                                 int64_t train_count) {
+  return Guard(
+      [&]() -> meds_tab_code_counter* {
+        Require(train_count >= 0 && (train_count == 0 || train_subjects),
+                "Invalid training subjects.");
+        return new meds_tab_code_counter{
+            meds_tab::CodeCounter({train_subjects, train_subjects + train_count})};
+      },
+      static_cast<meds_tab_code_counter*>(nullptr));
+}
+
+void meds_tab_code_counter_free(meds_tab_code_counter* counter) { delete counter; }
+
+int meds_tab_code_counter_add(meds_tab_code_counter* counter, const meds_tab_arrow_records* batches,
+                              int64_t count) {
+  return Guard(
+      [&] {
+        Require(counter && count >= 0 && (count == 0 || batches),
+                "A counter and batches are required.");
+        const auto column = [](const meds_tab_arrow_column& c) {
+          return meds_tab::ArrowColumn{c.validity, c.data, c.offset};
+        };
+        for (int64_t b = 0; b < count; ++b) {
+          const meds_tab_arrow_records& r = batches[b];
+          counter->counter.Add({r.length, column(r.subjects), column(r.times),
+                                column(r.code_indices), column(r.code_offsets), r.code_bytes,
+                                r.dictionary_length, r.large_offsets != 0, column(r.values),
+                                r.values_64 != 0});
+        }
+        counter->counter.Flush();
+        return 1;
+      },
+      0);
+}
+
+int meds_tab_code_counter_has_train_subjects(const meds_tab_code_counter* counter,
+                                             const int64_t* subjects, int64_t size,
+                                             int32_t* found) {
+  return Guard(
+      [&] {
+        Require(counter && found && size >= 0, "Invalid subject arguments.");
+        *found = counter->counter.HasTrainSubject(subjects, size) ? 1 : 0;
+        return 1;
+      },
+      0);
+}
+
+int meds_tab_code_counter_merge(meds_tab_code_counter* into, const meds_tab_code_counter* from) {
+  return Guard(
+      [&] {
+        Require(into && from && into != from, "Two distinct counters are required.");
+        into->counter.Merge(from->counter);
+        return 1;
+      },
+      0);
+}
+
+int meds_tab_code_counter_size(const meds_tab_code_counter* counter, int64_t* codes,
+                               int64_t* name_bytes) {
+  return Guard(
+      [&] {
+        Require(counter && codes && name_bytes, "Invalid size arguments.");
+        std::int64_t bytes = 0;
+        for (std::int64_t c = 0; c < counter->counter.size(); ++c) {
+          bytes += static_cast<std::int64_t>(counter->counter.name(c).size());
+        }
+        *codes = counter->counter.size();
+        *name_bytes = bytes;
+        return 1;
+      },
+      0);
+}
+
+int meds_tab_code_counter_export(const meds_tab_code_counter* counter, int64_t* name_offsets,
+                                 char* names, int64_t* counts) {
+  return Guard(
+      [&] {
+        Require(counter && name_offsets && counts, "Invalid export arguments.");
+        const auto& c = counter->counter;
+        std::int64_t at = 0;
+        name_offsets[0] = 0;
+        for (std::int64_t code = 0; code < c.size(); ++code) {
+          const std::string& name = c.name(code);
+          if (!name.empty()) std::copy(name.begin(), name.end(), names + at);
+          at += static_cast<std::int64_t>(name.size());
+          name_offsets[code + 1] = at;
+        }
+        std::copy(c.counts().begin(), c.counts().end(), counts);
+        return 1;
+      },
+      0);
 }
 }
