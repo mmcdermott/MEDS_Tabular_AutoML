@@ -1,12 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
-Faster `medsboost` training (22% less total training time on 10 MIMIC-IV MG tasks, same held-out AUROC), a faster
-matrix cache, and no reload of the model and data to write predictions.
+Faster end to end on MIMIC-IV: a native `meds-tab-describe` (9x faster, identical counts), native tabularization
+about 30% faster (byte-identical blocks), and `medsboost` training 22% faster at the same held-out AUROC, with
+faster matrix loading and no reload of the model to write predictions.
 
-Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identical outputs. A native
-`meds-tab-describe`: 9x faster on MIMIC-IV, with identical counts. The native engine's C ABI is version 3.
+**Models differ from 0.4.3:** `medsboost` now defaults to single-precision histograms and GOSS row sampling, so
+trained models (not their held-out AUROC, on 10 MIMIC-IV tasks) change. `model_launcher.model.goss_top=0` restores
+bagging; building with `MEDSBOOST_F64` restores double precision. Tabularized outputs and `codes.parquet` counts
+are unchanged (`codes.parquet` rows are now sorted by code). The native engine's C ABI is version 3: rebuild it
+from source checkouts.
 
 ### Changed
 
