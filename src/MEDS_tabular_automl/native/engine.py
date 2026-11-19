@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from scipy.sparse import csr_array
 
-ABI_VERSION = 1
+ABI_VERSION = 2
 I64P = ct.POINTER(ct.c_int64)
 I32P = ct.POINTER(ct.c_int32)
 F64P = ct.POINTER(ct.c_double)
@@ -78,6 +78,10 @@ SIGNATURES = {
     "meds_tab_result_matrix": (ct.c_int, [ct.c_void_p, ct.c_int64, ct.POINTER(CSR)]),
     "meds_tab_result_free": (None, [ct.c_void_p]),
     "meds_tab_write_block": (ct.c_int, [ct.c_char_p, ct.POINTER(CSR), ct.c_int32, I64P]),
+    "meds_tab_write_blocks": (
+        ct.c_int,
+        [ct.c_int64, ct.POINTER(ct.c_char_p), ct.POINTER(CSR), ct.POINTER(ct.c_int32), I64P, ct.c_int32],
+    ),
 }
 
 
@@ -262,16 +266,16 @@ def _check(status: int):
         raise (OSError if status < 0 else ValueError)(_error())
 
 
-def write_block(path: Path, matrix: csr_array, *, integer: bool) -> int:
-    """Writes matrix as an uncompressed block file, byte for byte as storage.write_csr_block does; returns the
-    file size."""
+def _block(matrix: csr_array) -> tuple[CSR, tuple]:
+    """Matrix as the engine's CSR view, and the arrays it points to (kept referenced while it is used)."""
     indptr, indices = matrix.indptr, matrix.indices
     if indptr.dtype != indices.dtype or indptr.dtype not in (np.int32, np.int64):
         indptr, indices = indptr.astype(np.int64), indices.astype(np.int64)
     data = matrix.data
     if data.dtype not in (np.float64, np.int64):
         data = data.astype(np.int64 if data.dtype.kind in "iub" else np.float64)
-    indptr, indices, data = (np.ascontiguousarray(a) for a in (indptr, indices, data))
+    arrays = tuple(np.ascontiguousarray(a) for a in (indptr, indices, data))
+    indptr, indices, data = arrays
     block = CSR(
         matrix.shape[0],
         matrix.shape[1],
@@ -282,6 +286,37 @@ def write_block(path: Path, matrix: csr_array, *, integer: bool) -> int:
         indices.ctypes.data,
         data.ctypes.data,
     )
+    return block, arrays
+
+
+def write_block(path: Path, matrix: csr_array, *, integer: bool) -> int:
+    """Writes matrix as an uncompressed block file, byte for byte as storage.write_csr_block does; returns the
+    file size."""
+    block, arrays = _block(matrix)
     size = ct.c_int64()
     _check(library().meds_tab_write_block(os.fsencode(path), ct.byref(block), integer, ct.byref(size)))
+    del arrays
     return size.value
+
+
+def write_blocks(blocks: list[tuple[Path, csr_array, bool]], threads: int) -> list[int]:
+    """Writes every (path, matrix, integer) as write_block does, in one engine call on up to threads threads;
+    returns the file sizes.
+
+    Python is not re-entered between blocks, so writes do not wait on the GIL.
+    """
+    count = len(blocks)
+    if not count:
+        return []
+    views = [_block(matrix) for _, matrix, _ in blocks]
+    paths = (ct.c_char_p * count)(*(os.fsencode(path) for path, _, _ in blocks))
+    csrs = (CSR * count)(*(block for block, _ in views))
+    integer = (ct.c_int32 * count)(*(int(bool(i)) for _, _, i in blocks))
+    sizes = np.zeros(count, dtype=np.int64)
+    _check(
+        library().meds_tab_write_blocks(
+            count, paths, csrs, integer, sizes.ctypes.data_as(ct.POINTER(ct.c_int64)), threads
+        )
+    )
+    del views
+    return sizes.tolist()

@@ -5,6 +5,8 @@
 Faster `medsboost` training (22% less total training time on 10 MIMIC-IV MG tasks, same held-out AUROC), a faster
 matrix cache, and no reload of the model and data to write predictions.
 
+Faster native tabularization: about 30% less time on MIMIC-IV, with byte-identical outputs.
+
 ### Changed
 
 - **`medsboost` defaults: single-precision histograms and GOSS row sampling.** On 10 MIMIC-IV MG tasks (seeds 1-2),
@@ -24,6 +26,14 @@ matrix cache, and no reload of the model and data to write predictions.
 - **Trials write their own predictions** (`{split}_predictions.parquet`, while the model and data are loaded), and
     the evaluation callback copies them with the best trial instead of reloading the model and every split (about
     35 s per run on MIMIC-IV). The predictions are identical.
+- **The native backend computes several shards at once** (`native.shards_in_flight`, default 3) on worker
+    threads, while the oldest finished shard is written and published. One shard at a time left most CPUs idle.
+- **A shard's uncompressed blocks are written by one engine call** (`engine.write_blocks`, new C function
+    `meds_tab_write_blocks`, ABI version 2). Written one by one, every block re-entered Python, and writer
+    threads queued on the GIL behind shard reads: about 15 ms per block instead of 0.5 ms on MIMIC-IV.
+- On 3 MIMIC-IV MG tasks (366 shards, 16,104 blocks each, 12 logical CPUs), native tabularization took
+    36-45 s instead of 53-65 s (-29% to -33%), with identical block files and about 0.5 GB more peak memory.
+    `native.shards_in_flight=1` restores one shard at a time.
 
 ### Added
 

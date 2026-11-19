@@ -13,6 +13,8 @@ backend: ${oc.env:MEDS_TAB_BACKEND,auto}
 native:
   # Engine and writer threads; null uses every CPU available to the process.
   threads: null
+  # Shards computed at once (null: 3). More use more CPUs and memory; 1 computes one shard at a time.
+  shards_in_flight: null
 
 # Train on a reproducible subset of the training split, e.g. for scaling studies (see
 # MEDS_tabular_automl/train_subset.py). Tuning and held-out are kept whole. Give every stage (describe,

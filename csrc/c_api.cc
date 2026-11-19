@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "npz.h"
+#include "parallel.h"
 #include "shard.h"
 #include "static_features.h"
 #include "types.h"
@@ -151,19 +152,31 @@ void meds_tab_result_free(meds_tab_result* result) { delete result; }
 
 int meds_tab_write_block(const char* path, const meds_tab_csr* block, int32_t integer,
                          int64_t* file_bytes) {
+  return meds_tab_write_blocks(1, &path, block, &integer, file_bytes, 1);
+}
+
+int meds_tab_write_blocks(int64_t count, const char* const* paths, const meds_tab_csr* blocks,
+                          const int32_t* integer, int64_t* file_bytes, int32_t threads) {
   return Guard(
       [&] {
-        Require(path && block && file_bytes, "Invalid block arguments.");
-        meds_tab::npz::Block view;
-        view.rows = block->rows;
-        view.columns = block->columns;
-        view.nnz = block->nnz;
-        view.index_64 = block->index_64 != 0;
-        view.values_integer = block->values_integer != 0;
-        view.outer = block->outer;
-        view.inner = block->inner;
-        view.values = block->values;
-        *file_bytes = meds_tab::npz::WriteBlock(path, view, integer != 0);
+        Require(count >= 0 && threads >= 1, "Invalid block count or thread count.");
+        Require(count == 0 || (paths && blocks && integer && file_bytes),
+                "Invalid block arguments.");
+        meds_tab::ParallelFor(
+            static_cast<std::size_t>(count), threads, [&](std::size_t, std::size_t i) {
+              const meds_tab_csr& block = blocks[i];
+              Require(paths[i] != nullptr, "Invalid block arguments.");
+              meds_tab::npz::Block view;
+              view.rows = block.rows;
+              view.columns = block.columns;
+              view.nnz = block.nnz;
+              view.index_64 = block.index_64 != 0;
+              view.values_integer = block.values_integer != 0;
+              view.outer = block.outer;
+              view.inner = block.inner;
+              view.values = block.values;
+              file_bytes[i] = meds_tab::npz::WriteBlock(paths[i], view, integer[i] != 0);
+            });
         return 1;
       },
       0, -1);
