@@ -17,10 +17,11 @@ meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... "tab
 meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
 ```
 
-| Setting          | Default            | Meaning                                                                                    |
-| ---------------- | ------------------ | ------------------------------------------------------------------------------------------ |
-| `backend`        | `auto`             | `auto`, `native` or `python`; the `MEDS_TAB_BACKEND` environment variable sets the default |
-| `native.threads` | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)            |
+| Setting                   | Default            | Meaning                                                                                                      |
+| ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `backend`                 | `auto`             | `auto`, `native` or `python`; the `MEDS_TAB_BACKEND` environment variable sets the default                   |
+| `native.threads`          | all available CPUs | Engine and writer threads (respects Linux CPU affinity, e.g. Slurm allocations)                              |
+| `native.shards_in_flight` | 3                  | Shards read and computed at once; each adds one shard's events and blocks to memory, 1 computes them in turn |
 
 - `backend=auto` runs the native backend when it can, and otherwise the Python backend, logging why: the
     engine is not built, the configuration uses something it does not implement (an aggregation or window
@@ -156,11 +157,16 @@ configuration, scheduling and files; C++ owns aggregation buffers. Byte counts a
 | Fill       | `Shard::Aggregate`                            | Each event enters and leaves each window once; each entry is written once, in place                                                                                                                           | Per worker, reused: up to 80 B per subject code and 48 B per subject event                                                                 |
 | Views      | `engine.Shard.aggregate`                      | None (SciPy CSR views of the native buffers)                                                                                                                                                                  | One owner per result frees it when the last view is released                                                                               |
 | Static     | `AggregateStatic` (`csrc/static_features.cc`) | Stable sort of record indices by subject                                                                                                                                                                      | 8 B/record index; output CSR 16 B/entry (native `Result`)                                                                                  |
-| Write      | `engine.write_block` (`csrc/npz.cc`)          | Per block: one scan to choose the stored type; per 1 MiB chunk: value conversion, row-ID expansion, column conversion (bounds-checked); CRC-32 of every byte                                                  | At most `threads` blocks in flight, a 1 MiB buffer each                                                                                    |
+| Write      | `engine.write_blocks` (`csrc/npz.cc`)         | A shard's blocks in one call on native threads. Per block: one scan to choose the stored type; per 1 MiB chunk: value conversion, row-ID expansion, column conversion (bounds-checked); CRC-32 of every byte  | At most `threads` blocks in flight per call, a 1 MiB buffer each                                                                           |
 | Publish    | `Publisher`, manifests                        | Rename of the staged directory; manifest written last                                                                                                                                                         | —                                                                                                                                          |
 
-A shard is computed while the previous shard's blocks are written (smallest shards first), so up to two
-shards' outputs are resident. To bound memory, use smaller shards, as with the Python backend.
+Up to `native.shards_in_flight` shards are read and computed at once on worker threads (smallest shards
+first) while the oldest finished shard's blocks are written and published, so up to `shards_in_flight + 1`
+shards' outputs are resident. Reading a shard is mostly Polars and the engine calls release the GIL, so
+shards overlap well; one shard at a time left most CPUs idle. A shard's uncompressed blocks are written by
+one engine call: written one by one, each block re-entered Python, and writer threads queued on the GIL
+behind shard reads (on MIMIC-IV, about 15 ms per block instead of 0.5 ms). To bound memory, lower
+`native.shards_in_flight` or use smaller shards, as with the Python backend.
 Label-time tabularization computes every label row, duplicates included, in (subject, time) order and
 writes the blocks in label-file order. Compressed blocks (`do_compress`) are written by Python's `zipfile`.
 
