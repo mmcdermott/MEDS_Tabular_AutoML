@@ -13,9 +13,12 @@ With the default `backend=auto`, the tabularization commands use it whenever the
 
 ```bash
 meds-tab-describe input_dir=... output_dir=...
-meds-tab-tabularize-static input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
-meds-tab-tabularize-time-series input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
+meds-tab-tabularize input_dir=... output_dir=... input_label_dir=... "tabularization.window_sizes=[1d,30d,365d,full]"
 ```
+
+`meds-tab-tabularize` runs `meds-tab-tabularize-static` and then `meds-tab-tabularize-time-series` with the same
+arguments. The native backend writes every block in the first step, so it skips the second; the two commands
+still exist and work as before.
 
 | Setting                   | Default            | Meaning                                                                                                      |
 | ------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------ |

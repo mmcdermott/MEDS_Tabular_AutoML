@@ -84,11 +84,14 @@ The commands below use:
 
 ```console
 meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR"
-meds-tab-tabularize-static "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
-meds-tab-tabularize-time-series "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
+meds-tab-tabularize "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR"
 meds-tab-model "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" \
     "output_model_dir=$MODEL_DIR" "task_name=$TASK"
 ```
+
+`meds-tab-tabularize` writes the static and the time-series features in one command. It is the same as
+running `meds-tab-tabularize-static` and then `meds-tab-tabularize-time-series` with the same arguments; both
+still exist.
 
 This uses the default windows (`2h`, `12h`, `1d`, `7d`, `30d`, full history) and aggregations (`static/present`,
 `code/count`, `code/recency`, `value/sum`, `value/min`, `value/max`); set
@@ -113,7 +116,7 @@ To train on part of the training split, give every command above the same `train
 ```console
 SUBSET=("train_subset.by=subjects" "train_subset.n=5000" "train_subset.salt=0")
 meds-tab-describe "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" "input_label_dir=$LABELS_DIR" "${SUBSET[@]}"
-# ...and "${SUBSET[@]}" on meds-tab-tabularize-static, meds-tab-tabularize-time-series and meds-tab-model
+# ...and "${SUBSET[@]}" on meds-tab-tabularize and meds-tab-model
 ```
 
 - `train_subset.by=subjects` keeps `n` training subjects that have labels, with all their labels;
@@ -148,7 +151,7 @@ The pipeline has five stages, the first optional:
 1. **Resharding** (optional) restructures the input data into manageable shards.
 2. **Data description** (`meds-tab-describe`) computes per-code statistics on the training subjects, used to select features.
 3. **Static** and
-4. **time-series tabularization** (`meds-tab-tabularize-static`, `meds-tab-tabularize-time-series`) compute task-specific features: one row per label of a prediction task, with every window ending at the label's prediction time.
+4. **time-series tabularization** (`meds-tab-tabularize`, or its two steps `meds-tab-tabularize-static` and `meds-tab-tabularize-time-series`) compute task-specific features: one row per label of a prediction task, with every window ending at the label's prediction time.
 5. **Model training** (`meds-tab-model`) trains one model or runs a hyperparameter sweep, and evaluates the best model on the held-out split.
 
 Versions up to 0.2.0 could also tabularize every event time once and then cache each task's rows (`meds-tab-cache-task`); that workflow has been removed (see the [usage guide](https://meds-tab.readthedocs.io/en/latest/usage_guide/)).

@@ -32,7 +32,12 @@ from ..utils import (
 @hydra.main(
     version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
 )
-def main(
+def main(cfg: DictConfig):
+    """``meds-tab-tabularize-static``: see :func:`run`."""
+    run(cfg)
+
+
+def run(
     cfg: DictConfig,
 ):
     """Writes a flat (historically summarized) representation of the dataset to disk.
