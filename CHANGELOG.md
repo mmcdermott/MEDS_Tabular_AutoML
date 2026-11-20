@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`meds-tab-tabularize`: both tabularization stages in one command.** It runs `meds-tab-tabularize-static` and
+    then `meds-tab-tabularize-time-series` with the same arguments and writes the same files. On the native
+    backend, which writes every block during the static stage, the second stage is skipped instead of finding
+    every shard done. It takes `--multirun worker=...` like the time-series command. The two commands remain;
+    each script's work is now in a `run(cfg)` function that its Hydra `main` calls.
+
 ## 0.5.0
 
 Faster end to end on MIMIC-IV: a native `meds-tab-describe` (9x faster, identical counts), native tabularization

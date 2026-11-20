@@ -68,6 +68,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel}"
 
 [project.scripts]
 meds-tab-describe = "MEDS_tabular_automl.scripts.describe_codes:main"
+meds-tab-tabularize = "MEDS_tabular_automl.scripts.tabularize:main"
 meds-tab-tabularize-static = "MEDS_tabular_automl.scripts.tabularize_static:main"
 meds-tab-tabularize-time-series = "MEDS_tabular_automl.scripts.tabularize_time_series:main"
 meds-tab-xgboost = "MEDS_tabular_automl.scripts.launch_model:xgboost_main"

@@ -32,7 +32,12 @@ logger = logging.getLogger(__name__)
 @hydra.main(
     version_base=None, config_path=str(TABULARIZATION_CFG.parent), config_name=TABULARIZATION_CFG.stem
 )
-def main(
+def main(cfg: DictConfig):
+    """``meds-tab-tabularize-time-series``: see :func:`run`."""
+    run(cfg)
+
+
+def run(
     cfg: DictConfig,
 ):
     """Processes time-series data by summarizing it across different windows, creating a flat, summarized
