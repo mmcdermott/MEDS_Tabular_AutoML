@@ -305,8 +305,57 @@ def _csr(X) -> tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     )
 
 
+# Default hyperparameters by training prevalence. Parameters left unset (None) take the "standard" values, or
+# the "low_prevalence" ones when the training prevalence is at most LOW_PREVALENCE_MAX (profile="auto").
+# The low-prevalence values (kept to 3 significant figures: rounding further cost AUROC) come from a
+# multi-objective Optuna search (338 trials, 5 MIMIC-IV tasks at 0.9-71% prevalence), confirmed on held-out
+# data the search never saw, 8 unseen NWICU tasks and prevalence ladders down to 0.1%: at <= 3% prevalence,
+# AUPRC +6-17% at about the same AUROC (no task more than 0.003 lower). Above 3% they matched the standard
+# values but trained about 2x slower, so the standard values stay there.
+STANDARD_PROFILE = {
+    "max_bin": 15,
+    "num_leaves": 127,
+    "min_child_samples": 50,
+    "lambda_l2": 1.0,
+    "learning_rate": 0.05,
+    "max_rounds": 1000,
+    "min_sum_hessian": 1e-3,
+    "layouts": 14,
+    "goss_top": 0.3,
+    "goss_other": 0.2,
+}
+LOW_PREVALENCE_PROFILE = {
+    "max_bin": 63,
+    "num_leaves": 41,
+    "min_child_samples": 95,
+    "lambda_l2": 0.0211,
+    "learning_rate": 0.0202,
+    "max_rounds": 2000,
+    "min_sum_hessian": 0.00182,
+    "layouts": 28,
+    "goss_top": 0.186,
+    "goss_other": 0.105,
+}
+LOW_PREVALENCE_MAX = 0.03
+PROFILES = ("auto", "standard", "low_prevalence")
+
+
+def _check_goss(goss_top: float, goss_other: float) -> None:
+    if not (0 <= goss_top < 1 and 0 <= goss_other <= 1 - goss_top):
+        raise ValueError(
+            f"Need 0 <= goss_top < 1 and 0 <= goss_other <= 1 - goss_top; got {goss_top}, {goss_other}"
+        )
+    if goss_top > 0 and goss_other <= 0:
+        raise ValueError("goss_other must be > 0 when goss_top > 0 (the rest would never be sampled)")
+
+
 class MedsBoost:
     """Binary gradient-boosted trees; see the module docstring.
+
+    Hyperparameters left as None follow ``profile``: ``"auto"`` (the default) uses ``STANDARD_PROFILE``, or
+    ``LOW_PREVALENCE_PROFILE`` when the training prevalence is at most ``LOW_PREVALENCE_MAX`` (3%);
+    ``"standard"`` and ``"low_prevalence"`` force one. Explicitly given values always win. ``params`` shows
+    standard values until ``fit`` resolves the profile; ``info["profile"]`` records the one used.
 
     Args:
         threads: worker threads (0: ``OMP_NUM_THREADS`` if set, else every available CPU).
@@ -334,6 +383,7 @@ class MedsBoost:
             instead. With single-precision histograms, the default 0.3 / 0.2 (half the rows per tree) trained
             22% faster in total than double-precision bagging 0.8 on 10 MIMIC-IV tasks, with the same held-out
             AUROC.
+        profile: ``"auto"``, ``"standard"`` or ``"low_prevalence"`` (see above).
         save_stats: also write node statistics when saving (format version 2): each split's gain, and the
             hessian sum and row count (cover) of every node and leaf. Then ``feature_importance("gain")``
             works on the reloaded model, and the file has what exact TreeSHAP needs. Off by default: the
@@ -344,50 +394,80 @@ class MedsBoost:
     def __init__(
         self,
         threads: int = 0,
-        max_bin: int = 15,
-        num_leaves: int = 127,
-        min_child_samples: int = 50,
-        lambda_l2: float = 1.0,
-        learning_rate: float = 0.05,
+        max_bin: int | None = None,
+        num_leaves: int | None = None,
+        min_child_samples: int | None = None,
+        lambda_l2: float | None = None,
+        learning_rate: float | None = None,
         bagging_fraction: float = 0.8,
-        max_rounds: int = 1000,
+        max_rounds: int | None = None,
         early_stopping: int = 20,
         seed: int = 1,
-        min_sum_hessian: float = 1e-3,
-        layouts: int = 14,
+        min_sum_hessian: float | None = None,
+        layouts: int | None = None,
         refresh: int = 1,
         save_stats: bool = False,
         slot_k: int = 1,
-        goss_top: float = 0.3,
-        goss_other: float = 0.2,
+        goss_top: float | None = None,
+        goss_other: float | None = None,
+        profile: str = "auto",
     ):
-        if not (0 <= goss_top < 1 and 0 <= goss_other <= 1 - goss_top):
-            raise ValueError(
-                f"Need 0 <= goss_top < 1 and 0 <= goss_other <= 1 - goss_top; got {goss_top}, {goss_other}"
-            )
-        if goss_top > 0 and goss_other <= 0:
-            raise ValueError("goss_other must be > 0 when goss_top > 0 (the rest would never be sampled)")
-        self.params = {
-            "threads": threads or default_threads(),
+        if profile not in PROFILES:
+            raise ValueError(f"profile must be one of {PROFILES}, got {profile!r}")
+        given = {
             "max_bin": max_bin,
             "num_leaves": num_leaves,
             "min_child_samples": min_child_samples,
             "lambda_l2": lambda_l2,
             "learning_rate": learning_rate,
-            "bagging_fraction": bagging_fraction,
             "max_rounds": max_rounds,
-            "early_stopping": early_stopping,
-            "seed": seed,
             "min_sum_hessian": min_sum_hessian,
             "layouts": layouts,
-            "refresh": refresh,
-            "slot_k": slot_k,
             "goss_top": goss_top,
             "goss_other": goss_other,
+        }
+        self.profile = profile
+        self._explicit = {k: v for k, v in given.items() if v is not None}
+        resolved = {**self._profile_values("low_prevalence" if profile == "low_prevalence" else "standard")}
+        for name in ("standard", "low_prevalence"):  # every combination a fit may use must be valid
+            if profile in ("auto", name):
+                values = self._profile_values(name)
+                _check_goss(values["goss_top"], values["goss_other"])
+        self.params = {
+            "threads": threads or default_threads(),
+            **{
+                k: resolved[k]
+                for k in ("max_bin", "num_leaves", "min_child_samples", "lambda_l2", "learning_rate")
+            },
+            "bagging_fraction": bagging_fraction,
+            "max_rounds": resolved["max_rounds"],
+            "early_stopping": early_stopping,
+            "seed": seed,
+            "min_sum_hessian": resolved["min_sum_hessian"],
+            "layouts": resolved["layouts"],
+            "refresh": refresh,
+            "slot_k": slot_k,
+            "goss_top": resolved["goss_top"],
+            "goss_other": resolved["goss_other"],
         }
         self.save_stats = bool(save_stats)  # an output option, not a training parameter
         self._handle = None
         self.info: dict = {}
+
+    def _profile_values(self, name: str) -> dict:
+        """The profile's values, overridden by the explicitly given ones."""
+        base = LOW_PREVALENCE_PROFILE if name == "low_prevalence" else STANDARD_PROFILE
+        return {**base, **self._explicit}
+
+    def _resolve_profile(self, prevalence: float) -> str:
+        """Sets the profile-dependent params for training data of this prevalence; returns the profile
+        used."""
+        if self.profile == "auto":
+            name = "low_prevalence" if prevalence <= LOW_PREVALENCE_MAX else "standard"
+        else:
+            name = self.profile
+        self.params.update(self._profile_values(name))
+        return name
 
     def _param_array(self) -> np.ndarray:
         p = self.params
@@ -428,6 +508,8 @@ class MedsBoost:
         n, m = X.shape
         cptr, cidx, cval = X.indptr.astype(np.int64), X.indices.astype(np.int32, copy=False), X.data
         y = np.ascontiguousarray(y_train, dtype=np.float32)
+        prevalence = float(y.mean()) if len(y) else 0.0
+        profile = self._resolve_profile(prevalence)
         tptr, tidx, tval, n_tun = _csr(X_tuning)
         yt = np.ascontiguousarray(y_tuning, dtype=np.float32)
         slots = np.arange(m, dtype=np.int32) if slots is None else np.ascontiguousarray(slots, dtype=np.int32)
@@ -466,6 +548,8 @@ class MedsBoost:
             self._handle = None
             raise RuntimeError(f"medsboost training failed: {lib.medsboost_last_error().decode()}")
         self.info = {
+            "profile": profile,
+            "prevalence": prevalence,
             "best_iteration": int(info[0]),
             "trees_trained": int(info[1]),
             "binning_s": float(info[2]),

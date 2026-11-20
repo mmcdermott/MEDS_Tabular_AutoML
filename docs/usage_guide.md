@@ -460,6 +460,12 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
     load (`data_loading_params.cache_matrices`, on by default), so later trials do not re-read the
     tabularized files, whatever code threshold they draw.
 
+    Its default hyperparameters depend on the task: with `profile: auto` (the default), a task whose training
+    prevalence is at most 3% trains with smaller, more regularized trees and a lower learning rate (the
+    low-prevalence profile), which gave clearly higher AUPRC on rare outcomes; other tasks keep the standard
+    values. Any hyperparameter you set, or sweep, overrides the profile; `profile: standard` or
+    `profile: low_prevalence` forces one, and the profile used is logged.
+
     `medsboost` is a compiled library. `pip install meds-tab` includes it on Linux (x86_64 and aarch64), on
     Windows (x86_64) and on Apple-silicon Macs with macOS 15 or later, for Python 3.11 to 3.13. Check with
     `python -c "from MEDS_tabular_automl import medsboost; print(medsboost.is_available())"`.
