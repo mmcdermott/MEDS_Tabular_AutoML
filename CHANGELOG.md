@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
+
+One command for tabularization: `meds-tab-tabularize` writes the static and the time-series features of a task,
+with either backend. Outputs, models and the existing commands are unchanged.
 
 ### Added
 
