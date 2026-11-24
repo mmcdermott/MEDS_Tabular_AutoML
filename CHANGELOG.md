@@ -25,6 +25,19 @@ with either backend. Outputs, models and the existing commands are unchanged.
 
 ### Added
 
+- **Bagged `medsboost`: `model_launcher=medsboost_mix6`**, and the `model_launcher.ensemble` options of the
+    `medsboost` launcher behind it (`members`, `member_params`, `stop_fraction`, `pool_tuning`; off by default).
+    `medsboost_mix6` averages 6 models trained on train+tuning, alternating strongly regularized members (15
+    leaves, `min_child_samples` 300, `lambda_l2` 10, learning rate 0.02, up to 3000 trees) and the profile
+    defaults, each early-stopping on its own 11% of the subjects. New `MedsBoostEnsemble` class
+    (`MEDS_tabular_automl.medsboost.ensemble`) with `fit`, `predict_proba`, `save`/`load` (a manifest plus one
+    file per member) and `feature_importance`.
+    - Evidence: chosen by subject-grouped 5-fold CV on 3 MIMIC-IV phenotypes (0.9-4% prevalence), where it beat
+        the default model on all 30 fold comparisons (CV AUROC +0.013 to +0.064); validated once on held-out
+        data: AMI 0.817 -> 0.842, stroke 0.692 -> 0.724, MASLD 0.684 -> 0.691, and on 3 outcome tasks never used
+        to choose it, in-hospital mortality 0.938 -> 0.939, long stay 0.832 -> 0.833, readmission 0.767 -> 0.769
+        (details and CIs in the usage guide).
+    - For single runs: the reported tuning AUROC is in-sample. Training costs about 6x the single model's.
 - **`meds-tab-tabularize`: both tabularization stages in one command.** It runs `meds-tab-tabularize-static` and
     then `meds-tab-tabularize-time-series` with the same arguments and writes the same files. On the native
     backend, which writes every block during the static stage, the second stage is skipped instead of finding

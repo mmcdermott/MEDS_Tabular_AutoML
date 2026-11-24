@@ -9,6 +9,17 @@ model_launcher:
   # Drop the columns with fewer than this many nonzero training rows before training (0 or 1 keeps them all).
   min_column_nnz: 0
 
+  # Bagged boosting (MEDS_tabular_automl.medsboost.ensemble): average `members` medsboost models, each early-
+  # stopping on its own `stop_fraction` of the training subjects (stratified by outcome) instead of the tuning
+  # split. members: 1 trains the single model as before. model_launcher=medsboost_mix6 is the validated preset.
+  ensemble:
+    members: 1
+    # Per-member overrides of `model` below, cycled (member k uses entry k % length); {} keeps `model` as is.
+    member_params: []
+    stop_fraction: 0.11
+    # Train the members on train+tuning. The tuning AUROC is then in-sample: use it for single runs, not sweeps.
+    pool_tuning: false
+
   # medsboost (MEDS_tabular_automl.medsboost): binary gradient-boosted trees for wide, sparse tabularized data.
   # Needs the compiled library (installed from source with a C++17 compiler and OpenMP).
   model:

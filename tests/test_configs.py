@@ -17,6 +17,7 @@ from tests.test_integration import run_command
         "xgboost",
         "lightgbm",
         "medsboost",
+        "medsboost_mix6",
         "sparsegb",  # deprecated alias of medsboost
         "sgd_classifier",
         "knn_classifier",
@@ -59,6 +60,14 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
             assert isinstance(model_launcher, MedsBoostModel), (
                 "model_launcher should be an instance of MedsBoostModel"
             )
+        case "medsboost_mix6":
+            assert isinstance(model_launcher, MedsBoostModel), (
+                "model_launcher should be an instance of MedsBoostModel"
+            )
+            ens = cfg.model_launcher.ensemble
+            assert ens.members == 6 and ens.pool_tuning and ens.stop_fraction == 0.11
+            assert [dict(p) for p in ens.member_params][1] == {}
+            assert cfg.model_launcher.model.profile == "auto", "mix6 keeps medsboost's model settings"
         case "sparsegb":
             assert isinstance(model_launcher, MedsBoostModel), (
                 "the deprecated sparsegb launcher should still build a MedsBoostModel"

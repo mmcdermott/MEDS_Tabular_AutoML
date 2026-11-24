@@ -583,6 +583,60 @@ below to train a different model.
     the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
     prefer XGBoost or add an observation indicator if the distinction matters for your task.
 
+### Bagged `medsboost`: one configuration, no sweep (`medsboost_mix6`)
+
+```console
+meds-tab-model model_launcher=medsboost_mix6 \
+    "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK"
+```
+
+`medsboost_mix6` trains 6 `medsboost` models on train+tuning and averages their predicted probabilities. Members
+1, 3 and 5 are strongly regularized (15 leaves, at least 300 rows per leaf, `lambda_l2` 10, learning rate 0.02,
+up to 3000 trees, patience 100); members 2, 4 and 6 use the usual profile defaults. Each member early-stops on
+its own 11% of the subjects (stratified by whether a subject has a positive label) instead of the tuning split,
+with seed `seed + k`. The saved model is a small JSON manifest (`medsboost.txt`) next to one file per member
+(`medsboost.member<k>.txt`); reloading, prediction files and `feature_importance` (summed over members) work as
+for a single model.
+
+The same mechanism is available on the `medsboost` launcher: `model_launcher.ensemble.members` (1, the default,
+trains the single model as before), `ensemble.member_params` (per-member overrides of `model_launcher.model`,
+cycled), `ensemble.stop_fraction` and `ensemble.pool_tuning`.
+
+Why it helps: with few positives, a single model's stopping point rests on a small tuning set (on a 1% MIMIC-IV
+phenotype, the default kept between 1 and 93 trees depending on the split), and its trees overfit rare columns
+that separate a handful of positives by chance. Strong regularization keeps the trees from doing so, and
+averaging members that stop on different subjects removes the variance of the stopping point; mixing the two
+kinds of members adds diversity.
+
+Evidence. The configuration was chosen by subject-grouped 5-fold cross-validation on train+tuning of three
+MIMIC-IV phenotypes (meds_v0.6, default tabularization), and beat the single default model on all 30 fold
+comparisons (2 fold seeds):
+
+| CV AUROC (seed 0 / seed 1) | MASLD (1.3%)  | Stroke (0.9%) | AMI (4.1%)    |
+| -------------------------- | ------------- | ------------- | ------------- |
+| default `medsboost`        | 0.701 / 0.684 | 0.782 / 0.768 | 0.788 / 0.796 |
+| `medsboost_mix6`           | 0.750 / 0.754 | 0.805 / 0.793 | 0.809 / 0.810 |
+
+It was then validated once on held-out data, including three patient-outcome tasks never used to choose it
+(95% CIs from 1000 patient-level bootstrap resamples; the difference is paired):
+
+| Held-out AUROC        | Positive patients | default | `medsboost_mix6` | difference [95% CI]    |
+| --------------------- | ----------------- | ------- | ---------------- | ---------------------- |
+| AMI                   | 150               | 0.817   | 0.842            | +0.025 [0.012, 0.036]  |
+| Stroke                | 39                | 0.692   | 0.724            | +0.032 [-0.009, 0.062] |
+| MASLD                 | 68                | 0.684   | 0.691            | +0.007 [-0.028, 0.036] |
+| In-hospital mortality | 845               | 0.938   | 0.939            | +0.002 [0.000, 0.003]  |
+| Long length of stay   | 6287              | 0.832   | 0.833            | +0.001 [-0.000, 0.002] |
+| 30-day readmission    | 4087              | 0.767   | 0.769            | +0.002 [0.001, 0.004]  |
+
+Use it for a single run, not in a sweep: the members train on the tuning split, so the tuning AUROC that
+`meds-tab-model` reports (and a sweep optimizes) is in-sample; a warning says so. Training costs about 6 times
+the single model's (on 12 threads: 72-86 s instead of about 11 s on 100k-label phenotypes, 10-13 min instead of
+1-1.5 min on 300-380k-label outcomes). On common outcomes with many positives (long length of stay,
+readmission), the strong members reach the 3000-tree cap; they could use a larger learning rate there.
+`shap_values` is not available for the ensemble.
+
 ### Feature importance (`medsboost`)
 
 A `medsboost` model reports how much it uses each column of its training matrix, like LightGBM's `Booster.feature_importance`: `feature_importance("split")`, the number of splits on the column, or `feature_importance("gain")`, their total gain (the loss reduction they bring on the training rows). Split counts work on any saved model. Gains need the model to be saved with its node statistics: add `model_launcher.model.save_stats=true` to `meds-tab-model`. Training is unchanged; the saved file then also records each split's gain and the hessian sum and row count (cover) of every node and leaf, which exact TreeSHAP needs.
