@@ -38,7 +38,27 @@ STRONG_PARAMS = {
 # prevalence), where it beat the single default model on all 30 fold comparisons (two fold seeds), then
 # validated once on held-out data of those tasks and of 3 patient-outcome tasks never used to choose it
 # (docs/usage_guide.md).
-MIX6_MEMBER_PARAMS = [STRONG_PARAMS, {}]
+MIX6_MEMBER_PARAMS = [{**STRONG_PARAMS, "learning_rate": "auto"}, {}]
+
+# A member whose learning_rate is "auto" gets adaptive_learning_rate(P), P the positives in the training rows.
+AUTO = "auto"
+
+
+def adaptive_learning_rate(
+    n_positives: int, base: float = 0.02, reference_positives: int = 5000, maximum: float = 0.1
+) -> float:
+    """`base` up to `reference_positives` positives, then growing with their square root, capped at `maximum`.
+
+    With many positives the strongly regularized members need far more trees at `base`: on a 187k-positive
+    task they reached a 3000-tree cap and lost 0.0013 tuning AUROC to members that converged; the larger rate
+    converged in about 1100 trees, at the same accuracy as 0.05 and 29% less fit time. Below 5k positives the
+    rate stays `base`.
+
+    Examples:
+        >>> [round(adaptive_learning_rate(p), 4) for p in (500, 5000, 20000, 125000, 1000000)]
+        [0.02, 0.02, 0.04, 0.1, 0.1]
+    """
+    return float(min(maximum, max(base, base * np.sqrt(n_positives / reference_positives))))
 
 
 def subject_split(y, groups, fraction: float, seed: int) -> tuple[np.ndarray, np.ndarray]:
@@ -135,18 +155,28 @@ class MedsBoostEnsemble:
             raise ValueError(f"groups has {len(groups)} entries for {len(y)} rows")
         self.free()
         self.models = []
+        n_positives = int(np.sum(y > 0))
+        learning_rates = []
         for cfg in self.member_configs:
             fit_rows, stop_rows = subject_split(y, groups, self.stop_fraction, cfg["seed"])
             if len(np.unique(y[stop_rows])) < 2:
                 raise ValueError(
                     "an early-stopping share has a single class; raise stop_fraction or add labels"
                 )
-            model = MedsBoost(**cfg).fit(X[fit_rows], y[fit_rows], X[stop_rows], y[stop_rows], slots=slots)
+            run_cfg = dict(cfg)
+            if run_cfg.get("learning_rate") == AUTO:
+                run_cfg["learning_rate"] = adaptive_learning_rate(n_positives)
+            learning_rates.append(run_cfg.get("learning_rate"))
+            model = MedsBoost(**run_cfg).fit(
+                X[fit_rows], y[fit_rows], X[stop_rows], y[stop_rows], slots=slots
+            )
             self.models.append(model)
         self.info = {
             "members": self.members,
             "rows": len(y),
             "subjects": len(np.unique(groups)),
+            "positives": n_positives,
+            "learning_rates": learning_rates,
             "trees": [m.num_trees for m in self.models],
             "profiles": [m.info.get("profile") for m in self.models],
         }
@@ -179,6 +209,7 @@ class MedsBoostEnsemble:
             "members": files,
             "stop_fraction": self.stop_fraction,
             "member_configs": self.member_configs,
+            "learning_rates": self.info.get("learning_rates"),
         }
         path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
 

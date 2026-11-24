@@ -6,7 +6,12 @@ import scipy.sparse as sp
 from omegaconf import OmegaConf
 
 from MEDS_tabular_automl import medsboost
-from MEDS_tabular_automl.medsboost.ensemble import MIX6_MEMBER_PARAMS, MedsBoostEnsemble, subject_split
+from MEDS_tabular_automl.medsboost.ensemble import (
+    MIX6_MEMBER_PARAMS,
+    MedsBoostEnsemble,
+    adaptive_learning_rate,
+    subject_split,
+)
 from MEDS_tabular_automl.medsboost_model import MedsBoostModel
 
 pytestmark = pytest.mark.skipif(not medsboost.is_available(), reason="medsboost library not built")
@@ -62,6 +67,25 @@ def test_save_load_round_trip(tmp_path):
     assert names == ["medsboost.member0.txt", "medsboost.member1.txt", "medsboost.txt"]
     assert not MedsBoostEnsemble.is_ensemble_file(tmp_path / "medsboost.member0.txt")
     np.testing.assert_allclose(MedsBoostEnsemble.load(fp, threads=2).predict_proba(X), ens.predict_proba(X))
+
+
+def test_auto_learning_rate_follows_training_positives(tmp_path):
+    X, y, groups = _data()
+    ens = MedsBoostEnsemble(2, [{"learning_rate": "auto"}, {"learning_rate": 0.1}], 0.2, SMALL).fit(
+        X, y, groups
+    )
+    n_pos = int(y.sum())
+    assert ens.info["positives"] == n_pos
+    assert ens.info["learning_rates"] == [adaptive_learning_rate(n_pos), 0.1]
+    assert MIX6_MEMBER_PARAMS[0]["learning_rate"] == "auto"
+    ens.save(tmp_path / "medsboost.txt")
+    assert '"learning_rates"' in (tmp_path / "medsboost.txt").read_text()
+
+
+def test_adaptive_learning_rate_bounds():
+    assert adaptive_learning_rate(0) == 0.02 and adaptive_learning_rate(5000) == 0.02
+    assert adaptive_learning_rate(20000) == pytest.approx(0.04)
+    assert adaptive_learning_rate(10**7) == 0.1
 
 
 def test_invalid_arguments():

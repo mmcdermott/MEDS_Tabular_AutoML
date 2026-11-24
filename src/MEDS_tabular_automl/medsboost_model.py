@@ -250,7 +250,8 @@ class MedsBoostModel(GradientBoostedTreesModel):
             base_params=params,
         ).fit(X, y, groups, slots=self.slots)
         logger.info(
-            f"medsboost ensemble: {members} members kept {self.model.info['trees']} trees "
+            f"medsboost ensemble: {members} members (learning rates "
+            f"{self.model.info['learning_rates']}) kept {self.model.info['trees']} trees "
             f"(profiles {self.model.info['profiles']}) after {time.perf_counter() - start:.1f}s"
         )
 

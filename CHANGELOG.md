@@ -28,8 +28,10 @@ with either backend. Outputs, models and the existing commands are unchanged.
 - **Bagged `medsboost`: `model_launcher=medsboost_mix6`**, and the `model_launcher.ensemble` options of the
     `medsboost` launcher behind it (`members`, `member_params`, `stop_fraction`, `pool_tuning`; off by default).
     `medsboost_mix6` averages 6 models trained on train+tuning, alternating strongly regularized members (15
-    leaves, `min_child_samples` 300, `lambda_l2` 10, learning rate 0.02, up to 3000 trees) and the profile
-    defaults, each early-stopping on its own 11% of the subjects. New `MedsBoostEnsemble` class
+    leaves, `min_child_samples` 300, `lambda_l2` 10, up to 3000 trees, `learning_rate: auto`) and the profile
+    defaults, each early-stopping on its own 11% of the subjects. `auto` gives a member 0.02 up to 5000 training
+    positives, then 0.02 * sqrt(positives / 5000), at most 0.1, so that the strong members converge before the
+    tree cap on large tasks. New `MedsBoostEnsemble` class
     (`MEDS_tabular_automl.medsboost.ensemble`) with `fit`, `predict_proba`, `save`/`load` (a manifest plus one
     file per member) and `feature_importance`.
     - Evidence: chosen by subject-grouped 5-fold CV on 3 MIMIC-IV phenotypes (0.9-4% prevalence), where it beat
@@ -37,6 +39,11 @@ with either backend. Outputs, models and the existing commands are unchanged.
         data: AMI 0.817 -> 0.842, stroke 0.692 -> 0.724, MASLD 0.684 -> 0.691, and on 3 outcome tasks never used
         to choose it, in-hospital mortality 0.938 -> 0.939, long stay 0.832 -> 0.833, readmission 0.767 -> 0.769
         (details and CIs in the usage guide).
+    - `auto` learning rate: studied and validated on 7 other MIMIC-IV clinical tasks (616 to 210k training
+        positives, held-out never used before). Identical to 0.02 below 5000 positives; on held-out data never
+        significantly worse, better on thrombocytopenia (+0.0004) and discharge within 7 days (+0.0011, where
+        0.02 kept the strong members at the 3000-tree cap) with 29% less fit time there. `medsboost_mix6` beat
+        the default on all 7 (+0.001 to +0.015 AUROC).
     - For single runs: the reported tuning AUROC is in-sample. Training costs about 6x the single model's.
 - **`meds-tab-tabularize`: both tabularization stages in one command.** It runs `meds-tab-tabularize-static` and
     then `meds-tab-tabularize-time-series` with the same arguments and writes the same files. On the native

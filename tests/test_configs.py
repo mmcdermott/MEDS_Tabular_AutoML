@@ -67,6 +67,7 @@ def test_model_config(model_launcher_override, imputer, normalization, tmp_path)
             ens = cfg.model_launcher.ensemble
             assert ens.members == 6 and ens.pool_tuning and ens.stop_fraction == 0.11
             assert [dict(p) for p in ens.member_params][1] == {}
+            assert ens.member_params[0].learning_rate == "auto"
             assert cfg.model_launcher.model.profile == "auto", "mix6 keeps medsboost's model settings"
         case "sparsegb":
             assert isinstance(model_launcher, MedsBoostModel), (

@@ -11,11 +11,12 @@ model_launcher:
   ensemble:
     members: 6
     member_params:
-      # MEDS_tabular_automl.medsboost.ensemble.STRONG_PARAMS
+      # MEDS_tabular_automl.medsboost.ensemble.MIX6_MEMBER_PARAMS[0]
       - num_leaves: 15
         min_child_samples: 300
         lambda_l2: 10.0
-        learning_rate: 0.02
+        # 0.02 up to 5k training positives, then 0.02 * sqrt(positives / 5000), at most 0.1
+        learning_rate: auto
         max_rounds: 3000
         early_stopping: 100
       - {}

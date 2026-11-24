@@ -592,8 +592,11 @@ meds-tab-model model_launcher=medsboost_mix6 \
 ```
 
 `medsboost_mix6` trains 6 `medsboost` models on train+tuning and averages their predicted probabilities. Members
-1, 3 and 5 are strongly regularized (15 leaves, at least 300 rows per leaf, `lambda_l2` 10, learning rate 0.02,
-up to 3000 trees, patience 100); members 2, 4 and 6 use the usual profile defaults. Each member early-stops on
+1, 3 and 5 are strongly regularized (15 leaves, at least 300 rows per leaf, `lambda_l2` 10, up to 3000 trees,
+patience 100, `learning_rate: auto`); members 2, 4 and 6 use the usual profile defaults. `auto` sets the strong
+members' learning rate from the positives P in the training rows: 0.02 up to 5000, then 0.02 * sqrt(P / 5000),
+at most 0.1 (`MEDS_tabular_automl.medsboost.ensemble.adaptive_learning_rate`); the rates used are logged and saved
+in the manifest. Each member early-stops on
 its own 11% of the subjects (stratified by whether a subject has a positive label) instead of the tuning split,
 with seed `seed + k`. The saved model is a small JSON manifest (`medsboost.txt`) next to one file per member
 (`medsboost.member<k>.txt`); reloading, prediction files and `feature_importance` (summed over members) work as
@@ -619,7 +622,9 @@ comparisons (2 fold seeds):
 | `medsboost_mix6`           | 0.750 / 0.754 | 0.805 / 0.793 | 0.809 / 0.810 |
 
 It was then validated once on held-out data, including three patient-outcome tasks never used to choose it
-(95% CIs from 1000 patient-level bootstrap resamples; the difference is paired):
+(95% CIs from 1000 patient-level bootstrap resamples; the difference is paired). These runs used a fixed strong
+learning rate of 0.02; with `auto` the three phenotypes are unchanged (fewer than 5000 training positives),
+while mortality, long stay and readmission would use about 0.025, 0.084 and 0.082:
 
 | Held-out AUROC        | Positive patients | default | `medsboost_mix6` | difference [95% CI]    |
 | --------------------- | ----------------- | ------- | ---------------- | ---------------------- |
@@ -630,12 +635,30 @@ It was then validated once on held-out data, including three patient-outcome tas
 | Long length of stay   | 6287              | 0.832   | 0.833            | +0.001 [-0.000, 0.002] |
 | 30-day readmission    | 4087              | 0.767   | 0.769            | +0.002 [0.001, 0.004]  |
 
+The `auto` learning rate was studied and then validated on a second suite: 7 MIMIC-IV clinical tasks (a
+different MEDS build, ACES labels) never used before, with 616 to 210k training positives. On the tuning split, the
+strong members never reached the 3000-tree cap below about 9k positives, but did on length of stay (70%
+prevalence), where letting them converge gained AUROC. On held-out data (paired patient bootstrap):
+
+| Held-out AUROC          | Train+tuning positives | Positive patients | default | mix6, lr 0.02 | mix6, `auto` (lr) | `auto` - 0.02          | `auto` - default       |
+| ----------------------- | ---------------------- | ----------------- | ------- | ------------- | ----------------- | ---------------------- | ---------------------- |
+| Invasive ventilation    | 696                    | 69                | 0.888   | 0.903         | 0.903 (0.020)     | 0                      | +0.015 [0.004, 0.027]  |
+| Respiratory failure     | 2096                   | 222               | 0.896   | 0.907         | 0.907 (0.020)     | 0                      | +0.012 [0.005, 0.019]  |
+| ICU mortality           | 3866                   | 423               | 0.881   | 0.888         | 0.888 (0.020)     | 0                      | +0.007 [0.002, 0.013]  |
+| AKI                     | 5341                   | 521               | 0.855   | 0.866         | 0.866 (0.021)     | -0.000 [-0.001, 0.000] | +0.011 [0.006, 0.016]  |
+| Thrombocytopenia        | 7473                   | 765               | 0.930   | 0.935         | 0.935 (0.025)     | +0.000 [0.000, 0.001]  | +0.005 [0.003, 0.007]  |
+| Hyponatremia            | 9956                   | 1065              | 0.816   | 0.822         | 0.822 (0.028)     | +0.000 [-0.000, 0.001] | +0.005 [0.001, 0.009]  |
+| Discharge within 7 days | 210381                 | 12736             | 0.826   | 0.826         | 0.827 (0.100)     | +0.001 [0.001, 0.002]  | +0.001 [-0.000, 0.002] |
+
+On the last task, lr 0.02 kept the strong members at the cap (3000 trees) and gained nothing over the default,
+while `auto` converged in 1200-1300 trees, gained 0.0011 AUROC and trained 29% faster (847 s instead of 1189 s on
+6 threads).
+
 Use it for a single run, not in a sweep: the members train on the tuning split, so the tuning AUROC that
 `meds-tab-model` reports (and a sweep optimizes) is in-sample; a warning says so. Training costs about 6 times
 the single model's (on 12 threads: 72-86 s instead of about 11 s on 100k-label phenotypes, 10-13 min instead of
-1-1.5 min on 300-380k-label outcomes). On common outcomes with many positives (long length of stay,
-readmission), the strong members reach the 3000-tree cap; they could use a larger learning rate there.
-`shap_values` is not available for the ensemble.
+1-1.5 min on 300-380k-label outcomes with lr 0.02; `auto` cuts this on such tasks). `shap_values` is not
+available for the ensemble.
 
 ### Feature importance (`medsboost`)
 
