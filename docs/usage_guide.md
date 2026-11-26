@@ -451,16 +451,17 @@ OUTPUT_DIR/tabularize/
 
 Trains a tabular model on the task's tabularized data (read from `${output_dir}/tabularize`) and its labels (`input_label_dir`). The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
 
-!!! tip "Recommended: a single run, no tuning: `medsboost`, or `medsboost_mix6` for better accuracy"
+!!! tip "Recommended: a single run, no tuning: `medsboost` (fast, interpretable) or `medsboost_mix6` (more accurate)"
 
     The default model launcher is `medsboost` (called `sparsegb` in MEDS-Tab 0.4.0; that name still works but
-    is deprecated), MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. On the MIMIC-IV MG
-    tasks it trains about 10x faster than LightGBM at the same held-out AUROC. Train it once, with no
-    hyperparameter sweep: the single default model when it needs to be fast, otherwise its bagged preset
-    `model_launcher=medsboost_mix6`, which is more accurate, especially on rare outcomes, for about 6 times the
-    training time. A sweep remains available (see "Hyperparameter optimization"); the data loader caches each
-    split's matrix on its first load (`data_loading_params.cache_matrices`, on by default), so later trials do
-    not re-read the tabularized files.
+    is deprecated), MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. On the MIMIC-IV
+    MG tasks it trains about 10x faster than LightGBM at the same held-out AUROC. Train it once, with no
+    hyperparameter sweep: the single default model when it needs to be fast or interpretable (one model, with
+    feature importance and exact SHAP values), otherwise its bagged preset `model_launcher=medsboost_mix6`,
+    which is more accurate, especially on rare outcomes, for about 6 times the training time. A sweep remains
+    available (see "Hyperparameter optimization"); the data loader caches each split's matrix on its first
+    load (`data_loading_params.cache_matrices`, on by default), so later trials do not re-read the tabularized
+    files.
 
     Its default hyperparameters depend on the task: with `profile: auto` (the default), a task whose training
     prevalence is at most 3% trains with smaller, more regularized trees and a lower learning rate (the
@@ -481,7 +482,7 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
 
     `medsboost` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
 
-### Single run: `medsboost` (fast)
+### Single run: `medsboost` (fast, interpretable)
 
 ```console
 meds-tab-model \
@@ -535,10 +536,11 @@ When it is useful:
 
 When to use something else:
 
-- **It needs to be fast:** train the single `medsboost` model above instead.
+- **It needs to be fast or interpretable:** train the single `medsboost` model above instead. One model is
+    simpler to inspect, and it gives exact SHAP values (`shap_values`), which the ensemble does not.
 - **You need the tuning AUROC to compare models or sweep trials:** the members train on the tuning split, so the
     tuning AUROC it reports is in-sample (a warning says so). Do not run it in a sweep.
-- **Non-binary tasks,** or **SHAP values** (`shap_values` is not available for the ensemble).
+- **Non-binary tasks:** use `xgboost` or `lightgbm`.
 
 ### Hyperparameter optimization (optional)
 
