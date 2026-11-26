@@ -1,0 +1,24 @@
+# @package _global_
+# medsboost "mix6": an average of 6 medsboost models trained on train+tuning, alternating strongly regularized
+# members and the profile defaults, each early-stopping on its own 11% of the subjects. A single configuration
+# for single runs (no sweep): the tuning AUROC it reports is in-sample. Evidence: docs/usage_guide.md.
+#   meds-tab-model model_launcher=medsboost_mix6 input_dir=... output_dir=... input_label_dir=... output_model_dir=...
+defaults:
+  - medsboost
+  - _self_
+
+model_launcher:
+  ensemble:
+    members: 6
+    member_params:
+      # MEDS_tabular_automl.medsboost.ensemble.MIX6_MEMBER_PARAMS[0]
+      - num_leaves: 15
+        min_child_samples: 300
+        lambda_l2: 10.0
+        # 0.02 up to 5k training positives, then 0.02 * sqrt(positives / 5000), at most 0.1
+        learning_rate: auto
+        max_rounds: 3000
+        early_stopping: 100
+      - {}
+    stop_fraction: 0.11
+    pool_tuning: true
