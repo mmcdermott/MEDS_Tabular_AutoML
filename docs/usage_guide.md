@@ -2,7 +2,7 @@
 
 We provide a set of core CLI scripts to facilitate the tabularization and modeling of MEDS data. These scripts are designed to be run in sequence to transform raw MEDS data into tabularized data and train a model on the tabularized data.
 
-MEDS-Tab tabularizes **task-specific** features: given a task's labels, it computes features only at their prediction times, and every window ends at the prediction time. Stages 1 and 2 prepare the data; stages 3 and 4 tabularize it for one task; stage 5 trains models.
+MEDS-Tab tabularizes **task-specific** features: given a task's labels, it computes features only at their prediction times, and every window ends at the prediction time. Stages 1 and 2 prepare the data; stage 3 tabularizes it for one task; stage 5 trains models.
 
 !!! note "Removed: full tabularization and `meds-tab-cache-task`"
 
@@ -189,20 +189,14 @@ OUTPUT_DIR/
 
             - 📄 codes.parquet
 
-## 3. **`meds-tab-tabularize-static`**
+## 3. **`meds-tab-tabularize`**
 
-Filters the codes by frequency and computes the static features of each label of the task: one row per label, in the order of the label files, holding its subject's static features.
-
-!!! tip "Both tabularization stages in one command"
-
-    `meds-tab-tabularize` runs this stage and the next one (`meds-tab-tabularize-time-series`) with the same arguments, in one command, and writes the same files; it also takes `--multirun worker=...` as stage 4 does. The two commands below remain available, for instance to run the stages separately or with different launchers.
-
-!!! info "Native backend by default"
-
-    Both tabularization stages run on MEDS-Tab's C++ engine whenever it is built and supports the configuration (`backend=auto`, the default), and on the Python implementation otherwise; both write the same files. The engine computes every block in `meds-tab-tabularize-static`, so `meds-tab-tabularize-time-series` then finds them done, and in a multirun over `worker` only worker 0 has work. Use `backend=python` to force the Python implementation described below. See the [native backend guide](native_backend.md).
+Computes the task's features, one row per label in the order of the label files: its subject's static features,
+and the time-series features, which summarize the subject's measurements in each window ending at the label's
+prediction time, for every window size and aggregation. It also filters the codes by frequency.
 
 ```console
-meds-tab-tabularize-static \
+meds-tab-tabularize \
     "input_dir=${MEDS_RESHARD_DIR}/data" \
     "output_dir=$OUTPUT_DIR" \
     "input_label_dir=${TASKS_DIR}/${TASK}/" \
@@ -212,7 +206,13 @@ meds-tab-tabularize-static \
     tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
 ```
 
-This stage is not parallelized as it runs very quickly.
+!!! info "Native backend by default"
+
+    Tabularization runs on MEDS-Tab's C++ engine whenever it is built and supports the configuration
+    (`backend=auto`, the default), on all available CPUs, and on the Python implementation otherwise; both write
+    the same files. Use `backend=python` to force the Python implementation; to parallelize it, run the command
+    as a multirun over workers (`--multirun worker="range(0,$N_PARALLEL_WORKERS)" hydra/launcher=joblib`). See
+    the [native backend guide](native_backend.md).
 
 ??? note "Args Description"
 
@@ -223,6 +223,7 @@ This stage is not parallelized as it runs very quickly.
     - `tabularization.window_sizes`: The window sizes to use for aggregations.
     - `do_overwrite`: Whether to overwrite existing files.
     - `tabularization.aggs`: The aggregation methods to use.
+    - `native.threads`: Threads of the native engine (default: every CPU available).
 
 !!! warning "Label file layout"
 
@@ -230,7 +231,18 @@ This stage is not parallelized as it runs very quickly.
 
 !!! info "Only labeled subjects are read"
 
-    Both tabularization stages, with both backends, read only the events of the subjects that have labels in each shard: features at a label time depend only on that subject's own events. A task whose cohort is a small part of the data, or a [training subset](#6-training-on-a-subset-scaling-studies), therefore tabularizes faster, with the same output.
+    Tabularization, with both backends, reads only the events of the subjects that have labels in each shard: features at a label time depend only on that subject's own events. A task whose cohort is a small part of the data, or a [training subset](#6-training-on-a-subset-scaling-studies), therefore tabularizes faster, with the same output.
+
+!!! info "Windows end at the prediction time"
+
+    For a label at prediction time `t`, a window of size `w` holds the subject's measurements with a time in `(t - w, t]`, and a `full` window holds every measurement up to and including `t`, wherever the subject's last event before `t` falls. For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window, the window is (Jan 3, Jan 10\] and holds the Jan 6 measurements only. See [Terminology](terminology.md#where-a-window-ends).
+
+!!! warning "Memory Usage"
+
+    Computing the time-series features is the most memory-intensive step. If you run out of memory, lower
+    `native.threads` (native backend) or the number of workers (Python backend), or reshard your data with
+    `MEDS_transform-reshard_to_split`, setting `stage_configs.reshard_to_split.n_subjects_per_shard` to a smaller
+    number.
 
 !!! note "Static numeric values (`static/mean`)"
 
@@ -267,120 +279,18 @@ TASKS_DIR/
 ### Output Data Structure (New Files)
 
 ```text
-OUTPUT_DIR/
-└─── tabularize/
-    └─── <SPLIT A>
-    │   │   <SHARD 0>/none/static/present.npz
-    │   │   <SHARD 1>/none/static/present.npz
-    │   │   ...
-    │
-    └─── <SPLIT B>
-        │   <SHARD 0>/none/static/present.npz
-        │   <SHARD 1>/none/static/present.npz
-        │   ...
-```
-
-### Complete Directory Structure After Static Tabularization
-
-!!! abstract "Stage 3 Directory Structure"
-
-    ??? folder "MEDS_DIR"
-
-        [Previous structure]
-
-    ??? folder "MEDS_RESHARD_DIR"
-
-        [Previous structure]
-
-    ??? folder "TASKS_DIR"
-
-        ??? folder "TASK"
-
-            ??? folder "SPLIT A"
-
-                - 📄 SHARD 0.parquet
-                - 📄 SHARD 1.parquet
-
-            ??? folder "SPLIT B"
-
-                [Similar structure to SPLIT A]
-
-    ??? folder "OUTPUT_DIR"
-
-        ??? folder "metadata"
-
-            - 📄 codes.parquet
-
-        ??? folder "tabularize"
-
-            ??? folder "SPLIT A"
-
-                ??? folder "SHARD 0"
-
-                    ??? folder "none/static"
-
-                        - 📄 present.npz
-
-                ??? folder "SHARD 1"
-
-                    ??? folder "none/static"
-
-                        - 📄 present.npz
-
-            ??? folder "SPLIT B"
-
-                [Similar structure to SPLIT A]
-
-## 4. **`meds-tab-tabularize-time-series`**
-
-This stage computes the time-series features of each label: for every window size and aggregation, a summary of the subject's measurements in the window that ends at the label's prediction time. It is the computationally intensive stage, and uses sparse matrices (scipy.sparse), sharding for parallel processing, and Polars for the window computations.
-
-```console
-meds-tab-tabularize-time-series \
-    --multirun \
-    worker="range(0,$N_PARALLEL_WORKERS)" \
-    hydra/launcher=joblib \
-    "input_dir=${MEDS_RESHARD_DIR}/data" \
-    "output_dir=$OUTPUT_DIR" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" \
-    tabularization.min_code_inclusion_count=10 \
-    tabularization.window_sizes=[1d,30d,365d,full] \
-    do_overwrite=False \
-    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
-```
-
-!!! info "Windows end at the prediction time"
-
-    For a label at prediction time `t`, a window of size `w` holds the subject's measurements with a time in `(t - w, t]`, and a `full` window holds every measurement up to and including `t`, wherever the subject's last event before `t` falls. For example, with events on Jan 2, 6, 11, 16, 21 and 26, a label on Jan 10 and a `7d` window, the window is (Jan 3, Jan 10\] and holds the Jan 6 measurements only. See [Terminology](terminology.md#where-a-window-ends).
-
-!!! warning "Memory Usage"
-
-    This stage is the most memory intensive stage! This stage should be parallelized to speed up the processing of the data. If you run out of memory, either reduce the workers or reshard your data with `MEDS_transform-reshard_to_split` setting `stage_configs.reshard_to_split.n_subjects_per_shard` to a smaller number.
-
-!!! warning "Code Inclusion Parameters"
-
-    You must use the same code inclusion parameters (which in this example is just `tabularization.min_code_inclusion_count`) as in the previous stage, `meds-tab-tabularize-static`, to ensure that the same codes are included in the tabularized data.
-
-### Input Data Structure
-
-```text
-[Previous structure remains the same]
-```
-
-### Output Data Structure (New Files)
-
-```text
 OUTPUT_DIR/tabularize/
 │
 └─── <SPLIT A>
+│   │   <SHARD 0>/none/static/present.npz
 │   │   <SHARD 0>/1d/code/count.npz
 │   │   <SHARD 0>/1d/value/sum.npz
-|   |   ...
-|   |   <SHARD 0>/7d/code/count.npz
+│   │   ...
+│   │   <SHARD 0>/7d/code/count.npz
 │   │   <SHARD 0>/7d/value/sum.npz
 │   │   ...
-|   |   <SHARD 1>/1d/code/count.npz
-│   │   <SHARD 1>/1d/value/sum.npz
+│   │   <SHARD 1>/none/static/present.npz
+│   │   <SHARD 1>/1d/code/count.npz
 │   │   ...
 │
 └─── <SPLIT B>
@@ -389,7 +299,7 @@ OUTPUT_DIR/tabularize/
 
 ### Complete Directory Structure
 
-!!! abstract "Stage 4 Directory Structure"
+!!! abstract "Stage 3 Directory Structure"
 
     ??? folder "MEDS_DIR"
 
@@ -447,6 +357,38 @@ OUTPUT_DIR/tabularize/
 
                 [Similar structure to SPLIT A]
 
+## 4. Running the two tabularization steps separately
+
+`meds-tab-tabularize` is the same as running `meds-tab-tabularize-static` (static features, and the code
+filtering) and then `meds-tab-tabularize-time-series` (time-series features) with the same arguments; it writes the
+same files. Both commands remain, for instance to run the steps at different times or with different launchers:
+
+```console
+meds-tab-tabularize-static \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    do_overwrite=False \
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+```console
+meds-tab-tabularize-time-series \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    do_overwrite=False \
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+Give both the same arguments, in particular the same code inclusion parameters, so that they include the same codes.
+On the native backend, `meds-tab-tabularize-static` computes every block, so `meds-tab-tabularize-time-series`
+then finds them done.
+
 ## 5. **`meds-tab-model`**
 
 Trains a tabular model on the task's tabularized data (read from `${output_dir}/tabularize`) and its labels (`input_label_dir`). The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
@@ -479,8 +421,6 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
     conda environment with `llvm-openmp`); and on Windows with Visual Studio's C++ build tools (MSVC). Without
     the library, `model_launcher=medsboost` stops with an error before loading any data; choose
     `model_launcher=lightgbm` or `model_launcher=xgboost` instead.
-
-    `medsboost` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
 
 ### Single run: `medsboost` (fast, interpretable)
 
@@ -540,7 +480,6 @@ When to use something else:
     simpler to inspect, and it gives exact SHAP values (`shap_values`), which the ensemble does not.
 - **You need the tuning AUROC to compare models or sweep trials:** the members train on the tuning split, so the
     tuning AUROC it reports is in-sample (a warning says so). Do not run it in a sweep.
-- **Non-binary tasks:** use `xgboost` or `lightgbm`.
 
 ### Hyperparameter optimization (optional)
 
@@ -576,7 +515,7 @@ trials one at a time on every CPU instead, set `hydra.sweeper.n_jobs=1 hydra.lau
     - `hydra.sweeper.n_jobs`: Number of parallel jobs for optimization
     - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of medsboost (with its default `model_launcher.model.threads=0`), XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`; for XGBoost and LightGBM, also set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
     - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
-    - `medsboost` (the default launcher): MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP; see the tip above) and handles binary tasks. Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`), and half the training rows: GOSS keeps the 30% with the largest gradients plus a random 20% of the rest (`model_launcher.model.goss_top` / `goss_other`; `goss_top=0` uses `bagging_fraction`).
+    - `medsboost` (the default launcher): MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP; see the tip above). Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`), and half the training rows: GOSS keeps the 30% with the largest gradients plus a random 20% of the rest (`model_launcher.model.goss_top` / `goss_other`; `goss_top=0` uses `bagging_fraction`).
     - A swept parameter given a value on the command line is fixed at that value. Every model launcher's sweep space includes `tabularization.min_code_inclusion_count`; leave it off the command line, as in the sweep command above, to let the sweep search it.
     - `data_loading_params.cache_matrices` (on by default): caches each split's matrix, with every tabularized column, under `cache_dir` (default `<output_dir>/.cache`) the first time it is loaded. Later loads, such as the other trials of a sweep, read the cache and apply their own code filter instead of reading and stacking every block again. The data is the same as without it. It costs about one more copy of the task's tabularized data on disk (3.8 GB for MIMIC-IV MG1), is rebuilt when the tabularized files or labels change, and is not used with an imputer or a normalizer. Set `data_loading_params.cache_matrices=false` to save the disk space; delete `<output_dir>/.cache/matrices` to reclaim it.
 
@@ -756,7 +695,7 @@ OUTPUT_MODEL_DIR/
 
 ## 6. Training on a subset (scaling studies)
 
-To see how performance grows with the amount of training data, train on reproducible subsets of the training split. Give **every** stage (`meds-tab-describe`, both tabularization stages and `meds-tab-model`) the same `train_subset` overrides, and `meds-tab-describe` the task's labels too:
+To see how performance grows with the amount of training data, train on reproducible subsets of the training split. Give **every** stage (`meds-tab-describe`, `meds-tab-tabularize` and `meds-tab-model`) the same `train_subset` overrides, and `meds-tab-describe` the task's labels too:
 
 ```console
 SUBSET=("train_subset.by=subjects" "train_subset.n=5000" "train_subset.salt=0")
@@ -764,9 +703,7 @@ OUT="${OUTPUT_DIR}/${TASK}/subjects-5000-salt0"
 
 meds-tab-describe "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
     "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
-meds-tab-tabularize-static "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
-meds-tab-tabularize-time-series "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
+meds-tab-tabularize "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
     "input_label_dir=${TASKS_DIR}/${TASK}/" "${SUBSET[@]}"
 meds-tab-model --multirun "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUT" \
     "input_label_dir=${TASKS_DIR}/${TASK}/" "output_model_dir=${OUT}/model" "task_name=$TASK" "${SUBSET[@]}"
