@@ -451,14 +451,16 @@ OUTPUT_DIR/tabularize/
 
 Trains a tabular model on the task's tabularized data (read from `${output_dir}/tabularize`) and its labels (`input_label_dir`). The system incorporates extended memory support through sequential shard loading during training and efficient data loading through custom iterators.
 
-!!! tip "Recommended: `medsboost` with a hyperparameter sweep"
+!!! tip "Recommended: a single run, no tuning: `medsboost`, or `medsboost_mix6` for better accuracy"
 
     The default model launcher is `medsboost` (called `sparsegb` in MEDS-Tab 0.4.0; that name still works but
-    is deprecated), MEDS-Tab's own gradient-boosted trees for wide, sparse
-    tabularized data. On the MIMIC-IV MG tasks it trains about 10x faster than LightGBM at the same held-out
-    AUROC. Run it as a hyperparameter sweep (below). The data loader caches each split's matrix on its first
-    load (`data_loading_params.cache_matrices`, on by default), so later trials do not re-read the
-    tabularized files, whatever code threshold they draw.
+    is deprecated), MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data. On the MIMIC-IV MG
+    tasks it trains about 10x faster than LightGBM at the same held-out AUROC. Train it once, with no
+    hyperparameter sweep: the single default model when it needs to be fast, otherwise its bagged preset
+    `model_launcher=medsboost_mix6`, which is more accurate, especially on rare outcomes, for about 6 times the
+    training time. A sweep remains available (see "Hyperparameter optimization"); the data loader caches each
+    split's matrix on its first load (`data_loading_params.cache_matrices`, on by default), so later trials do
+    not re-read the tabularized files.
 
     Its default hyperparameters depend on the task: with `profile: auto` (the default), a task whose training
     prevalence is at most 3% trains with smaller, more regularized trees and a lower learning rate (the
@@ -479,7 +481,66 @@ Trains a tabular model on the task's tabularized data (read from `${output_dir}/
 
     `medsboost` handles binary tasks. For other tasks, use `xgboost` or `lightgbm`.
 
-### Hyperparameter Optimization (recommended)
+### Single run: `medsboost` (fast)
+
+```console
+meds-tab-model \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
+    "task_name=$TASK" \
+    tabularization.min_code_inclusion_count=10 \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+`tabularization.window_sizes` and `tabularization.aggs` must match the ones used to tabularize (here, the
+examples above). This command uses `medsboost`; add `model_launcher=lightgbm`, `model_launcher=xgboost` or
+another launcher listed below to train a different model.
+
+### Single run, more accurate: `medsboost_mix6`
+
+```console
+meds-tab-model \
+    model_launcher=medsboost_mix6 \
+    "input_dir=${MEDS_RESHARD_DIR}/data" \
+    "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=${TASKS_DIR}/${TASK}/" \
+    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
+    "task_name=$TASK" \
+    tabularization.window_sizes=[1d,30d,365d,full] \
+    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
+```
+
+`medsboost_mix6` trains 6 `medsboost` models on train+tuning and averages their predicted probabilities. Members
+1, 3 and 5 are strongly regularized (15 leaves, at least 300 rows per leaf, `lambda_l2` 10, up to 3000 trees,
+patience 100, `learning_rate: auto`); members 2, 4 and 6 use the usual profile defaults. `auto` sets the strong
+members' learning rate from the positives P in the training rows: 0.02 up to 5000, then 0.02 * sqrt(P / 5000),
+at most 0.1. Each member early-stops on its own 11% of the subjects (stratified by whether a subject has a
+positive label) instead of the tuning split. The saved model is a small JSON manifest (`medsboost.txt`) next to
+one file per member (`medsboost.member<k>.txt`); reloading, prediction files and `feature_importance` (summed
+over members) work as for a single model. The same mechanism is available on the `medsboost` launcher:
+`model_launcher.ensemble.members` (1, the default, trains a single model), `ensemble.member_params` (per-member
+overrides of `model_launcher.model`, cycled), `ensemble.stop_fraction` and `ensemble.pool_tuning`.
+
+When it is useful:
+
+- **You can afford about 6 times the training time for a better model,** still without tuning: it is a fixed
+    configuration, with no sweep and no hyperparameter to set.
+- **Rare outcomes or few positives.** There, a single model's early-stopping point rests on a small tuning set
+    and its trees overfit rare columns; strong regularization and averaging members that stop on different
+    subjects fix both. This is where it helps most; on common outcomes with many positives the gain over the
+    single default model is small.
+
+When to use something else:
+
+- **It needs to be fast:** train the single `medsboost` model above instead.
+- **You need the tuning AUROC to compare models or sweep trials:** the members train on the tuning split, so the
+    tuning AUROC it reports is in-sample (a warning says so). Do not run it in a sweep.
+- **Non-binary tasks,** or **SHAP values** (`shap_values` is not available for the ensemble).
+
+### Hyperparameter optimization (optional)
 
 ```console
 meds-tab-model \
@@ -502,23 +563,6 @@ Do not pass `tabularization.min_code_inclusion_count` on the command line here: 
 is fixed at that value. Each of the `N_PARALLEL_WORKERS` parallel trials uses its share of the CPUs; to run the
 trials one at a time on every CPU instead, set `hydra.sweeper.n_jobs=1 hydra.launcher.n_jobs=1`.
 
-### Single Model Training
-
-```console
-meds-tab-model \
-    "input_dir=${MEDS_RESHARD_DIR}/data" \
-    "output_dir=$OUTPUT_DIR" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" \
-    "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" \
-    "task_name=$TASK" \
-    tabularization.min_code_inclusion_count=10 \
-    tabularization.window_sizes=[1d,30d,365d,full] \
-    tabularization.aggs=[static/present,code/count,value/count,value/sum,value/sum_sqd,value/min,value/max]
-```
-
-Both commands use `medsboost`; add `model_launcher=lightgbm`, `model_launcher=xgboost` or another launcher
-below to train a different model.
-
 ??? note "Args Description for Model Stage"
 
     - `model_launcher`: `medsboost` (default), or one of `lightgbm`, `xgboost`, `knn_classifier`, `logistic_regression`, `random_forest_classifier`, `sgd_classifier`
@@ -531,7 +575,7 @@ below to train a different model.
     - `hydra.launcher.n_jobs`: Number of joblib worker processes (all CPUs by default). Each worker is started with `OMP_NUM_THREADS` set to the CPU count divided by this number, which caps the threads of medsboost (with its default `model_launcher.model.threads=0`), XGBoost and LightGBM. To run trials one at a time on many threads, set it to 1 along with `hydra.sweeper.n_jobs=1`; for XGBoost and LightGBM, also set `model_launcher.model.nthread` (XGBoost) or `model_launcher.model.num_threads` (LightGBM).
     - GPU training: `model_launcher.model.device=cuda` (XGBoost, with a CUDA build) or `model_launcher.model.device_type=gpu` (LightGBM; the pip wheels include this OpenCL backend on Linux and Windows). LightGBM's CUDA backend, `device_type=cuda`, needs a source build: `pip install lightgbm --no-binary lightgbm --config-settings=cmake.define.USE_CUDA=ON`.
     - `medsboost` (the default launcher): MEDS-Tab's own gradient-boosted trees for wide, sparse tabularized data, about 10x faster than LightGBM at equal AUROC on the MIMIC-IV MG tasks. It needs the compiled library (a source install with a C++17 compiler and OpenMP; see the tip above) and handles binary tasks. Each tree uses one window per (code, aggregation), drawn from precomputed layouts (`model_launcher.model.layouts`), and half the training rows: GOSS keeps the 30% with the largest gradients plus a random 20% of the rest (`model_launcher.model.goss_top` / `goss_other`; `goss_top=0` uses `bagging_fraction`).
-    - A swept parameter given a value on the command line is fixed at that value. Every model launcher's sweep space includes `tabularization.min_code_inclusion_count`; leave it off the command line, as in the recommended command above, to let the sweep search it.
+    - A swept parameter given a value on the command line is fixed at that value. Every model launcher's sweep space includes `tabularization.min_code_inclusion_count`; leave it off the command line, as in the sweep command above, to let the sweep search it.
     - `data_loading_params.cache_matrices` (on by default): caches each split's matrix, with every tabularized column, under `cache_dir` (default `<output_dir>/.cache`) the first time it is loaded. Later loads, such as the other trials of a sweep, read the cache and apply their own code filter instead of reading and stacking every block again. The data is the same as without it. It costs about one more copy of the task's tabularized data on disk (3.8 GB for MIMIC-IV MG1), is rebuilt when the tabularized files or labels change, and is not used with an imputer or a normalizer. Set `data_loading_params.cache_matrices=false` to save the disk space; delete `<output_dir>/.cache/matrices` to reclaim it.
 
 ??? note "Code Inclusion Parameters in Modeling"
@@ -582,83 +626,6 @@ below to train a different model.
     of 0.64 from the value column alone and 0.78 once the count column was added; XGBoost reached 0.77 from
     the value column alone. Without `value/count`, or for `static/mean` (pair it with `static/present`),
     prefer XGBoost or add an observation indicator if the distinction matters for your task.
-
-### Bagged `medsboost`: one configuration, no sweep (`medsboost_mix6`)
-
-```console
-meds-tab-model model_launcher=medsboost_mix6 \
-    "input_dir=${MEDS_RESHARD_DIR}/data" "output_dir=$OUTPUT_DIR" \
-    "input_label_dir=${TASKS_DIR}/${TASK}/" "output_model_dir=${OUTPUT_MODEL_DIR}/${TASK}/" "task_name=$TASK"
-```
-
-`medsboost_mix6` trains 6 `medsboost` models on train+tuning and averages their predicted probabilities. Members
-1, 3 and 5 are strongly regularized (15 leaves, at least 300 rows per leaf, `lambda_l2` 10, up to 3000 trees,
-patience 100, `learning_rate: auto`); members 2, 4 and 6 use the usual profile defaults. `auto` sets the strong
-members' learning rate from the positives P in the training rows: 0.02 up to 5000, then 0.02 * sqrt(P / 5000),
-at most 0.1 (`MEDS_tabular_automl.medsboost.ensemble.adaptive_learning_rate`); the rates used are logged and saved
-in the manifest. Each member early-stops on
-its own 11% of the subjects (stratified by whether a subject has a positive label) instead of the tuning split,
-with seed `seed + k`. The saved model is a small JSON manifest (`medsboost.txt`) next to one file per member
-(`medsboost.member<k>.txt`); reloading, prediction files and `feature_importance` (summed over members) work as
-for a single model.
-
-The same mechanism is available on the `medsboost` launcher: `model_launcher.ensemble.members` (1, the default,
-trains the single model as before), `ensemble.member_params` (per-member overrides of `model_launcher.model`,
-cycled), `ensemble.stop_fraction` and `ensemble.pool_tuning`.
-
-Why it helps: with few positives, a single model's stopping point rests on a small tuning set (on a 1% MIMIC-IV
-phenotype, the default kept between 1 and 93 trees depending on the split), and its trees overfit rare columns
-that separate a handful of positives by chance. Strong regularization keeps the trees from doing so, and
-averaging members that stop on different subjects removes the variance of the stopping point; mixing the two
-kinds of members adds diversity.
-
-Evidence. The configuration was chosen by subject-grouped 5-fold cross-validation on train+tuning of three
-MIMIC-IV phenotypes (meds_v0.6, default tabularization), and beat the single default model on all 30 fold
-comparisons (2 fold seeds):
-
-| CV AUROC (seed 0 / seed 1) | MASLD (1.3%)  | Stroke (0.9%) | AMI (4.1%)    |
-| -------------------------- | ------------- | ------------- | ------------- |
-| default `medsboost`        | 0.701 / 0.684 | 0.782 / 0.768 | 0.788 / 0.796 |
-| `medsboost_mix6`           | 0.750 / 0.754 | 0.805 / 0.793 | 0.809 / 0.810 |
-
-It was then validated once on held-out data, including three patient-outcome tasks never used to choose it
-(95% CIs from 1000 patient-level bootstrap resamples; the difference is paired). These runs used a fixed strong
-learning rate of 0.02; with `auto` the three phenotypes are unchanged (fewer than 5000 training positives),
-while mortality, long stay and readmission would use about 0.025, 0.084 and 0.082:
-
-| Held-out AUROC        | Positive patients | default | `medsboost_mix6` | difference [95% CI]    |
-| --------------------- | ----------------- | ------- | ---------------- | ---------------------- |
-| AMI                   | 150               | 0.817   | 0.842            | +0.025 [0.012, 0.036]  |
-| Stroke                | 39                | 0.692   | 0.724            | +0.032 [-0.009, 0.062] |
-| MASLD                 | 68                | 0.684   | 0.691            | +0.007 [-0.028, 0.036] |
-| In-hospital mortality | 845               | 0.938   | 0.939            | +0.002 [0.000, 0.003]  |
-| Long length of stay   | 6287              | 0.832   | 0.833            | +0.001 [-0.000, 0.002] |
-| 30-day readmission    | 4087              | 0.767   | 0.769            | +0.002 [0.001, 0.004]  |
-
-The `auto` learning rate was studied and then validated on a second suite: 7 MIMIC-IV clinical tasks (a
-different MEDS build, ACES labels) never used before, with 616 to 210k training positives. On the tuning split, the
-strong members never reached the 3000-tree cap below about 9k positives, but did on length of stay (70%
-prevalence), where letting them converge gained AUROC. On held-out data (paired patient bootstrap):
-
-| Held-out AUROC          | Train+tuning positives | Positive patients | default | mix6, lr 0.02 | mix6, `auto` (lr) | `auto` - 0.02          | `auto` - default       |
-| ----------------------- | ---------------------- | ----------------- | ------- | ------------- | ----------------- | ---------------------- | ---------------------- |
-| Invasive ventilation    | 696                    | 69                | 0.888   | 0.903         | 0.903 (0.020)     | 0                      | +0.015 [0.004, 0.027]  |
-| Respiratory failure     | 2096                   | 222               | 0.896   | 0.907         | 0.907 (0.020)     | 0                      | +0.012 [0.005, 0.019]  |
-| ICU mortality           | 3866                   | 423               | 0.881   | 0.888         | 0.888 (0.020)     | 0                      | +0.007 [0.002, 0.013]  |
-| AKI                     | 5341                   | 521               | 0.855   | 0.866         | 0.866 (0.021)     | -0.000 [-0.001, 0.000] | +0.011 [0.006, 0.016]  |
-| Thrombocytopenia        | 7473                   | 765               | 0.930   | 0.935         | 0.935 (0.025)     | +0.000 [0.000, 0.001]  | +0.005 [0.003, 0.007]  |
-| Hyponatremia            | 9956                   | 1065              | 0.816   | 0.822         | 0.822 (0.028)     | +0.000 [-0.000, 0.001] | +0.005 [0.001, 0.009]  |
-| Discharge within 7 days | 210381                 | 12736             | 0.826   | 0.826         | 0.827 (0.100)     | +0.001 [0.001, 0.002]  | +0.001 [-0.000, 0.002] |
-
-On the last task, lr 0.02 kept the strong members at the cap (3000 trees) and gained nothing over the default,
-while `auto` converged in 1200-1300 trees, gained 0.0011 AUROC and trained 29% faster (847 s instead of 1189 s on
-6 threads).
-
-Use it for a single run, not in a sweep: the members train on the tuning split, so the tuning AUROC that
-`meds-tab-model` reports (and a sweep optimizes) is in-sample; a warning says so. Training costs about 6 times
-the single model's (on 12 threads: 72-86 s instead of about 11 s on 100k-label phenotypes, 10-13 min instead of
-1-1.5 min on 300-380k-label outcomes with lr 0.02; `auto` cuts this on such tasks). `shap_values` is not
-available for the ensemble.
 
 ### Feature importance (`medsboost`)
 
