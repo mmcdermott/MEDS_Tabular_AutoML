@@ -9,6 +9,17 @@ model_launcher:
   # Drop the columns with fewer than this many nonzero training rows before training (0 or 1 keeps them all).
   min_column_nnz: 0
 
+  # Bagged boosting (MEDS_tabular_automl.medsboost.ensemble): average `members` medsboost models, each early-
+  # stopping on its own `stop_fraction` of the training subjects (stratified by outcome) instead of the tuning
+  # split. members: 1 trains the single model as before. model_launcher=medsboost_mix6 is the validated preset.
+  ensemble:
+    members: 1
+    # Per-member overrides of `model` below, cycled (member k uses entry k % length); {} keeps `model` as is.
+    member_params: []
+    stop_fraction: 0.11
+    # Train the members on train+tuning. The tuning AUROC is then in-sample: use it for single runs, not sweeps.
+    pool_tuning: false
+
   # medsboost (MEDS_tabular_automl.medsboost): binary gradient-boosted trees for wide, sparse tabularized data.
   # Needs the compiled library (installed from source with a C++17 compiler and OpenMP).
   model:
@@ -16,25 +27,30 @@ model_launcher:
     # worker), else every available CPU. To run sweep trials one at a time on every CPU, set
     # hydra.launcher.n_jobs=1 and hydra.sweeper.n_jobs=1.
     threads: 0
-    max_bin: 15
-    num_leaves: 127
-    min_child_samples: 50
-    lambda_l2: 1.0
-    learning_rate: 0.05
+    # Hyperparameters left null follow `profile`: "auto" uses the standard values (max_bin 15, num_leaves 127,
+    # min_child_samples 50, lambda_l2 1, learning_rate 0.05, GOSS 0.3/0.2, max_rounds 1000, min_sum_hessian 0.001,
+    # layouts 14), or, when the training prevalence is at most 3%, the low-prevalence ones (max_bin 63,
+    # num_leaves 41, min_child_samples 95, lambda_l2 0.0211, learning_rate 0.0202, GOSS 0.186/0.105,
+    # max_rounds 2000, min_sum_hessian 0.00182, layouts 28); "standard" and "low_prevalence" force one. A value set here (or swept)
+    # always wins. See MEDS_tabular_automl.medsboost for the evidence.
+    profile: auto
+    max_bin: null
+    num_leaves: null
+    min_child_samples: null
+    lambda_l2: null
+    learning_rate: null
     # Rows per tree: GOSS (as in LightGBM) keeps the goss_top share of rows with the largest |gradient| plus a random
-    # goss_other share of the rest (up-weighted). With the single-precision histograms, 0.3 / 0.2 trained 22% faster in
-    # total than double-precision bagging 0.8 on 10 MIMIC-IV tasks, with the same held-out AUROC. goss_top: 0 uses
-    # bagging_fraction instead.
-    goss_top: 0.3
-    goss_other: 0.2
+    # goss_other share of the rest (up-weighted). goss_top: 0 uses bagging_fraction instead.
+    goss_top: null
+    goss_other: null
     bagging_fraction: 0.8
-    max_rounds: 1000
+    max_rounds: null
     early_stopping: 20
     seed: ${seed}
-    min_sum_hessian: 0.001
+    min_sum_hessian: null
     # Column sampling: each tree uses one window per (code, aggregation), drawn from `layouts` precomputed layouts
     # (a multiple of 7; 0 draws a fresh sample every `refresh` trees instead).
-    layouts: 14
+    layouts: null
     refresh: 1
     # Columns of each (code, aggregation) slot a tree may use; more than 1 needs layouts: 0.
     slot_k: 1
