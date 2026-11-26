@@ -1,31 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
-### Changed
+One `medsboost` configuration for single runs, no sweep: `model_launcher=medsboost_mix6` averages 6 boosted
+models, strongly regularized ones alternating with the default ones, each early-stopping on its own share of the
+subjects. On held-out data of 13 MIMIC-IV tasks it beat the single default model on every task (+0.001 to +0.032
+AUROC, with a confidence interval excluding 0 on 9; AUPRC up to +28%), for about 6x the training time. The
+`medsboost` defaults now also depend on the training prevalence.
 
-- **`medsboost` defaults depend on the training prevalence** (`MedsBoost(profile="auto")`,
-    `model_launcher.model.profile: auto`). Hyperparameters left unset take the standard values (as in 0.5.0), or,
-    when the training prevalence is at most 3%, the low-prevalence profile: 41 leaves, learning rate 0.0202, 63
-    bins, min_child_samples 95, lambda_l2 0.0211, min_sum_hessian 0.00182, GOSS 0.186/0.105, 28 layouts, up to 2000
-    trees. Values set explicitly (or swept) always win; `profile="standard"` / `"low_prevalence"` forces one;
-    `info["profile"]` and `info["prevalence"]` record the choice. In `medsboost.yaml` the profile-dependent
-    hyperparameters are now `null`.
-    - Evidence: a multi-objective Optuna search (338 trials on 5 full MIMIC-IV tasks at 0.9-71% prevalence;
-        maximize relative AUPRC, minimize fit time, no task more than 0.003 AUROC below 0.5.0), confirmed with 3
-        seeds on held-out data the search never saw, on 8 unseen NWICU tasks and on prevalence ladders down to
-        0.1%. On rare outcomes: AUPRC +6.5% (search tasks' unseen halves), +9.7% median (NWICU), +17% (ladders),
-        AUROC +0.002 to +0.009 on average. Above 3% the same settings matched 0.5.0 (AUROC +0.0003, AUPRC +1.1%
-        on 7 MIMIC-IV tasks) but trained about 2x slower, so the standard values stay there.
-    - Including every code (`min_code_inclusion_count` 1 instead of 10: 2.3x the columns, the same non-zeros) did
-        not improve either profile.
+```console
+meds-tab-model model_launcher=medsboost_mix6 "input_dir=$MEDS_DIR/data" "output_dir=$OUTPUT_DIR" \
+    "input_label_dir=$LABELS_DIR" "output_model_dir=$MODEL_DIR" "task_name=$TASK"
+```
 
-One command for tabularization: `meds-tab-tabularize` writes the static and the time-series features of a task,
-with either backend. Outputs, models and the existing commands are unchanged.
+**Models differ from 0.5.1** on tasks with a training prevalence of at most 3%, which the default `medsboost`
+launcher now trains with the low-prevalence profile; set `model_launcher.model.profile=standard` to keep 0.5.1's
+values. Tabularized data and the other launchers are unchanged.
 
 ### Added
 
-- **Bagged `medsboost`: `model_launcher=medsboost_mix6`**, and the `model_launcher.ensemble` options of the
+- **Bagged `medsboost`: `model_launcher=medsboost_mix6`** (#215), and the `model_launcher.ensemble` options of the
     `medsboost` launcher behind it (`members`, `member_params`, `stop_fraction`, `pool_tuning`; off by default).
     `medsboost_mix6` averages 6 models trained on train+tuning, alternating strongly regularized members (15
     leaves, `min_child_samples` 300, `lambda_l2` 10, up to 3000 trees, `learning_rate: auto`) and the profile
@@ -45,6 +39,32 @@ with either backend. Outputs, models and the existing commands are unchanged.
         0.02 kept the strong members at the 3000-tree cap) with 29% less fit time there. `medsboost_mix6` beat
         the default on all 7 (+0.001 to +0.015 AUROC).
     - For single runs: the reported tuning AUROC is in-sample. Training costs about 6x the single model's.
+
+### Changed
+
+- **`medsboost` defaults depend on the training prevalence** (#213; `MedsBoost(profile="auto")`,
+    `model_launcher.model.profile: auto`). Hyperparameters left unset take the standard values (as in 0.5.0), or,
+    when the training prevalence is at most 3%, the low-prevalence profile: 41 leaves, learning rate 0.0202, 63
+    bins, min_child_samples 95, lambda_l2 0.0211, min_sum_hessian 0.00182, GOSS 0.186/0.105, 28 layouts, up to 2000
+    trees. Values set explicitly (or swept) always win; `profile="standard"` / `"low_prevalence"` forces one;
+    `info["profile"]` and `info["prevalence"]` record the choice. In `medsboost.yaml` the profile-dependent
+    hyperparameters are now `null`.
+    - Evidence: a multi-objective Optuna search (338 trials on 5 full MIMIC-IV tasks at 0.9-71% prevalence;
+        maximize relative AUPRC, minimize fit time, no task more than 0.003 AUROC below 0.5.0), confirmed with 3
+        seeds on held-out data the search never saw, on 8 unseen NWICU tasks and on prevalence ladders down to
+        0.1%. On rare outcomes: AUPRC +6.5% (search tasks' unseen halves), +9.7% median (NWICU), +17% (ladders),
+        AUROC +0.002 to +0.009 on average. Above 3% the same settings matched 0.5.0 (AUROC +0.0003, AUPRC +1.1%
+        on 7 MIMIC-IV tasks) but trained about 2x slower, so the standard values stay there.
+    - Including every code (`min_code_inclusion_count` 1 instead of 10: 2.3x the columns, the same non-zeros) did
+        not improve either profile.
+
+## 0.5.1
+
+One command for tabularization: `meds-tab-tabularize` writes the static and the time-series features of a task,
+with either backend. Outputs, models and the existing commands are unchanged.
+
+### Added
+
 - **`meds-tab-tabularize`: both tabularization stages in one command.** It runs `meds-tab-tabularize-static` and
     then `meds-tab-tabularize-time-series` with the same arguments and writes the same files. On the native
     backend, which writes every block during the static stage, the second stage is skipped instead of finding
